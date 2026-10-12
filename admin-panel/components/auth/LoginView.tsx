@@ -84,7 +84,7 @@ export function LoginView() {
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-white/10 text-sm">
           <div className="bg-navy-950/80 px-4 py-3">
             <dt className="text-white/50">Registration</dt>
-            <dd className="mt-0.5 font-semibold">3 – 12 Oct 2026</dd>
+            <dd className="mt-0.5 font-semibold">3 – 15 Oct 2026</dd>
           </div>
           <div className="bg-navy-950/80 px-4 py-3">
             <dt className="text-white/50">{finale.title}</dt>

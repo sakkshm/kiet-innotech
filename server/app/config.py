@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     super_admin_emails: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     registration_opens: datetime = datetime.fromisoformat("2026-10-03T00:00:00+05:30")
-    registration_closes: datetime = datetime.fromisoformat("2026-10-12T23:59:59+05:30")
+    registration_closes: datetime = datetime.fromisoformat("2026-10-15T23:59:59+05:30")
     # Department admins' finalist nominations are due by then (the event document says 24 October, 6:00 PM). After it,
     # only a super admin can still change them. Organisers can change or clear it in the admin panel.
     nominations_deadline: datetime | None = datetime.fromisoformat("2026-10-24T18:00:00+05:30")

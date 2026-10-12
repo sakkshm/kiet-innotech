@@ -23,7 +23,7 @@ export const CLUB_NAME_LENGTH = { min: 2, max: 80 };
 
 // Overridable at build time (deploy.sh passes REGISTRATION_OPENS/CLOSES) so the public pages agree with the server's window.
 export const REGISTRATION_OPENS = process.env.NEXT_PUBLIC_REGISTRATION_OPENS || "2026-10-03T00:00:00+05:30";
-export const REGISTRATION_CLOSES = process.env.NEXT_PUBLIC_REGISTRATION_CLOSES || "2026-10-12T23:59:59+05:30";
+export const REGISTRATION_CLOSES = process.env.NEXT_PUBLIC_REGISTRATION_CLOSES || "2026-10-15T23:59:59+05:30";
 /** Department admins' finalist nominations are due by then (the event document: 24 October, 6:00 PM). */
 export const NOMINATIONS_DEADLINE = "2026-10-24T18:00:00+05:30";
 
