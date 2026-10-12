@@ -112,7 +112,7 @@ const teamWordsB = [
 /** Short KIET branch codes used in roll numbers and email handles. */
 const deptCodes: Record<string, string> = {
   CSE: "cse", CS: "cs", IT: "it", CSIT: "csit", "CSE(AI)": "cseai", "CSE(AIML)": "aiml", "CSE(DS)": "ds",
-  "CSE(CS)": "csecs", EN: "en", EC: "ec", ELCE: "elce", ME: "me", VLSI: "vlsi", AM: "am", MCA: "mca",
+  "CSE(CS)": "csecs", EN: "en", EC: "ec", ELCE: "elce", ME: "me", VLSI: "vlsi", AMIA: "amia", MCA: "mca",
   KSOM: "mba", KSOP: "pharm",
 };
 

@@ -39,6 +39,11 @@ class ProfileInput(Input):
     # COE KIET / technical clubs: the club's name.
     club: str = Field(default="", max_length=80)
 
+    @field_validator("department", mode="before")
+    @classmethod
+    def legacy_department(cls, value):
+        return rules.canonical_department(value)
+
     @field_validator("full_name")
     @classmethod
     def check_name(cls, value: str) -> str:
@@ -327,6 +332,11 @@ class AdminInput(Input):
     @classmethod
     def lower(cls, value: str) -> str:
         return value.lower()
+
+    @field_validator("department", mode="before")
+    @classmethod
+    def legacy_department(cls, value):
+        return rules.canonical_department(value)
 
     @model_validator(mode="after")
     def check_department(self) -> "AdminInput":
@@ -648,6 +658,11 @@ class JurorInput(Input):
     def check_email(cls, value: str) -> str:
         return _email(value)
 
+    @field_validator("department", mode="before")
+    @classmethod
+    def legacy_department(cls, value):
+        return rules.canonical_department(value)
+
     @field_validator("phone")
     @classmethod
     def check_phone(cls, value: str) -> str:
@@ -696,6 +711,11 @@ class PanelInput(Input):
     location: str = Field(default="", max_length=120)
     # Department round: whose teams are judged in this room.
     department: str | None = None
+
+    @field_validator("department", mode="before")
+    @classmethod
+    def legacy_department(cls, value):
+        return rules.canonical_department(value)
 
     @model_validator(mode="after")
     def check_department(self) -> "PanelInput":

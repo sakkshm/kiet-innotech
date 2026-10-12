@@ -32,7 +32,7 @@ DOUBLE_QUOTA_DEPARTMENTS = {"CSE", "CS", "CSE(AI)", "CSE(AIML)"}
 
 DEPARTMENTS = [
     "CSE", "CS", "IT", "CSIT", "CSE(AI)", "CSE(AIML)", "CSE(DS)", "CSE(CS)",
-    "EN", "EC", "ELCE", "ME", "VLSI", "AM", "MCA", "KSOM", "KSOP", "COE",
+    "EN", "EC", "ELCE", "ME", "VLSI", "AMIA", "MCA", "KSOM", "KSOP", "COE",
 ]  # fmt: skip
 
 # COE KIET / technical clubs: a KIET "department" of its own (own admin) whose teams go straight to the Grand Finale,
@@ -40,6 +40,14 @@ DEPARTMENTS = [
 CLUB_DEPARTMENT = "COE"
 CLUB_NAME_LENGTH = (2, 80)
 STARTUP_COURSE = "Startup"
+
+# "AM" was renamed "AMIA". The old code is still accepted (and stored as AMIA), so a page opened before the rename keeps working.
+LEGACY_DEPARTMENTS = {"AM": "AMIA"}
+
+
+def canonical_department(value):
+    return LEGACY_DEPARTMENTS.get(value, value) if isinstance(value, str) else value
+
 
 # The departments that run a department round and nominate finalists.
 NOMINATING_DEPARTMENTS = [d for d in DEPARTMENTS if d != CLUB_DEPARTMENT]

@@ -392,7 +392,7 @@ export const departments = [
   "ELCE",
   "ME",
   "VLSI",
-  "AM",
+  "AMIA",
   "MCA",
   "KSOM",
   "KSOP",
