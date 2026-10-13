@@ -1119,6 +1119,7 @@ export const mockApi: AdminApi = {
     return setStatus(db, admin, team, "disqualified", "team.disqualified", `Banned: ${requireReason(reason)}`);
   },
 
+  saveQuotas: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   judging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   openJudging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   lockJudging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
@@ -1133,6 +1134,11 @@ export const mockApi: AdminApi = {
   listJurors: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   addJuror: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   removeJuror: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  editScore: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  scanPass: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  markPresent: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  unmarkPresent: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   judgeView: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   saveScore: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  judgeAttendance: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
 };

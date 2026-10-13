@@ -1,10 +1,13 @@
 /**
- * Printable attendance sheets for a judging room, a finale panel or every finale stall: one row per student,
- * grouped by team, with columns to tick presence and sign. PDF (jsPDF) or Word (.docx). The libraries load
+ * Attendance sheets for a judging room, a department, a finale panel or every finale stall: one row per student,
+ * grouped by team, with columns to tick presence and sign. PDF (jsPDF) or Word (.docx) to print and photocopy, or
+ * Excel with who is already present. Students marked by event pass print as "Yes" with the time. The libraries load
  * only when a sheet is downloaded.
  */
 import type { AttendanceSheet } from "./admin-types";
-import { categoryTitle, formatIst, roundLabels } from "./format";
+import { sheet as excelSheet, downloadWorkbook } from "./excel";
+import { categoryTitle, formatCsvDateTime, formatIst, formatTime, roundLabels } from "./format";
+import { slotLabel } from "./rooms";
 import { yearLabel } from "./rules";
 
 type Row = {
@@ -29,7 +32,8 @@ function heading(sheet: AttendanceSheet) {
     title: "InnoTech26 · Attendance sheet",
     subtitle: `${roundLabels[sheet.round]} · ${sheet.title}`,
     details: [
-      sheet.location && `Venue: ${sheet.location}`,
+      sheet.slotStart && `Time: ${slotLabel(sheet.slotStart, sheet.slotEnd)}`,
+      sheet.location && `Directions: ${sheet.location}`,
       sheet.jurors.length > 0 && `Judges: ${sheet.jurors.join(", ")}`,
       `${sheet.teams.length} teams · ${sheet.teams.reduce((sum, t) => sum + t.members.length, 0)} students`,
       `Printed ${formatIst(new Date().toISOString())}`,
@@ -47,7 +51,13 @@ const memberCells = (row: Row) =>
       ]
     : ["(no members)", "", "", ""];
 
-const teamCell = (row: Row) => `${row.team.code}\n${row.team.name}\nCat ${row.team.category}: ${categoryTitle(row.team.category)}${row.team.status !== "submitted" ? `\n(${row.team.status})` : ""}`;
+const teamCell = (row: Row, sheet: AttendanceSheet) =>
+  `${row.team.code}\n${row.team.name}\nCat ${row.team.category}: ${categoryTitle(row.team.category)}` +
+  // A department-wide sheet says which room each team is in.
+  `${!sheet.room && row.team.room ? `\n${row.team.room}` : ""}${row.team.status !== "submitted" ? `\n(${row.team.status})` : ""}`;
+
+/** Already present (by pass or by hand) prints as "Yes 10:42"; the rest stay blank to tick by hand. */
+const presentCell = (row: Row) => (row.member?.presentAt ? `Yes ${formatTime(row.member.presentAt)}` : "");
 
 function filename(sheet: AttendanceSheet, extension: string) {
   const slug = sheet.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -84,10 +94,10 @@ export async function downloadAttendancePdf(sheet: AttendanceSheet) {
       ? [
           { content: String(row.index + 1), rowSpan: row.span },
           ...(showTent(sheet) ? [{ content: row.team.tent ?? "—", rowSpan: row.span }] : []),
-          { content: teamCell(row), rowSpan: row.span },
+          { content: teamCell(row, sheet), rowSpan: row.span },
         ]
       : [];
-    return [...teamCells, ...memberCells(row), "", ""];
+    return [...teamCells, ...memberCells(row), presentCell(row), ""];
   });
   autoTable(doc, {
     head,
@@ -140,9 +150,9 @@ export async function downloadAttendanceDocx(sheet: AttendanceSheet) {
       const teamCells = [
         cell(row.first ? String(row.index + 1) : "", { merge }),
         ...(showTent(sheet) ? [cell(row.first ? (row.team.tent ?? "—") : "", { merge, bold: true })] : []),
-        cell(row.first ? teamCell(row) : "", { merge }),
+        cell(row.first ? teamCell(row, sheet) : "", { merge }),
       ];
-      return new TableRow({ cantSplit: true, children: [...teamCells, ...memberCells(row).map((value) => cell(value)), cell(""), cell("")] });
+      return new TableRow({ cantSplit: true, children: [...teamCells, ...memberCells(row).map((value) => cell(value)), cell(presentCell(row)), cell("")] });
     }),
   ];
 
@@ -163,4 +173,36 @@ export async function downloadAttendanceDocx(sheet: AttendanceSheet) {
     ],
   });
   save(await Packer.toBlob(document), filename(sheet, "docx"));
+}
+
+/** One row per student with the attendance recorded so far. */
+export async function downloadAttendanceExcel(sheet: AttendanceSheet) {
+  type Line = { index: number; team: AttendanceSheet["teams"][number]; member: AttendanceSheet["teams"][number]["members"][number] };
+  const lines: Line[] = sheet.teams.flatMap((team, index) => team.members.map((member) => ({ index: index + 1, team, member })));
+  const slug = sheet.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  await downloadWorkbook(`attendance-${sheet.round}-${slug || "sheet"}`, [
+    excelSheet<Line>(
+      "Attendance",
+      [
+        { header: "#", width: 5, value: (l) => l.index },
+        { header: "Team code", width: 12, value: (l) => l.team.code, text: true },
+        { header: "Team", width: 26, value: (l) => l.team.name },
+        { header: "Category", width: 10, value: (l) => l.team.category },
+        { header: "Room", width: 22, value: (l) => l.team.room ?? "" },
+        ...(sheet.round === "final" ? [{ header: "Stall", width: 8, value: (l: Line) => l.team.tent ?? "", text: true }] : []),
+        { header: "Student", width: 26, value: (l) => l.member.fullName },
+        { header: "Role", width: 8, value: (l) => (l.member.role === "leader" ? "Leader" : "Member") },
+        { header: "Roll number", width: 16, value: (l) => l.member.rollNumber, text: true },
+        { header: "Year", width: 10, value: (l) => yearLabel(l.member.year, l.member.course === "School" ? "school" : "college") },
+        { header: "Course", width: 14, value: (l) => l.member.course },
+        { header: "Department / institution", width: 26, value: (l) => l.member.department ?? l.member.institution },
+        { header: "Phone", width: 13, value: (l) => l.member.phone, text: true },
+        { header: "Present", width: 9, value: (l) => (l.member.presentAt ? "Yes" : "No") },
+        { header: "Marked at (IST)", width: 18, value: (l) => formatCsvDateTime(l.member.presentAt) },
+        { header: "Marked by", width: 26, value: (l) => l.member.markedBy ?? "" },
+        { header: "How", width: 10, value: (l) => (l.member.method === "qr" ? "Event pass" : l.member.method === "manual" ? "By hand" : "") },
+      ],
+      lines,
+    ),
+  ]);
 }

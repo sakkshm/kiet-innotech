@@ -143,19 +143,26 @@
  *
  *   GET    /admin/activity?kind=&department=&q=&page=&page_size=  → Page<AuditEntry>, newest first, scoped like teams.
  *
- *   Judging (writes: super_admin only; department admins read their department's rooms, outside admins the finale)
+ *   Judging (super admins: everything; department admins: their own department's rooms and judges; outside admins
+ *   read the finale)
  *   GET    /admin/judging/{round}                 → Judging        round: department | final
- *   POST   /admin/judging/{round}/open | /lock    → RoundState     409 with the reason when it cannot open
+ *   POST   /admin/judging/{round}/open | /lock    → RoundState     409 with the reason when it cannot open (super admin)
  *   GET    /admin/judging/{round}/rankings?department=   → Rankings
- *   GET    /admin/judging/{round}/attendance?panel_id=   → AttendanceSheet (final round: panel optional)
+ *   GET    /admin/judging/{round}/attendance?panel_id=&department=   → AttendanceSheet (a room, a department, or the finale)
  *   PUT    /admin/judging/final/tents   body { tents: [{ team_id, tent | null }] } → Judging
- *   POST   /admin/panels   body { round, name, location, department } → Panel
- *   PATCH  /admin/panels/{id}   body { name, location } → Panel;  DELETE /admin/panels/{id} → 204
+ *   POST   /admin/panels   body { round, department, building, name, location, slot_start, slot_end } → Panel
+ *          A department room needs a building and a slot; 409 when the same room is booked at an overlapping time.
+ *   PATCH  /admin/panels/{id}   body { building, name, location, slot_start, slot_end } → Panel;  DELETE /admin/panels/{id} → 204
  *   PUT    /admin/panels/{id}/teams    body { team_ids }  → Panel
  *   PUT    /admin/panels/{id}/jurors   body { jurors: [{ email, chair }] } → Panel
+ *   PUT    /admin/panels/{id}/teams/{team}/scores/{juror_email}  (super admin) body { marks, remarks, reason } → Score
  *   GET    /admin/jurors → Juror[];  POST /admin/jurors body JurorInput → Juror;  DELETE /admin/jurors/{email} → 204
+ *   PUT    /admin/finalists/quotas  (super admin) body { quotas: [{ department, category, quota }] } → FinalistSummary
+ *   POST   /admin/attendance/scan   body { code, round, panel_id? } → ScanResult  (organisers; judges for their rooms)
+ *   POST   /admin/attendance/mark | /unmark   body { user_id, round, note } → ScanResult | 204
  *   GET    /judge  → JudgeView (the signed-in judge's panels);  PUT /judge/panels/{panel}/teams/{team}/score
- *          body { marks: number[9], remarks } → Score. 423 while the round is locked.
+ *          body { marks: number[9], remarks } → Score. 423 while the round is locked; 409 once submitted (final).
+ *   GET    /judge/panels/{panel}/attendance → AttendanceSheet
  *
  *   GET    /admin/audit?team_id=&limit=
  *          → AuditEntry[] newest first (limit default 50, max 200). Scoped like teams; team_id of a
@@ -175,6 +182,7 @@ import type {
   Juror,
   Panel,
   Rankings,
+  ScanResult,
   RoundState,
   Score,
   AdminStudent,
@@ -341,6 +349,7 @@ export const liveApi: AdminApi = {
   // The server insists on the typed phrase too, so a stray request cannot publish.
   publishResults: () => request<PublishResult>("POST", "/admin/results/publish", { confirm: "PUBLISH" }),
   unpublishResults: (reason) => request<void>("POST", "/admin/results/unpublish", { confirm: "UNPUBLISH", reason }),
+  saveQuotas: (quotas) => request<FinalistSummary>("PUT", "/admin/finalists/quotas", { quotas }),
 
   listAdmins: () => request<AdminUser[]>("GET", "/admin/admins"),
   addAdmin: (input: AdminInput) => request<AdminUser>("POST", "/admin/admins", input),
@@ -353,7 +362,7 @@ export const liveApi: AdminApi = {
   openJudging: (round) => request<RoundState>("POST", `/admin/judging/${round}/open`),
   lockJudging: (round) => request<RoundState>("POST", `/admin/judging/${round}/lock`),
   rankings: (round, department) => request<Rankings>("GET", `/admin/judging/${round}/rankings${queryString({ department })}`),
-  attendance: (round, panelId) => request<AttendanceSheet>("GET", `/admin/judging/${round}/attendance${queryString({ panelId })}`),
+  attendance: (round, scope = {}) => request<AttendanceSheet>("GET", `/admin/judging/${round}/attendance${queryString(scope)}`),
   setTents: (tents) => request<Judging>("PUT", "/admin/judging/final/tents", { tents }),
   createPanel: (input) => request<Panel>("POST", "/admin/panels", input),
   updatePanel: (panelId, input) => request<Panel>("PATCH", `/admin/panels/${id(panelId)}`, input),
@@ -363,8 +372,15 @@ export const liveApi: AdminApi = {
   listJurors: () => request<Juror[]>("GET", "/admin/jurors"),
   addJuror: (input) => request<Juror>("POST", "/admin/jurors", input),
   removeJuror: (email) => request<void>("DELETE", `/admin/jurors/${id(email)}`),
+  editScore: (panelId, teamId, jurorEmail, marks, remarks, reason) =>
+    request<Score>("PUT", `/admin/panels/${id(panelId)}/teams/${id(teamId)}/scores/${id(jurorEmail)}`, { marks, remarks, reason }),
+
+  scanPass: (code, round, panelId) => request<ScanResult>("POST", "/admin/attendance/scan", { code, round, panelId: panelId ?? null }),
+  markPresent: (userId, round, note) => request<ScanResult>("POST", "/admin/attendance/mark", { userId, round, note }),
+  unmarkPresent: (userId, round, note) => request<void>("POST", "/admin/attendance/unmark", { userId, round, note }),
 
   judgeView: () => request<JudgeView>("GET", "/judge"),
   saveScore: (panelId, teamId, marks, remarks) =>
     request<Score>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/score`, { marks, remarks }),
+  judgeAttendance: (panelId) => request<AttendanceSheet>("GET", `/judge/panels/${id(panelId)}/attendance`),
 };

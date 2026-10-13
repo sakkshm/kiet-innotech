@@ -27,6 +27,7 @@ const kinds: { value: ActivityKind; label: string }[] = [
   { value: "finalists", label: "Finalist nominations" },
   { value: "results", label: "Results" },
   { value: "judging", label: "Judging" },
+  { value: "attendance", label: "Attendance" },
   { value: "schedule", label: "Schedule" },
   { value: "admin", label: "Admins" },
 ];

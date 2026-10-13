@@ -391,7 +391,7 @@ export const prizePools = {
 
 type Criterion = { title: string; parts?: string[] };
 
-/** Judging rubrics, kept for the judges module. Not shown on the public site. */
+/** Judging rubrics, word for word from the Judging Parameters document: four criteria of two 5-mark parts, then Query Addressing (10). */
 export const rubrics: Record<
   RubricGroup,
   { label: string; appliesTo: string; criteria: Criterion[] }
@@ -402,9 +402,9 @@ export const rubrics: Record<
     criteria: [
       { title: "Project Showcasing", parts: ["Team Presentation Skills", "Project Understanding"] },
       { title: "Innovation & Novelty", parts: ["Originality of Project", "Employed Technology & AI Tools"] },
-      { title: "Relevance & Application", parts: ["Significance for Society", "Practical Application to the Problem"] },
-      { title: "Usability & Scalability", parts: ["Ease of Use", "Potential to Scale"] },
-      { title: "Query Addressing" },
+      { title: "Relevance & Application", parts: ["Significance for Society", "Practical Application w.r.t. Problem / Social Challenge"] },
+      { title: "Usability & Scalability", parts: ["Ease of Use", "Potential to Scale / Expand"] },
+      { title: "Query Addressing", parts: ["Answers to judges’ questions"] },
     ],
   },
   hardware: {
@@ -412,32 +412,32 @@ export const rubrics: Record<
     appliesTo: "Categories 3 and 4",
     criteria: [
       { title: "Design & Build Quality", parts: ["Neatness & Safety", "Robustness of Hardware"] },
-      { title: "Working Model", parts: ["Originality of Approach", "Novel Hardware Integration"] },
-      { title: "Technology & AI Integration", parts: ["Sensors, IoT, Robotics Usage", "AI/Automation Potential"] },
+      { title: "Working Model (Innovation & Creativity)", parts: ["Originality of Approach", "Novel Hardware Integration"] },
+      { title: "Technology & AI Integration", parts: ["Sensors, IoT, Robotics Usage", "AI / Automation Potential"] },
       { title: "Future Scope & Impact", parts: ["Scalability / Commercial Feasibility", "Societal / Environmental Relevance"] },
-      { title: "Query Addressing" },
+      { title: "Query Addressing", parts: ["Answers to judges’ questions"] },
     ],
   },
   startup: {
-    label: "Start-up",
+    label: "Start-up & Business Ideas (Poster)",
     appliesTo: "Category 5",
     criteria: [
       { title: "Uniqueness of Idea", parts: ["Novelty of Concept", "Differentiation from Existing Solutions"] },
       { title: "Market Feasibility", parts: ["Business Model Strength", "Target Audience Fit"] },
-      { title: "Revenue & Sustainability", parts: ["Potential to Generate Profit", "Long-Term Sustainability"] },
+      { title: "Revenue Generation & Sustainability", parts: ["Potential to Generate Profit", "Long-Term Sustainability"] },
       { title: "Societal / Economic Relevance", parts: ["Contribution to Society", "Contribution to Economy"] },
-      { title: "Query Addressing" },
+      { title: "Query Addressing", parts: ["Answers to judges’ questions"] },
     ],
   },
   genz: {
-    label: "Gen Z",
+    label: "Gen Z Budding Project Solutions",
     appliesTo: "Category 6",
     criteria: [
       { title: "Concept & Originality", parts: ["Originality of Idea", "Understanding of the Problem"] },
-      { title: "Working Prototype", parts: ["Functionality of Prototype", "Effort & Build Quality"] },
-      { title: "Impact Value", parts: ["Relevance to Society / SDGs", "Potential to Inspire Change"] },
+      { title: "Working Prototype / Demonstration", parts: ["Functionality of Prototype", "Effort & Build Quality"] },
+      { title: "Impact Value", parts: ["Relevance to Society / Environment / SDGs", "Potential to Inspire Change"] },
       { title: "Presentation & Teamwork", parts: ["Clarity of Explanation", "Team Coordination"] },
-      { title: "Query Addressing" },
+      { title: "Query Addressing", parts: ["Answers to judges’ questions"] },
     ],
   },
   poster: {
@@ -445,21 +445,21 @@ export const rubrics: Record<
     appliesTo: "Category 7",
     criteria: [
       { title: "Concept Innovation", parts: ["Originality of Idea", "Artistic Appeal & Creativity"] },
-      { title: "Impact Value", parts: ["Relevance to Society / SDGs", "Potential to Inspire Change"] },
+      { title: "Impact Value", parts: ["Relevance to Society / Environment / SDGs", "Potential to Inspire Change"] },
       { title: "Message Clarity", parts: ["Easy to Understand", "Logical Flow"] },
       { title: "Visual Design", parts: ["Neatness & Balance", "Artistic Appeal"] },
-      { title: "Query Addressing" },
+      { title: "Query Addressing", parts: ["Answers to judges’ questions"] },
     ],
   },
   cybershield: {
-    label: "CyberShield",
+    label: "CyberShield – Secure & Trustworthy Tech",
     appliesTo: "Category 8",
     criteria: [
-      { title: "Threat Understanding", parts: ["Clarity of Threat Model", "Real-world Relevance"] },
+      { title: "Threat Understanding & Problem Definition", parts: ["Clarity of Threat Model / Attack Scenario", "Real-world Relevance of the Problem"] },
       { title: "Security Design & Innovation", parts: ["Originality of Approach", "Use of Security Techniques & Tools"] },
-      { title: "Implementation & Demo", parts: ["Working Demo", "Robustness Against Attacks"] },
+      { title: "Implementation & Demonstration", parts: ["Working Demo", "Robustness / Testing against Attacks"] },
       { title: "Impact & Compliance", parts: ["Societal / Organisational Impact", "Privacy, Ethical & Legal Compliance"] },
-      { title: "Query Addressing" },
+      { title: "Query Addressing", parts: ["Answers to judges’ questions"] },
     ],
   },
 };

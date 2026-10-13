@@ -1,23 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { FileDown, FileText } from "lucide-react";
+import { FileDown, FileSpreadsheet, FileText } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import type { JudgingRound } from "@/lib/admin-types";
 import { Button } from "@/components/ui/Button";
 
-/** Downloads a room's (or every finale stall's) attendance sheet as a PDF or a Word document. */
-export function AttendanceButtons({ round, panelId, label }: { round: JudgingRound; panelId?: string; label: string }) {
-  const [pending, setPending] = useState<"pdf" | "docx" | null>(null);
+/** Downloads an attendance sheet (a room, a department or every finale team) as PDF or Word to print, or Excel with who is present. */
+export function AttendanceButtons({ round, panelId, department, label }: { round: JudgingRound; panelId?: string; department?: string; label: string }) {
+  const [pending, setPending] = useState<"pdf" | "docx" | "xlsx" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function download(format: "pdf" | "docx") {
+  async function download(format: "pdf" | "docx" | "xlsx") {
     setPending(format);
     setError(null);
     try {
-      const [sheet, attendance] = await Promise.all([api.attendance(round, panelId), import("@/lib/attendance")]);
+      const [sheet, attendance] = await Promise.all([api.attendance(round, { panelId, department }), import("@/lib/attendance")]);
       if (format === "pdf") await attendance.downloadAttendancePdf(sheet);
-      else await attendance.downloadAttendanceDocx(sheet);
+      else if (format === "docx") await attendance.downloadAttendanceDocx(sheet);
+      else await attendance.downloadAttendanceExcel(sheet);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -35,6 +36,10 @@ export function AttendanceButtons({ round, panelId, label }: { round: JudgingRou
         <Button size="sm" variant="secondary" onClick={() => download("docx")} pending={pending === "docx"} disabled={pending !== null}>
           {pending !== "docx" && <FileText aria-hidden="true" className="size-3.5" />}
           Word
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => download("xlsx")} pending={pending === "xlsx"} disabled={pending !== null}>
+          {pending !== "xlsx" && <FileSpreadsheet aria-hidden="true" className="size-3.5" />}
+          Excel
         </Button>
       </div>
       {error && <p role="alert" className="text-xs font-medium text-red-700">{error}</p>}

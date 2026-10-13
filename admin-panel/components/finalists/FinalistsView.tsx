@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Send, Undo2 } from "lucide-react";
+import { SlidersHorizontal, Send, Undo2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { FinalistSummary } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -19,6 +19,7 @@ import { PageHeader, SectionTitle } from "@/components/ui/PageHeader";
 import { Pill } from "@/components/ui/Pill";
 import { numClass, TableFrame, tdClass, Th } from "@/components/ui/Table";
 import { BoardForm } from "./BoardForm";
+import { QuotaDialog } from "./QuotaDialog";
 
 function Board({
   department,
@@ -134,6 +135,7 @@ function SuperAdminFinalists() {
   const [published, setPublished] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [quotas, setQuotas] = useState(false);
 
   const data = summary.data;
   const nominatedTotal = data?.matrix.reduce((sum, row) => sum + row.categories.reduce((s, c) => s + c.nominated, 0), 0) ?? 0;
@@ -238,8 +240,26 @@ function SuperAdminFinalists() {
       {data && (
         <section aria-labelledby="matrix-title">
           <SectionTitle id="matrix-title" title="Nominations by department" meta="Nominated / quota. – means no submitted teams. Select a department to edit." />
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted">The quota is how many teams a department can send to the Grand Finale from each category.</p>
+            <Button size="sm" variant="secondary" onClick={() => setQuotas(true)} disabled={!!data.publishedAt}>
+              <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+              Set quotas
+            </Button>
+          </div>
           <Matrix summary={data} onPick={pick} />
         </section>
+      )}
+      {quotas && data && (
+        <QuotaDialog
+          summary={data}
+          onClose={() => setQuotas(false)}
+          onSaved={(updated) => {
+            setQuotas(false);
+            summary.setData(updated);
+            setBoardNonce((n) => n + 1);
+          }}
+        />
       )}
 
       <section aria-labelledby="board-title" id="department-board" className="scroll-mt-20 space-y-4">

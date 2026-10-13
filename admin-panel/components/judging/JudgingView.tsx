@@ -26,11 +26,13 @@ type Tab = "rooms" | "judges" | "tents" | "rankings";
 /** The event document's rules for each round, shown on the page so nobody has to look them up. */
 const roundRules: Record<JudgingRound, string[]> = {
   department: [
-    "22 to 24 October. KIET teams are judged in rooms; each room takes one department's teams and has its own panel of judges.",
-    "Judges are faculty of another department (the panel refuses faculty of the room's own department). One judge chairs the panel.",
-    "Every category is marked out of 50 on its common rubric: five criteria of 10, the first four in two parts of 5.",
-    "Ties: higher Innovation / Originality score, then Query Addressing, then the panel chair decides. No shared positions.",
-    "Each department nominates one finalist per category (two in Categories 1 to 4 for CSE, CS, CSE(AI) and CSE(AIML)) by 24 October, 6:00 PM.",
+    "22 to 24 October. KIET teams are judged in rooms: a building, a room and a time slot. Each room takes one department's teams and has its own judges.",
+    "Department admins set up their own rooms, add judges by email and allot teams; super admins can do this for every department.",
+    "Judges are faculty of another department (the room refuses faculty and admins of its own department). One judge chairs the room.",
+    "Every category is marked out of 50 on its common rubric: four criteria of 10 (two parts of 5), then Query Addressing out of 10.",
+    "A judge submits each team's marks once. Submitted marks are final and hidden on screen; only a super admin can change them, with a reason.",
+    "Ties: higher Innovation / Originality score, then Query Addressing, then the room's chair decides. No shared positions.",
+    "Each department nominates its finalists per category by 24 October, 6:00 PM, within the quota a super admin sets on the Finalists page.",
   ],
   final: [
     "30 October, institute level. Department finalists and teams from other colleges and schools exhibit in numbered stalls.",
@@ -60,12 +62,14 @@ export function JudgingView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={isSuper ? "Super admin" : `${scopeName(admin)} · read only`}
+        eyebrow={isSuper ? "Super admin" : scopeName(admin)}
         title="Judging"
         description={
           isSuper
             ? "Appoint judges, set up rooms and finale panels, allot teams and stalls, and open scoring when the round starts."
-            : "Your rooms, their judges and teams, and attendance sheets. Organisers manage the allotments."
+            : round === "department"
+              ? "Set up your department's rooms (building, room and time slot), add judges by email and allot your teams. Super admins open scoring."
+              : "The Grand Finale panels and your teams' stalls. Organisers manage the allotments."
         }
         actions={
           <Field label="Round" htmlFor="judging-round" className="w-48">
@@ -147,8 +151,8 @@ function RoundBar({ judging, canManage, onChange }: { judging: Judging; canManag
           </p>
           <p className="mt-1 text-sm text-muted">
             {round.open
-              ? "Judges can save and change their marks for the teams in their own rooms."
-              : "Judges can already sign in and see their room and teams, but cannot save marks until scoring is opened."}
+              ? "Judges submit marks for the teams in their own rooms. Submitted marks are final; only a super admin can change them."
+              : "Judges can already sign in and see their room and teams, but cannot submit marks until scoring is opened."}
             {round.changedAt && ` Last ${round.open ? "opened" : "changed"} ${formatDateTime(round.changedAt)} by ${round.changedBy}.`}
           </p>
           {!round.open && round.openBlocked && canManage && <p className="mt-2 text-sm font-medium text-accent-600">{round.openBlocked}</p>}
@@ -185,8 +189,8 @@ function RoundBar({ judging, canManage, onChange }: { judging: Judging; canManag
           title={confirming === "open" ? `Open scoring for the ${roundLabels[round.round].toLowerCase()} round?` : "Lock scoring?"}
           description={
             confirming === "open"
-              ? "Every judge on a panel of this round can save marks for their own teams until you lock it again."
-              : "Judges keep seeing their teams and marks but can no longer save or change them. You can open it again later."
+              ? "Every judge in a room of this round can submit marks for their own teams until you lock it again."
+              : "Judges keep seeing their teams but can no longer submit marks. You can open it again later."
           }
           confirmLabel={confirming === "open" ? "Open scoring" : "Lock scoring"}
           tone={confirming === "open" ? "primary" : "danger"}

@@ -11,6 +11,9 @@ import type {
   JurorInput,
   Panel,
   PanelInput,
+  PanelPlace,
+  QuotaCell,
+  ScanResult,
   Rankings,
   RoundState,
   Score,
@@ -80,6 +83,8 @@ export interface AdminApi {
   publishResults(): Promise<PublishResult>;
   /** Withdraws published results (e.g. published by mistake): every department team's result goes back to pending. */
   unpublishResults(reason: string): Promise<void>;
+  /** Super admin: how many teams each department may nominate per category. */
+  saveQuotas(quotas: QuotaCell[]): Promise<FinalistSummary>;
 
   listAdmins(): Promise<AdminUser[]>;
   addAdmin(input: AdminInput): Promise<AdminUser>;
@@ -93,20 +98,31 @@ export interface AdminApi {
   openJudging(round: JudgingRound): Promise<RoundState>;
   lockJudging(round: JudgingRound): Promise<RoundState>;
   rankings(round: JudgingRound, department?: string): Promise<Rankings>;
-  attendance(round: JudgingRound, panelId?: string): Promise<AttendanceSheet>;
+  /** A room's sheet (panelId), a department's (department round), or every finale team. */
+  attendance(round: JudgingRound, scope?: { panelId?: string; department?: string }): Promise<AttendanceSheet>;
   setTents(tents: { teamId: string; tent: string | null }[]): Promise<Judging>;
   createPanel(input: PanelInput): Promise<Panel>;
-  updatePanel(id: string, input: { name: string; location: string }): Promise<Panel>;
+  updatePanel(id: string, input: PanelPlace): Promise<Panel>;
   deletePanel(id: string): Promise<void>;
   setPanelTeams(id: string, teamIds: string[]): Promise<Panel>;
   setPanelJurors(id: string, jurors: { email: string; chair: boolean }[]): Promise<Panel>;
   listJurors(): Promise<Juror[]>;
   addJuror(input: JurorInput): Promise<Juror>;
   removeJuror(email: string): Promise<void>;
+  /** Super admin: changes (or enters) a judge's marks; the reason goes into the activity log. */
+  editScore(panelId: string, teamId: string, jurorEmail: string, marks: number[], remarks: string, reason: string): Promise<Score>;
+
+  /** Marks the student behind a scanned event pass present. Organisers, and judges for their own rooms. */
+  scanPass(code: string, round: JudgingRound, panelId?: string): Promise<ScanResult>;
+  markPresent(userId: string, round: JudgingRound, note: string): Promise<ScanResult>;
+  unmarkPresent(userId: string, round: JudgingRound, note: string): Promise<void>;
 
   /** A judge's own panels and scores. */
   judgeView(): Promise<JudgeView>;
+  /** Submits a judge's marks. Final: a second submission is refused (only a super admin can change them). */
   saveScore(panelId: string, teamId: string, marks: number[], remarks: string): Promise<Score>;
+  /** A judge's own room: its teams and who is present. */
+  judgeAttendance(panelId: string): Promise<AttendanceSheet>;
 }
 
 export class ApiError extends Error {

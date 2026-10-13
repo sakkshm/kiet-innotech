@@ -63,6 +63,10 @@ export type AuditAction =
   | "judging.panel_deleted"
   | "judging.teams_allotted"
   | "judging.judges_assigned"
+  | "judging.score_edited"
+  | "attendance.marked"
+  | "attendance.unmarked"
+  | "finalists.quotas_updated"
   | "judging.tents_allotted"
   | "judging.scored"
   | "student.created"
@@ -73,7 +77,7 @@ export type AuditAction =
   | "team.approved"
   | "team.approval_revoked";
 
-export type ActivityKind = "team" | "member" | "invitation" | "finalists" | "results" | "admin" | "schedule" | "judging" | "student";
+export type ActivityKind = "team" | "member" | "invitation" | "finalists" | "results" | "admin" | "schedule" | "judging" | "attendance" | "student";
 
 export type ActivityQuery = {
   kind?: ActivityKind;
@@ -360,22 +364,45 @@ export type JurorInput = Pick<Juror, "email" | "name" | "kind" | "department" | 
 
 export type PanelJuror = Pick<Juror, "email" | "name" | "kind" | "department" | "organisation"> & { chair: boolean };
 
+/** One judge's submitted marks for a team (super admins only). */
+export type PanelScore = {
+  jurorEmail: string;
+  jurorName: string;
+  marks: number[];
+  total: number;
+  remarks: string;
+  updatedAt: string;
+  /** The super admin who changed the judge's marks, if any. */
+  editedBy: string | null;
+};
+
 export type PanelTeam = TeamSummary & {
   tent: string | null;
   /** Scores recorded by this panel's judges, and their average total out of 50. */
   scores: number;
   average: number | null;
+  /** Each judge's marks: super admins only, null for everyone else. */
+  judgeScores: PanelScore[] | null;
+  /** Members marked present for this round. */
+  present: number;
 };
 
-/** A judging room (department round, one department's teams) or a Grand Finale panel. */
+/** A judging room (department round, one department's teams, in a building at a time slot) or a Grand Finale panel. */
 export type Panel = {
   id: string;
   round: JudgingRound;
+  building: string;
+  /** The room's name or number (a finale panel's name). */
   name: string;
+  /** Optional directions, e.g. "2nd floor, next to the lift". */
   location: string;
+  slotStart: string | null;
+  slotEnd: string | null;
   department: string | null;
   jurors: PanelJuror[];
   teams: PanelTeam[];
+  /** Super admins, and department admins for their own rooms. */
+  canEdit: boolean;
 };
 
 export type RoundState = {
@@ -389,20 +416,45 @@ export type RoundState = {
 
 export type Judging = {
   round: RoundState;
-  /** Super admins manage; everyone else sees it read-only. */
+  /** Super admins: open and lock rounds, allot stalls, see and change every judge's marks. */
   canManage: boolean;
+  /** Can create rooms in this round (department admins: for their own department). */
+  canCreate: boolean;
   panels: Panel[];
   unallotted: TeamSummary[];
   /** Final round only: every Grand Finale team and its stall (the field is still called tent). */
   tents: { team: TeamSummary; tent: string | null }[] | null;
 };
 
-export type PanelInput = { round: JudgingRound; name: string; location: string; department: string | null };
+/** Where and when a room sits. Times are ISO 8601 with an offset. */
+export type PanelPlace = { building: string; name: string; location: string; slotStart: string | null; slotEnd: string | null };
+
+export type PanelInput = PanelPlace & { round: JudgingRound; department: string | null };
+
+export type AttendanceMember = {
+  userId: string;
+  fullName: string;
+  role: "leader" | "member";
+  year: number;
+  course: string;
+  department: string | null;
+  institution: string;
+  rollNumber: string;
+  phone: string;
+  /** Marked present for this round: when, by whom and how. */
+  presentAt: string | null;
+  markedBy: string | null;
+  method: "qr" | "manual" | null;
+};
 
 export type AttendanceSheet = {
   round: JudgingRound;
   title: string;
+  building: string;
+  room: string;
   location: string;
+  slotStart: string | null;
+  slotEnd: string | null;
   jurors: string[];
   teams: {
     code: string;
@@ -413,18 +465,36 @@ export type AttendanceSheet = {
     tent: string | null;
     institution: string;
     department: string | null;
-    members: {
-      fullName: string;
-      role: "leader" | "member";
-      year: number;
-      course: string;
-      department: string | null;
-      institution: string;
-      rollNumber: string;
-      phone: string;
-    }[];
+    /** The room or panel the team is allotted to. */
+    room: string | null;
+    members: AttendanceMember[];
   }[];
 };
+
+/** What the scanner shows after reading an event pass (or marking a student by hand). */
+export type ScanResult = {
+  result: "marked" | "already";
+  student: {
+    userId: string;
+    fullName: string;
+    rollNumber: string;
+    course: string;
+    year: number;
+    department: string | null;
+    institution: string;
+    participantType: ParticipantType;
+    role: "leader" | "member";
+  };
+  team: TeamSummary;
+  room: string | null;
+  markedAt: string;
+  markedBy: string;
+  method: "qr" | "manual";
+  /** Something to check, e.g. the team is allotted to another room. */
+  warning: string | null;
+};
+
+export type QuotaCell = { department: string; category: number; quota: number };
 
 export type RankedTeam = {
   /** Null until the team has a score. */
@@ -445,7 +515,7 @@ export type Rankings = {
   groups: { key: string; label: string; department: string | null; category: number | null; teams: RankedTeam[] }[];
 };
 
-export type Score = { marks: number[]; total: number; remarks: string; updatedAt: string };
+export type Score = { marks: number[]; total: number; remarks: string; updatedAt: string; editedBy: string | null };
 
 export type JudgeTeam = {
   id: string;
@@ -460,15 +530,18 @@ export type JudgeTeam = {
   department: string | null;
   status: TeamStatus;
   tent: string | null;
-  members: { fullName: string; role: "leader" | "member"; year: number; course: string }[];
+  members: { fullName: string; role: "leader" | "member"; year: number; course: string; department: string | null }[];
   myScore: Score | null;
 };
 
 export type JudgePanel = {
   id: string;
   round: JudgingRound;
+  building: string;
   name: string;
   location: string;
+  slotStart: string | null;
+  slotEnd: string | null;
   department: string | null;
   chair: boolean;
   /** Scores can be saved only while organisers keep the round open. */
