@@ -17,6 +17,7 @@ import { PortalProvider } from "./PortalProvider";
 const tabs = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Team", href: "/team" },
+  { label: "Event pass", href: "/pass" },
   { label: "Profile", href: "/profile" },
 ];
 

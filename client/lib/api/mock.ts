@@ -555,4 +555,12 @@ export const mockApi: StudentApi = {
     declinePendingInvitations(db, profile.email);
     save(db);
   },
+
+  async getMyPass() {
+    await sleep();
+    const db = load();
+    const profile = requireProfile(db);
+    // The demo has no venue: the pass explains it appears once the team is submitted.
+    return { seed: null, day: null, periodSeconds: 60, serverTime: new Date().toISOString(), userId: profile.userId, rounds: [] };
+  },
 };

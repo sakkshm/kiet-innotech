@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, Check, Mail } from "lucide-react";
+import { ArrowRight, Check, Mail, QrCode } from "lucide-react";
 import { api } from "@/lib/api";
 import { dayMonth } from "@/lib/format";
 import { useRegistrationDates, useRegistrationState } from "@/lib/registration";
@@ -111,6 +111,18 @@ export default function DashboardPage() {
               </p>
             )}
           </Panel>
+          )}
+          {accepted && (
+            <Link href="/pass" className="group flex items-center gap-4 rounded-3xl bg-navy-900 p-5 text-white ring-1 ring-navy-900 transition hover:bg-navy-800 sm:p-6">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white/10">
+                <QrCode size={26} aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-display text-lg font-bold">Your event pass</span>
+                <span className="block text-sm text-white/75">Show its QR code at your room on event day to be marked present.</span>
+              </span>
+              <ArrowRight size={18} aria-hidden="true" className="shrink-0 transition group-hover:translate-x-0.5" />
+            </Link>
           )}
           <KeyDates direct={direct !== null && team !== null && team.approvalRequired && team.approvedAt !== null} />
         </div>

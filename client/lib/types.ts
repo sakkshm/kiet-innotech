@@ -109,3 +109,30 @@ export type Me = {
   profile: Profile | null;
   registration: RegistrationWindow;
 };
+
+/** Where a student goes in one round, and whether they have been marked present there. */
+export type PassRound = {
+  round: "department" | "final";
+  teamCode: string;
+  teamName: string;
+  building: string | null;
+  room: string | null;
+  location: string | null;
+  slotStart: string | null;
+  slotEnd: string | null;
+  tent: string | null;
+  presentAt: string | null;
+};
+
+/**
+ * The event pass. `seed` turns into a QR code that changes every `periodSeconds` (lib/pass.ts); it is null until the
+ * student is in a submitted team that takes part in a round. A new seed is needed each day (IST).
+ */
+export type EventPass = {
+  seed: string | null;
+  day: string | null;
+  periodSeconds: number;
+  serverTime: string;
+  userId: string;
+  rounds: PassRound[];
+};
