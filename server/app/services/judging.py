@@ -159,7 +159,9 @@ def _eligible_condition(round_: str, department: str | None = None):
         return condition & (Team.department == department) if department else condition
     # Startups and COE KIET teams qualify once an admin has accepted the entry as a legal one.
     accepted = or_(Team.approval_required.is_(False), Team.approved_at.is_not(None))
-    return (Team.status == "submitted") & or_((Team.route == "finale") & accepted, (Team.route == "department") & (Team.result == "finalist"))
+    return (Team.status == "submitted") & or_(
+        (Team.route == "finale") & accepted, (Team.route == "department") & (Team.result == "finalist")
+    )
 
 
 def _lock_panel(db: Session, panel_id: uuid.UUID) -> Panel:
@@ -505,7 +507,11 @@ def _check_free(db: Session, round_: str, place: PanelPlace, exclude: uuid.UUID 
         if other.id == exclude:
             continue
         # A room without a slot is booked for the whole round.
-        if place.slot_start is None or other.slot_start is None or (place.slot_start < other.slot_end and other.slot_start < place.slot_end):  # type: ignore[operator]
+        if (
+            place.slot_start is None
+            or other.slot_start is None
+            or (place.slot_start < other.slot_end and other.slot_start < place.slot_end)
+        ):  # type: ignore[operator]
             when = slot_label(other.slot_start, other.slot_end) or "for this round"
             whose = f" ({other.department} teams)" if other.department else ""
             raise ApiError(f"{room_label(other)} is already booked {when}{whose}. Choose another room or time.", 409)
@@ -748,7 +754,9 @@ def judge_attendance(db: Session, juror: Juror, panel_id: uuid.UUID) -> Attendan
     panel = db.get(Panel, panel_id)
     if panel is None or db.get(PanelJuror, (panel_id, juror.email)) is None:
         raise ApiError("You are not a judge in this room.", 403)
-    teams = list(db.scalars(select(Team).join(PanelTeam, PanelTeam.team_id == Team.id).where(PanelTeam.panel_id == panel.id).order_by(Team.number)))
+    teams = list(
+        db.scalars(select(Team).join(PanelTeam, PanelTeam.team_id == Team.id).where(PanelTeam.panel_id == panel.id).order_by(Team.number))
+    )
     return _sheet(db, panel.round, teams, panel=panel)
 
 
@@ -771,7 +779,9 @@ def _sheet(db: Session, round_: str, teams: list[Team], *, panel: Panel | None =
     if team_ids:
         rooms = dict(
             db.execute(
-                select(PanelTeam.team_id, Panel).join(Panel, Panel.id == PanelTeam.panel_id).where(PanelTeam.round == round_, PanelTeam.team_id.in_(team_ids))
+                select(PanelTeam.team_id, Panel)
+                .join(Panel, Panel.id == PanelTeam.panel_id)
+                .where(PanelTeam.round == round_, PanelTeam.team_id.in_(team_ids))
             )
             .tuples()
             .all()
@@ -1001,7 +1011,9 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
             .order_by(TeamMember.role != "leader", Profile.full_name)
         ).tuples():
             members[member.team_id].append(
-                JudgeMemberOut(full_name=profile.full_name, role=member.role, year=profile.year, course=profile.course, department=profile.department)
+                JudgeMemberOut(
+                    full_name=profile.full_name, role=member.role, year=profile.year, course=profile.course, department=profile.department
+                )
             )
         for score in db.scalars(select(Score).where(Score.juror_email == juror.email, Score.team_id.in_(team_ids))):
             mine[(score.round, score.team_id)] = score
@@ -1051,7 +1063,9 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
 
 
 def _score_out(score: Score) -> ScoreOut:
-    return ScoreOut(marks=list(score.marks), total=score.total, remarks=score.remarks, updated_at=score.updated_at, edited_by=score.edited_by)
+    return ScoreOut(
+        marks=list(score.marks), total=score.total, remarks=score.remarks, updated_at=score.updated_at, edited_by=score.edited_by
+    )
 
 
 FINAL_SCORE = "Your marks for this team are already submitted and are final. Only a super admin can change them."

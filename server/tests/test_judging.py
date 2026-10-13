@@ -138,7 +138,9 @@ def test_rooms_follow_the_rules(judging):
     assert (room["building"], room["name"], room["location"]) == ("CSIT Block", "304", "2nd floor")
     # The same room cannot be booked twice at overlapping times (any case); back to back, another room or the finale is fine.
     clash = root.post("/admin/panels", room_body("IT", building="csit  block", start="11:00", end="12:00"))
-    assert clash.status_code == 409 and "CSIT Block · 304 is already booked 22 Oct, 10:00 AM - 1:00 PM (CSE teams)" in clash.json()["detail"]
+    assert (
+        clash.status_code == 409 and "CSIT Block · 304 is already booked 22 Oct, 10:00 AM - 1:00 PM (CSE teams)" in clash.json()["detail"]
+    )
     later = root.post("/admin/panels", room_body("IT", start="13:00", end="15:00"))
     assert later.status_code == 201
     assert root.post("/admin/panels", room_body("IT", name="305")).status_code == 201

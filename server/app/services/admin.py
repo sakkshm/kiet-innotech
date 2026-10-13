@@ -38,7 +38,6 @@ from ..models import (
     utcnow,
 )
 from ..schemas import (
-    QuotasInput,
     AdminInput,
     AdminMemberOut,
     AdminOut,
@@ -59,6 +58,7 @@ from ..schemas import (
     NominationsInput,
     PublishInput,
     PublishOut,
+    QuotasInput,
     SizeStats,
     StatsOut,
     StatusCounts,
@@ -524,7 +524,10 @@ def create_team(db: Session, admin: Admin, data: AdminTeamInput, settings: Setti
         )
     low, high = rules.team_size_limits(leader.participant_type)
     if len(emails) > high:
-        raise ApiError("A startup registers as a single entry, so it has no teammates." if high == 1 else f"A team can have at most {high} members.", 422)
+        raise ApiError(
+            "A startup registers as a single entry, so it has no teammates." if high == 1 else f"A team can have at most {high} members.",
+            422,
+        )
     if data.submit and len(emails) < low:
         raise ApiError(f"A team needs {low} to {high} members to be submitted.", 422)
     for email in data.member_emails:

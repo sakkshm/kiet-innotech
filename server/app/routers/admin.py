@@ -13,9 +13,9 @@ from ..errors import ApiError
 from ..models import Juror
 from ..rules import JudgingRound
 from ..schemas import (
-    AdminScoreInput,
     AdminInput,
     AdminOut,
+    AdminScoreInput,
     AdminStudentInput,
     AdminStudentOut,
     AdminTeamInput,
@@ -46,8 +46,8 @@ from ..schemas import (
     ScanInput,
     ScanOut,
     ScheduleInput,
-    ScoreOut,
     ScheduleOut,
+    ScoreOut,
     StatsOut,
     StudentPage,
     TeamBanInput,

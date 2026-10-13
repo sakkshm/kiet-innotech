@@ -54,7 +54,17 @@ def test_reopening_needs_registration_to_be_open(world, settings):  # noqa: F811
 
 def setup_room(world, team):  # noqa: F811
     root = world["root"]
-    room = root.post("/admin/panels", {"round": "department", "name": "Room 1", "department": "CSE"}).json()
+    room = root.post(
+        "/admin/panels",
+        {
+            "round": "department",
+            "department": "CSE",
+            "building": "CSIT Block",
+            "name": "Room 1",
+            "slot_start": "2026-10-22T10:00:00+05:30",
+            "slot_end": "2026-10-22T13:00:00+05:30",
+        },
+    ).json()
     assert root.put(f"/admin/panels/{room['id']}/teams", {"team_ids": [team["id"]]}).status_code == 200
 
 

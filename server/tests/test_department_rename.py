@@ -1,6 +1,6 @@
 """AM was renamed AMIA: the new name is the one that works, and the old code is still understood."""
 
-from conftest import kiet_profile, team_input
+from conftest import kiet_profile
 
 
 def test_amia_is_a_department_and_am_is_read_as_amia(as_user):

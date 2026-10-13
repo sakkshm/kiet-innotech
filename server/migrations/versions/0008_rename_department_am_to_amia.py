@@ -24,7 +24,8 @@ TABLES = ("profiles", "teams", "admins", "finalist_nominations", "audit_log", "j
 
 def _rename(old: str, new: str) -> None:
     for table in TABLES:
-        op.execute(f"UPDATE {table} SET department = '{new}' WHERE department = '{old}'")
+        # Constants only (table names and the two codes above), never user input.
+        op.execute(f"UPDATE {table} SET department = '{new}' WHERE department = '{old}'")  # noqa: S608
 
 
 def upgrade() -> None:

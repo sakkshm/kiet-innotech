@@ -67,9 +67,7 @@ def read_code(settings: Settings, code: str, now: datetime | None = None) -> uui
     user_id, period = uuid.UUID(hex=match.group(1)), int(match.group(2))
     current = _period(now or utcnow())
     if not current - rules.PASS_PAST_PERIODS <= period <= current + rules.PASS_FUTURE_PERIODS:
-        raise ApiError(
-            "This pass code has expired. Ask the student to show the live pass on their phone (it changes every minute).", 422
-        )
+        raise ApiError("This pass code has expired. Ask the student to show the live pass on their phone (it changes every minute).", 422)
     expected = pass_code(pass_seed(settings, user_id, _day_of(period)), user_id, period)
     if not hmac.compare_digest(expected, f"IT26P:{match.group(1)}.{match.group(2)}.{match.group(3)}"):
         raise ApiError(NOT_A_PASS, 422)
@@ -159,12 +157,16 @@ def _student(db: Session, staff: Staff, user_id: uuid.UUID, round_: str) -> tupl
         raise ApiError(f"{profile.full_name}'s team {team.code} is not taking part in the {label} (status: {team.status}).", 409)
     if not _may_mark(db, staff, team, round_):
         where = team.department if team.participant_type == "kiet" else team.institution
-        raise ApiError(f"{profile.full_name} ({team.code}, {where}) is not a student you can mark. Send them to their own room's desk.", 403)
+        raise ApiError(
+            f"{profile.full_name} ({team.code}, {where}) is not a student you can mark. Send them to their own room's desk.", 403
+        )
     return user, profile, member, team
 
 
 def _room(db: Session, team: Team, round_: str) -> Panel | None:
-    return db.scalar(select(Panel).join(PanelTeam, PanelTeam.panel_id == Panel.id).where(PanelTeam.team_id == team.id, PanelTeam.round == round_))
+    return db.scalar(
+        select(Panel).join(PanelTeam, PanelTeam.panel_id == Panel.id).where(PanelTeam.team_id == team.id, PanelTeam.round == round_)
+    )
 
 
 def _out(db: Session, result: str, mark: Attendance, profile: Profile, member: TeamMember, team: Team, warning: str | None) -> ScanOut:
@@ -206,7 +208,9 @@ def _mark(db: Session, staff: Staff, user_id: uuid.UUID, round_: str, method: st
     marked_now = db.execute(statement).first() is not None
     if marked_now:
         how = "by event pass" if method == "qr" else f"by hand ({note})"
-        audit.record(db, staff.email, "attendance.marked", team, f"{profile.full_name} present for the {judging.ROUND_LABELS[round_]}, {how}")
+        audit.record(
+            db, staff.email, "attendance.marked", team, f"{profile.full_name} present for the {judging.ROUND_LABELS[round_]}, {how}"
+        )
     db.commit()
     mark = db.get(Attendance, (user_id, round_), populate_existing=True)
     assert mark is not None
@@ -234,6 +238,7 @@ def unmark(db: Session, staff: Staff, data: ManualAttendanceInput) -> None:
         staff.email,
         "attendance.unmarked",
         team,
-        f"{profile.full_name} no longer present for the {judging.ROUND_LABELS[data.round]} (was marked by {mark.marked_by}). Reason: {data.note}",
+        f"{profile.full_name} no longer present for the {judging.ROUND_LABELS[data.round]} "
+        f"(was marked by {mark.marked_by}). Reason: {data.note}",
     )
     db.commit()
