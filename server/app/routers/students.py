@@ -12,8 +12,8 @@ from ..auth import CurrentUser
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import Profile
-from ..schemas import InvitationOut, InviteInput, JoinInput, MeOut, ProfileInput, ProfileOut, RegistrationOut, TeamInput, TeamOut
-from ..services import schedule, students
+from ..schemas import InvitationOut, InviteInput, JoinInput, MeOut, PassOut, ProfileInput, ProfileOut, RegistrationOut, TeamInput, TeamOut
+from ..services import attendance, schedule, students
 from ..services.serializers import invitation_out, profile_out, team_out
 
 router = APIRouter(tags=["students"])
@@ -32,6 +32,12 @@ def get_me(user: CurrentUser, db: Db, settings: AppSettings) -> MeOut:
     window = schedule.load(db, settings)
     registration = RegistrationOut(state=window.registration_state(), opens=window.opens, closes=window.closes)
     return MeOut(email=user.email, name=user.name, profile=profile_out(profile, user.email) if profile else None, registration=registration)
+
+
+@router.get("/me/pass")
+def get_my_pass(user: CurrentUser, db: Db, settings: AppSettings) -> PassOut:
+    """The event pass: a seed the portal turns into a QR code that changes every minute, and where to go."""
+    return attendance.my_pass(db, user, settings)
 
 
 @router.put("/me/profile")

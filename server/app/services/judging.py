@@ -8,14 +8,16 @@ Judging, following the event document:
 - Every category is scored out of 50 on its common rubric (rules.RUBRIC_PARTS). Ties are broken by the
   innovation/originality criterion, then Query Addressing, then the panel chair decides. No shared positions.
 
-Super admins appoint judges, set up rooms and panels, allot teams and tents, and open or lock each round. Judging is
-locked until they open it. A judge sees and scores only the teams of their own panels, and only while the round is
-open. Department admins see their own department's rooms and rankings, read-only.
+Super admins set up everything and open or lock each round; judging is locked until they open it. Department admins
+set up their own department's rooms (building, room and time slot), appoint judges for them and allot their teams.
+A judge sees and scores only the teams of their own rooms, only while the round is open, and once submitted the
+marks are final: only a super admin can change them, and every change is logged with the old marks and a reason.
 """
 
 import re
 import uuid
 from collections import defaultdict
+from datetime import datetime
 from statistics import mean
 
 from sqlalchemy import delete, func, or_, select
@@ -27,8 +29,9 @@ from .. import rules
 from ..config import Settings
 from ..db import violated_constraint
 from ..errors import ApiError
-from ..models import Admin, AppState, FinalTent, Juror, Panel, PanelJuror, PanelTeam, Profile, Score, Team, TeamMember, utcnow
+from ..models import Admin, AppState, Attendance, FinalTent, Juror, Panel, PanelJuror, PanelTeam, Profile, Score, Team, TeamMember, utcnow
 from ..schemas import (
+    AdminScoreInput,
     AttendanceMember,
     AttendanceSheet,
     AttendanceTeam,
@@ -44,6 +47,8 @@ from ..schemas import (
     PanelJurorOut,
     PanelJurorsInput,
     PanelOut,
+    PanelPlace,
+    PanelScoreOut,
     PanelTeamOut,
     PanelTeamsInput,
     PanelUpdateInput,
@@ -82,6 +87,44 @@ def round_open(db: Session, round_: str) -> bool:
 def _require_super(admin: Admin) -> None:
     if admin.role != "super_admin":
         raise ApiError("Only a super admin can manage judging.", 403)
+
+
+def _manages_rooms(admin: Admin) -> bool:
+    """Super admins, and department admins of departments that take part in the department round."""
+    return admin.role == "super_admin" or (admin.role == "admin" and admin.department != rules.CLUB_DEPARTMENT)
+
+
+def _can_edit(admin: Admin, panel: Panel) -> bool:
+    if admin.role == "super_admin":
+        return True
+    return admin.role == "admin" and panel.round == "department" and panel.department == admin.department
+
+
+def _require_editor(admin: Admin, panel: Panel) -> None:
+    if not _can_edit(admin, panel):
+        raise ApiError("Only a super admin or this department's admin can change this room.", 403)
+
+
+def _require_creator(admin: Admin, round_: str, department: str | None) -> None:
+    if admin.role == "super_admin":
+        return
+    if round_ != "department":
+        raise ApiError("Only a super admin can set up Grand Finale panels.", 403)
+    if not _manages_rooms(admin) or department != admin.department:
+        raise ApiError(f"You can set up rooms for {admin.department} teams only.", 403)
+
+
+def room_label(panel: Panel) -> str:
+    """ "G Block · 112", or a finale panel's name."""
+    return f"{panel.building} · {panel.name}" if panel.building else panel.name
+
+
+def slot_label(start: datetime | None, end: datetime | None) -> str:
+    """ "22 Oct, 10:00 AM - 1:00 PM" in IST."""
+    if start is None or end is None:
+        return ""
+    s, e = start.astimezone(rules.IST), end.astimezone(rules.IST)
+    return f"{s.day} {s:%b}, {s:%I:%M %p} - {e:%I:%M %p}".replace(" 0", " ")
 
 
 def _check_view(admin: Admin, round_: str) -> None:
@@ -182,36 +225,69 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
     teams = [team for _, team in links]
     summaries = {s.id: s for s in admin_service.summaries(db, teams)}
     tents = _tents(db, [t.id for t in teams])
+    names = {j.email: j.name for js in jurors.values() for j in js}
+    show_marks = viewer is not None and viewer.role == "super_admin"
     # Scores by the panel's own judges only.
-    totals: dict[tuple[uuid.UUID, uuid.UUID], list[int]] = defaultdict(list)
-    for panel_id, team_id, total in db.execute(
-        select(PanelTeam.panel_id, Score.team_id, Score.total)
+    scores: dict[tuple[uuid.UUID, uuid.UUID], list[Score]] = defaultdict(list)
+    for panel_id, score in db.execute(
+        select(PanelTeam.panel_id, Score)
         .join(Panel, Panel.id == PanelTeam.panel_id)
         .join(Score, (Score.team_id == PanelTeam.team_id) & (Score.round == Panel.round))
         .join(PanelJuror, (PanelJuror.panel_id == PanelTeam.panel_id) & (PanelJuror.juror_email == Score.juror_email))
         .where(PanelTeam.panel_id.in_(ids))
+        .order_by(Score.created_at)
     ).tuples():
-        totals[(panel_id, team_id)].append(total)
+        scores[(panel_id, score.team_id)].append(score)
+    round_of = {p.id: p.round for p in panels}
+    present: dict[tuple[str, uuid.UUID], int] = {}
+    if teams:
+        present = {
+            (round_, team_id): count
+            for round_, team_id, count in db.execute(
+                select(Attendance.round, Attendance.team_id, func.count())
+                .where(Attendance.team_id.in_([t.id for t in teams]))
+                .group_by(Attendance.round, Attendance.team_id)
+            ).tuples()
+        }
     by_panel: dict[uuid.UUID, list[PanelTeamOut]] = defaultdict(list)
     for panel_id, team in links:
-        marks = totals[(panel_id, team.id)]
+        mine = scores[(panel_id, team.id)]
         by_panel[panel_id].append(
             PanelTeamOut(
                 **summaries[team.id].model_dump(),
                 tent=tents.get(team.id),
-                scores=len(marks),
-                average=round(mean(marks), 2) if marks else None,
+                scores=len(mine),
+                average=round(mean(s.total for s in mine), 2) if mine else None,
+                judge_scores=[
+                    PanelScoreOut(
+                        juror_email=s.juror_email,
+                        juror_name=names.get(s.juror_email, s.juror_email),
+                        marks=list(s.marks),
+                        total=s.total,
+                        remarks=s.remarks,
+                        updated_at=s.updated_at,
+                        edited_by=s.edited_by,
+                    )
+                    for s in mine
+                ]
+                if show_marks
+                else None,
+                present=present.get((round_of[panel_id], team.id), 0),
             )
         )
     return [
         PanelOut(
             id=p.id,
             round=p.round,
+            building=p.building,
             name=p.name,
             location=p.location,
+            slot_start=p.slot_start,
+            slot_end=p.slot_end,
             department=p.department,
             jurors=sorted(jurors[p.id], key=lambda j: not j.chair),
             teams=by_panel[p.id],
+            can_edit=viewer is not None and _can_edit(viewer, p),
         )
         for p in panels
     ]
@@ -263,7 +339,13 @@ def round_out(db: Session, settings: Settings, round_: str) -> RoundOut:
 
 def overview(db: Session, admin: Admin, settings: Settings, round_: str) -> JudgingOut:
     _check_view(admin, round_)
-    panels = list(db.scalars(select(Panel).where(*_panel_scope(admin, round_)).order_by(Panel.department.nullsfirst(), Panel.name_key)))
+    panels = list(
+        db.scalars(
+            select(Panel)
+            .where(*_panel_scope(admin, round_))
+            .order_by(Panel.department.nullsfirst(), Panel.slot_start.nullsfirst(), Panel.building, Panel.name_key)
+        )
+    )
     allotted = select(PanelTeam.team_id).where(PanelTeam.round == round_)
     eligible = _eligible_condition(round_, admin.department if admin.role == "admin" and round_ == "department" else None)
     unallotted = list(
@@ -277,6 +359,7 @@ def overview(db: Session, admin: Admin, settings: Settings, round_: str) -> Judg
     return JudgingOut(
         round=round_out(db, settings, round_),
         can_manage=admin.role == "super_admin",
+        can_create=admin.role == "super_admin" or (round_ == "department" and _manages_rooms(admin)),
         panels=_panels_out(db, panels, admin),
         unallotted=admin_service.summaries(db, unallotted),
         tents=tents,
@@ -356,13 +439,20 @@ def _juror_out(db: Session, jurors: list[Juror]) -> list[JurorOut]:
     ]
 
 
+def _require_room_manager(admin: Admin) -> None:
+    if not _manages_rooms(admin):
+        raise ApiError("Only super admins and department admins manage judges.", 403)
+
+
 def list_jurors(db: Session, admin: Admin) -> list[JurorOut]:
-    _require_super(admin)
+    _require_room_manager(admin)
     return _juror_out(db, list(db.scalars(select(Juror).order_by(Juror.kind, Juror.name))))
 
 
 def add_juror(db: Session, admin: Admin, data: JurorInput) -> JurorOut:
-    _require_super(admin)
+    _require_room_manager(admin)
+    if admin.role == "admin" and data.kind == "faculty" and data.department == admin.department:
+        raise ApiError(f"Faculty of {admin.department} cannot judge {admin.department} teams. Choose a judge from another department.", 422)
     if db.get(Juror, data.email) is not None:
         raise ApiError("This email is already a judge.", 409)
     juror = Juror(
@@ -386,10 +476,12 @@ def add_juror(db: Session, admin: Admin, data: JurorInput) -> JurorOut:
 
 
 def remove_juror(db: Session, admin: Admin, email: str) -> None:
-    _require_super(admin)
+    _require_room_manager(admin)
     juror = db.scalar(select(Juror).where(Juror.email == email.strip().lower()).with_for_update())
     if juror is None:
         raise ApiError("No judge with this email exists.", 404)
+    if admin.role != "super_admin" and juror.created_by != admin.email:
+        raise ApiError("You can remove only the judges you added. Ask a super admin for the others.", 403)
     if db.scalar(select(func.count()).select_from(Score).where(Score.juror_email == juror.email)):
         raise ApiError("This judge has already scored teams, so they cannot be removed.", 409)
     if db.scalar(select(func.count()).select_from(PanelJuror).where(PanelJuror.juror_email == juror.email)):
@@ -402,59 +494,61 @@ def remove_juror(db: Session, admin: Admin, email: str) -> None:
 # ---------- Rooms and panels ----------
 
 
-def _panel_name_taken(exc: IntegrityError) -> bool:
-    return "uq_panels_round_name_key" in violated_constraint(exc)
+def _check_free(db: Session, round_: str, place: PanelPlace, exclude: uuid.UUID | None = None) -> None:
+    """The same room (building and name) cannot hold two panels of a round at overlapping times."""
+    # Serialises room bookings, so two admins saving the same room at once cannot both succeed.
+    admin_service._lock_state(db, "panels_lock")
+    same_room = select(Panel).where(
+        Panel.round == round_, func.lower(Panel.building) == place.building.lower(), Panel.name_key == place.name.lower()
+    )
+    for other in db.scalars(same_room):
+        if other.id == exclude:
+            continue
+        # A room without a slot is booked for the whole round.
+        if place.slot_start is None or other.slot_start is None or (place.slot_start < other.slot_end and other.slot_start < place.slot_end):  # type: ignore[operator]
+            when = slot_label(other.slot_start, other.slot_end) or "for this round"
+            whose = f" ({other.department} teams)" if other.department else ""
+            raise ApiError(f"{room_label(other)} is already booked {when}{whose}. Choose another room or time.", 409)
+
+
+def _describe_room(panel: Panel) -> str:
+    parts = [room_label(panel), slot_label(panel.slot_start, panel.slot_end), panel.location]
+    return ", ".join(p for p in parts if p)
 
 
 def create_panel(db: Session, admin: Admin, data: PanelInput) -> PanelOut:
-    _require_super(admin)
+    _require_creator(admin, data.round, data.department)
+    _check_free(db, data.round, data)
     panel = Panel(
         round=data.round,
+        building=data.building,
         name=data.name,
         name_key=data.name.lower(),
         location=data.location,
+        slot_start=data.slot_start,
+        slot_end=data.slot_end,
         department=data.department,
         created_by=admin.email,
     )
     db.add(panel)
     kind = f"Room for {data.department}" if data.round == "department" else "Finale panel"
-    audit.record(
-        db,
-        admin.email,
-        "judging.panel_created",
-        detail=f"{kind}: {data.name}{', ' + data.location if data.location else ''}",
-        department=data.department,
-    )
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        if _panel_name_taken(exc):
-            raise ApiError(f'"{data.name}" already exists in this round. Choose another name.', 409) from exc
-        raise
-    return _panels_out(db, [panel])[0]
+    audit.record(db, admin.email, "judging.panel_created", detail=f"{kind}: {_describe_room(panel)}", department=data.department)
+    db.commit()
+    return _panels_out(db, [panel], admin)[0]
 
 
 def update_panel(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelUpdateInput) -> PanelOut:
-    _require_super(admin)
     panel = _lock_panel(db, panel_id)
-    name = " ".join(data.name.split())
-    panel.name, panel.name_key, panel.location = name, name.lower(), data.location
-    audit.record(
-        db,
-        admin.email,
-        "judging.panel_updated",
-        detail=f"{name}{', ' + data.location if data.location else ''}",
-        department=panel.department,
-    )
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        if _panel_name_taken(exc):
-            raise ApiError(f'"{name}" already exists in this round. Choose another name.', 409) from exc
-        raise
-    return _panels_out(db, [panel])[0]
+    _require_editor(admin, panel)
+    if panel.round == "department" and (not data.building or data.slot_start is None):
+        raise ApiError("A department room needs its building and time slot.", 422)
+    _check_free(db, panel.round, data, exclude=panel.id)
+    before = _describe_room(panel)
+    panel.building, panel.name, panel.name_key, panel.location = data.building, data.name, data.name.lower(), data.location
+    panel.slot_start, panel.slot_end = data.slot_start, data.slot_end
+    audit.record(db, admin.email, "judging.panel_updated", detail=f"{_describe_room(panel)} (was: {before})", department=panel.department)
+    db.commit()
+    return _panels_out(db, [panel], admin)[0]
 
 
 def _scored(db: Session, panel: Panel, *, team_ids: list[uuid.UUID] | None = None, juror_emails: list[str] | None = None) -> bool:
@@ -474,19 +568,19 @@ def _scored(db: Session, panel: Panel, *, team_ids: list[uuid.UUID] | None = Non
 
 
 def delete_panel(db: Session, admin: Admin, panel_id: uuid.UUID) -> None:
-    _require_super(admin)
     panel = _lock_panel(db, panel_id)
+    _require_editor(admin, panel)
     if _scored(db, panel):
         raise ApiError("Teams in this room have already been scored, so it cannot be deleted.", 409)
     db.delete(panel)
-    audit.record(db, admin.email, "judging.panel_deleted", detail=panel.name, department=panel.department)
+    audit.record(db, admin.email, "judging.panel_deleted", detail=_describe_room(panel), department=panel.department)
     db.commit()
 
 
 def set_panel_teams(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelTeamsInput) -> PanelOut:
     """Replaces the teams allotted to a room or panel."""
-    _require_super(admin)
     panel = _lock_panel(db, panel_id)
+    _require_editor(admin, panel)
     wanted = list(dict.fromkeys(data.team_ids))
     current = set(db.scalars(select(PanelTeam.team_id).where(PanelTeam.panel_id == panel.id)))
     removed = [t for t in current if t not in wanted]
@@ -505,13 +599,13 @@ def set_panel_teams(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelT
                     422,
                 )
         elsewhere = db.execute(
-            select(Team.number, Panel.name)
+            select(Team.number, Panel)
             .join(PanelTeam, PanelTeam.team_id == Team.id)
             .join(Panel, Panel.id == PanelTeam.panel_id)
             .where(PanelTeam.round == panel.round, PanelTeam.team_id.in_(added), PanelTeam.panel_id != panel.id)
         ).first()
         if elsewhere:
-            raise ApiError(f"IT26-{elsewhere[0]:04d} is already allotted to {elsewhere[1]}. Remove it there first.", 409)
+            raise ApiError(f"IT26-{elsewhere[0]:04d} is already allotted to {room_label(elsewhere[1])}. Remove it there first.", 409)
 
     db.execute(delete(PanelTeam).where(PanelTeam.panel_id == panel.id, PanelTeam.team_id.in_(removed)))
     for team_id in added:
@@ -520,7 +614,7 @@ def set_panel_teams(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelT
         db,
         admin.email,
         "judging.teams_allotted",
-        detail=f"{panel.name}: {len(wanted)} teams ({len(added)} added, {len(removed)} removed)",
+        detail=f"{room_label(panel)}: {len(wanted)} teams ({len(added)} added, {len(removed)} removed)",
         department=panel.department,
     )
     try:
@@ -530,13 +624,13 @@ def set_panel_teams(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelT
         if "uq_panel_teams_round_team" in violated_constraint(exc):
             raise ApiError("One of these teams was just allotted to another room. Reload and try again.", 409) from exc
         raise
-    return _panels_out(db, [panel])[0]
+    return _panels_out(db, [panel], admin)[0]
 
 
 def set_panel_jurors(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelJurorsInput) -> PanelOut:
     """Replaces a room's or panel's judges. At most one is the chair, who settles ties."""
-    _require_super(admin)
     panel = _lock_panel(db, panel_id)
+    _require_editor(admin, panel)
     emails = [j.email for j in data.jurors]
     if len(set(emails)) != len(emails):
         raise ApiError("A judge is listed more than once.", 422)
@@ -549,6 +643,9 @@ def set_panel_jurors(db: Session, admin: Admin, panel_id: uuid.UUID, data: Panel
             raise ApiError(f"{email} is not an appointed judge. Add them under Judges first.", 422)
         if panel.round == "department" and juror.kind == "faculty" and juror.department == panel.department:
             raise ApiError(f"{juror.name} is from {juror.department}. Department teams are judged by faculty of another department.", 422)
+        own = db.get(Admin, email)
+        if panel.round == "department" and own is not None and own.role == "admin" and own.department == panel.department:
+            raise ApiError(f"{juror.name} is a {panel.department} admin, so they cannot judge {panel.department} teams.", 422)
     current = set(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == panel.id)))
     removed = [e for e in current if e not in emails]
     if removed and _scored(db, panel, juror_emails=removed):
@@ -563,11 +660,11 @@ def set_panel_jurors(db: Session, admin: Admin, panel_id: uuid.UUID, data: Panel
         db,
         admin.email,
         "judging.judges_assigned",
-        detail=f"{panel.name}: {', '.join(emails) or 'no judges'} (chair: {chair})",
+        detail=f"{room_label(panel)}: {', '.join(emails) or 'no judges'} (chair: {chair})",
         department=panel.department,
     )
     db.commit()
-    return _panels_out(db, [panel])[0]
+    return _panels_out(db, [panel], admin)[0]
 
 
 # ---------- Tents ----------
@@ -620,18 +717,45 @@ def set_tents(db: Session, admin: Admin, settings: Settings, data: TentsInput) -
 # ---------- Attendance sheets ----------
 
 
-def attendance(db: Session, admin: Admin, round_: str, panel_id: uuid.UUID | None) -> AttendanceSheet:
-    """Teams and every member, for a room's (or panel's) attendance sheet, or every finale team in tent order."""
+def attendance(db: Session, admin: Admin, round_: str, panel_id: uuid.UUID | None, department: str | None = None) -> AttendanceSheet:
+    """
+    Every member of a room's (or panel's) teams with their attendance, for the screen and the printed sheet; or a
+    whole department's teams (department round), or every finale team in stall order.
+    """
     _check_view(admin, round_)
-    jurors: list[str] = []
     if panel_id:
         panel = _visible_panel(db, admin, panel_id)
         if panel.round != round_:
             raise ApiError("This room belongs to the other round.", 422)
-        panel_teams = select(Team).join(PanelTeam, PanelTeam.team_id == Team.id).where(PanelTeam.panel_id == panel.id)
+        statement = select(Team).join(PanelTeam, PanelTeam.team_id == Team.id).where(PanelTeam.panel_id == panel.id)
         if admin.role in ("startup_admin", "admin"):
-            panel_teams = panel_teams.where(admin_service.team_scope(admin))
-        teams = list(db.scalars(panel_teams.order_by(Team.number)))
+            statement = statement.where(admin_service.team_scope(admin))
+        return _sheet(db, round_, list(db.scalars(statement.order_by(Team.number))), panel=panel)
+    if round_ == "department":
+        department = admin.department if admin.role == "admin" else department
+        if not department:
+            raise ApiError("Choose a room or a department.", 422)
+        if department not in rules.NOMINATING_DEPARTMENTS:
+            raise ApiError(f'Unknown department "{department}".', 422)
+        teams = list(db.scalars(select(Team).where(_eligible_condition("department", department)).order_by(Team.number)))
+        return _sheet(db, round_, teams, title=f"{department} teams · department round")
+    teams = list(db.scalars(select(Team).where(_eligible_condition("final"), admin_service.team_scope(admin)).order_by(Team.number)))
+    return _sheet(db, round_, teams, title="Grand Finale · all teams")
+
+
+def judge_attendance(db: Session, juror: Juror, panel_id: uuid.UUID) -> AttendanceSheet:
+    """A judge's own room: its teams and who is present (judges may mark attendance there)."""
+    panel = db.get(Panel, panel_id)
+    if panel is None or db.get(PanelJuror, (panel_id, juror.email)) is None:
+        raise ApiError("You are not a judge in this room.", 403)
+    teams = list(db.scalars(select(Team).join(PanelTeam, PanelTeam.team_id == Team.id).where(PanelTeam.panel_id == panel.id).order_by(Team.number)))
+    return _sheet(db, panel.round, teams, panel=panel)
+
+
+def _sheet(db: Session, round_: str, teams: list[Team], *, panel: Panel | None = None, title: str = "") -> AttendanceSheet:
+    team_ids = [t.id for t in teams]
+    jurors: list[str] = []
+    if panel is not None:
         jurors = [
             f"{juror.name}{' (chair)' if link.chair else ''}"
             for link, juror in db.execute(
@@ -641,27 +765,42 @@ def attendance(db: Session, admin: Admin, round_: str, panel_id: uuid.UUID | Non
                 .order_by(PanelJuror.chair.desc(), Juror.name)
             ).tuples()
         ]
-        title = f"{panel.name}{' · ' + panel.department + ' teams' if panel.department else ''}"
-        location = panel.location
-    else:
-        if round_ != "final":
-            raise ApiError("Choose a room.", 422)
-        teams = list(db.scalars(select(Team).where(_eligible_condition("final"), admin_service.team_scope(admin)).order_by(Team.number)))
-        title, location = "Grand Finale · all teams", ""
-    tents = _tents(db, [t.id for t in teams])
+        title = f"{room_label(panel)}{' · ' + panel.department + ' teams' if panel.department else ''}"
+    tents = _tents(db, team_ids)
+    rooms: dict[uuid.UUID, Panel] = {}
+    if team_ids:
+        rooms = dict(
+            db.execute(
+                select(PanelTeam.team_id, Panel).join(Panel, Panel.id == PanelTeam.panel_id).where(PanelTeam.round == round_, PanelTeam.team_id.in_(team_ids))
+            )
+            .tuples()
+            .all()
+        )
     if round_ == "final":
-        # Tent order, as organisers walk the tents; teams without a tent last.
+        # Stall order, as organisers walk the stalls; teams without a stall last.
         teams.sort(key=lambda t: (tents.get(t.id) is None, _natural(tents.get(t.id) or ""), t.number))
+    elif panel is None:
+        # A department's sheet, grouped by room and time slot; teams without a room last.
+        def order(t: Team) -> tuple:
+            room = rooms.get(t.id)
+            start = room.slot_start.timestamp() if room and room.slot_start else 0
+            return (room is None, start, _natural(room_label(room)) if room else (), t.number)
+
+        teams.sort(key=order)
+    present: dict[uuid.UUID, Attendance] = {}
     members: dict[uuid.UUID, list[AttendanceMember]] = defaultdict(list)
     if teams:
+        present = {a.user_id: a for a in db.scalars(select(Attendance).where(Attendance.round == round_, Attendance.team_id.in_(team_ids)))}
         for member, profile in db.execute(
             select(TeamMember, Profile)
             .join(Profile, Profile.user_id == TeamMember.user_id)
-            .where(TeamMember.team_id.in_([t.id for t in teams]))
+            .where(TeamMember.team_id.in_(team_ids))
             .order_by(TeamMember.role != "leader", Profile.full_name)
         ).tuples():
+            mark = present.get(member.user_id)
             members[member.team_id].append(
                 AttendanceMember(
+                    user_id=member.user_id,
                     full_name=profile.full_name,
                     role=member.role,
                     year=profile.year,
@@ -670,12 +809,19 @@ def attendance(db: Session, admin: Admin, round_: str, panel_id: uuid.UUID | Non
                     institution=profile.institution,
                     roll_number=profile.roll_number,
                     phone=profile.phone,
+                    present_at=mark.marked_at if mark else None,
+                    marked_by=mark.marked_by if mark else None,
+                    method=mark.method if mark else None,
                 )
             )
     return AttendanceSheet(
         round=round_,
         title=title,
-        location=location,
+        building=panel.building if panel else "",
+        room=panel.name if panel else "",
+        location=panel.location if panel else "",
+        slot_start=panel.slot_start if panel else None,
+        slot_end=panel.slot_end if panel else None,
         jurors=jurors,
         teams=[
             AttendanceTeam(
@@ -688,6 +834,7 @@ def attendance(db: Session, admin: Admin, round_: str, panel_id: uuid.UUID | Non
                 institution=t.institution,
                 department=t.department,
                 members=members[t.id],
+                room=room_label(rooms[t.id]) if t.id in rooms else None,
             )
             for t in teams
         ],
@@ -779,7 +926,7 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
                 RankedTeam(
                     position=index + 1 if average is not None else None,
                     team=summaries[team.id],
-                    panel=panel.name,
+                    panel=room_label(panel),
                     scores=len(marks[team.id]),
                     judges=judges.get(panel.id, 0),
                     average=average,
@@ -854,7 +1001,7 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
             .order_by(TeamMember.role != "leader", Profile.full_name)
         ).tuples():
             members[member.team_id].append(
-                JudgeMemberOut(full_name=profile.full_name, role=member.role, year=profile.year, course=profile.course)
+                JudgeMemberOut(full_name=profile.full_name, role=member.role, year=profile.year, course=profile.course, department=profile.department)
             )
         for score in db.scalars(select(Score).where(Score.juror_email == juror.email, Score.team_id.in_(team_ids))):
             mine[(score.round, score.team_id)] = score
@@ -888,8 +1035,11 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
             JudgePanelOut(
                 id=panel.id,
                 round=panel.round,
+                building=panel.building,
                 name=panel.name,
                 location=panel.location,
+                slot_start=panel.slot_start,
+                slot_end=panel.slot_end,
                 department=panel.department,
                 chair=link.chair,
                 open=panel.round in open_rounds,
@@ -901,11 +1051,14 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
 
 
 def _score_out(score: Score) -> ScoreOut:
-    return ScoreOut(marks=list(score.marks), total=score.total, remarks=score.remarks, updated_at=score.updated_at)
+    return ScoreOut(marks=list(score.marks), total=score.total, remarks=score.remarks, updated_at=score.updated_at, edited_by=score.edited_by)
+
+
+FINAL_SCORE = "Your marks for this team are already submitted and are final. Only a super admin can change them."
 
 
 def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUID, data: ScoreInput) -> ScoreOut:
-    """A judge's marks for a team of their own panel, while the round is open. Saving again replaces them."""
+    """A judge's marks for a team of their own panel, while the round is open. Once submitted they are final."""
     link = db.scalar(select(PanelJuror).where(PanelJuror.panel_id == panel_id, PanelJuror.juror_email == juror.email))
     panel = db.get(Panel, panel_id)
     if link is None or panel is None:
@@ -933,13 +1086,14 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
             created_at=now,
             updated_at=now,
         )
-        .on_conflict_do_update(
-            index_elements=["round", "team_id", "juror_email"],
-            set_={"marks": data.marks, "total": sum(data.marks), "remarks": data.remarks, "updated_at": now},
-        )
+        # A second submission (another tab, a double tap) never overwrites the first.
+        .on_conflict_do_nothing(index_elements=["round", "team_id", "juror_email"])
+        .returning(Score.id)
     )
-    db.execute(statement)
-    audit.record(db, juror.email, "judging.scored", team, f"{sum(data.marks)}/{rules.RUBRIC_TOTAL} in {panel.name}")
+    if db.execute(statement).first() is None:
+        db.rollback()
+        raise ApiError(FINAL_SCORE, 409)
+    audit.record(db, juror.email, "judging.scored", team, f"{sum(data.marks)}/{rules.RUBRIC_TOTAL} in {room_label(panel)}")
     db.commit()
     score = db.scalar(
         select(Score)
@@ -948,3 +1102,42 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
     )
     assert score is not None
     return _score_out(score)
+
+
+def edit_score(db: Session, admin: Admin, panel_id: uuid.UUID, team_id: uuid.UUID, juror_email: str, data: AdminScoreInput) -> ScoreOut:
+    """
+    A super admin changes a judge's submitted marks, or enters them for the judge (e.g. from a paper sheet).
+    Works whether or not the round is open; the old and new marks and the reason go into the activity log.
+    """
+    _require_super(admin)
+    panel = _lock_panel(db, panel_id)
+    juror_email = juror_email.strip().lower()
+    if db.get(PanelJuror, (panel.id, juror_email)) is None:
+        raise ApiError("This judge is not in this room.", 422)
+    if db.get(PanelTeam, (panel.id, team_id)) is None:
+        raise ApiError("This team is not allotted to this room.", 422)
+    team = db.get(Team, team_id)
+    assert team is not None
+    current = db.scalar(
+        select(Score).where(Score.round == panel.round, Score.team_id == team_id, Score.juror_email == juror_email).with_for_update()
+    )
+    total = sum(data.marks)
+    if current is None:
+        current = Score(round=panel.round, team_id=team_id, juror_email=juror_email, marks=data.marks, total=total, remarks=data.remarks)
+        db.add(current)
+        was = "no marks"
+    else:
+        was = f"{current.total}/{rules.RUBRIC_TOTAL} {list(current.marks)}"
+        current.marks, current.total, current.remarks = data.marks, total, data.remarks
+        current.updated_at = utcnow()
+    current.edited_by = admin.email
+    audit.record(
+        db,
+        admin.email,
+        "judging.score_edited",
+        team,
+        f"{juror_email} in {room_label(panel)}: {total}/{rules.RUBRIC_TOTAL} {data.marks} (was: {was}). Reason: {data.reason}",
+    )
+    db.commit()
+    db.refresh(current)
+    return _score_out(current)

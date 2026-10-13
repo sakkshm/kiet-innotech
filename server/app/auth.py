@@ -256,3 +256,27 @@ def get_current_juror(
 
 
 CurrentJuror = Annotated[Juror, Depends(get_current_juror)]
+
+
+@dataclass(frozen=True)
+class Staff:
+    """Who is acting at an event desk: an organiser, a judge, or both (an organiser who also judges)."""
+
+    email: str
+    admin: Admin | None
+    juror: Juror | None
+
+
+def get_current_staff(
+    identity: Annotated[Identity, Depends(get_admin_identity)],
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Staff:
+    admin = find_admin(db, identity.email, settings)
+    juror = db.get(Juror, identity.email)
+    if admin is None and juror is None:
+        raise ApiError("This account is not an InnoTech26 organiser or judge.", 403)
+    return Staff(email=identity.email, admin=admin, juror=juror)
+
+
+CurrentStaff = Annotated[Staff, Depends(get_current_staff)]

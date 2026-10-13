@@ -4,6 +4,8 @@ only ever reads or changes KIET teams and students of their own department; an o
 students from other colleges and schools; a startup admin only startups; a super admin sees everything.
 """
 
+import json
+import logging
 import uuid
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
@@ -36,6 +38,7 @@ from ..models import (
     utcnow,
 )
 from ..schemas import (
+    QuotasInput,
     AdminInput,
     AdminMemberOut,
     AdminOut,
@@ -68,6 +71,8 @@ from ..schemas import (
 )
 from . import audit, schedule
 from .serializers import invitation_out, profile_out
+
+logger = logging.getLogger(__name__)
 
 RESULTS_KEY = "results_published"
 STATUSES = ("draft", "submitted", "withdrawn", "disqualified")
@@ -1135,8 +1140,64 @@ def _board_access(admin: Admin, department: str) -> None:
         raise ApiError(f"You can only nominate finalists for {admin.department}.", 403)
 
 
+QUOTAS_KEY = "finalist_quotas"
+
+
+def quotas(db: Session) -> dict[tuple[str, int], int]:
+    """How many teams each department may nominate per category: the event document's numbers, as a super admin changed them."""
+    out = {(d, c): rules.finalist_quota(d, c) for d in rules.NOMINATING_DEPARTMENTS for c in rules.CATEGORIES}
+    row = db.get(AppState, QUOTAS_KEY)
+    try:
+        stored = json.loads(row.value) if row and row.value else {}
+    except ValueError:
+        logger.error("Ignoring an unreadable finalist quota row")
+        stored = {}
+    for department, cells in (stored if isinstance(stored, dict) else {}).items():
+        for category, quota in (cells if isinstance(cells, dict) else {}).items():
+            key = (rules.canonical_department(department), int(category) if str(category).isdigit() else 0)
+            if key in out and isinstance(quota, int) and 0 <= quota <= 10:
+                out[key] = quota
+    return out
+
+
+def save_quotas(db: Session, admin: Admin, data: QuotasInput, settings: Settings) -> FinalistSummaryOut:
+    _require_super(admin, "change the finalist quotas")
+    # Same lock as nominating and publishing.
+    _lock_state(db, f"{RESULTS_KEY}_lock")
+    if _results_published(db):
+        raise ApiError("Results have been published, so the quotas can no longer change.", 409)
+    current = quotas(db)
+    eligible_ids = {t.id for t in _eligible(db)}
+    nominated = Counter((n.department, n.category) for n in db.scalars(select(FinalistNomination)) if n.team_id in eligible_ids)
+    changes = []
+    for cell in data.quotas:
+        key = (cell.department, cell.category)
+        if key not in current:
+            raise ApiError(f'Unknown department "{cell.department}" or category {cell.category}.', 422)
+        if cell.quota < nominated[key]:
+            raise ApiError(
+                f"{cell.department} has already nominated {nominated[key]} teams in Category {cell.category}. "
+                "Ask them to remove a nomination first, or keep the quota.",
+                409,
+            )
+        if current[key] != cell.quota:
+            changes.append(f"{cell.department} Cat {cell.category}: {current[key]} to {cell.quota}")
+            current[key] = cell.quota
+    if changes:
+        stored: dict[str, dict[str, int]] = defaultdict(dict)
+        for (department, category), quota in current.items():
+            stored[department][str(category)] = quota
+        state = _lock_state(db, QUOTAS_KEY)
+        state.value = json.dumps(stored)
+        state.updated_at = utcnow()
+        audit.record(db, admin.email, "finalists.quotas_updated", detail="; ".join(changes))
+    db.commit()
+    return finalist_summary(db, admin, settings)
+
+
 def finalist_board(db: Session, admin: Admin, department: str, settings: Settings) -> FinalistBoardOut:
     _board_access(admin, department)
+    limits_ = quotas(db)
     window = schedule.load(db, settings)
     eligible = _eligible(db, department)
     eligible_ids = {t.id for t in eligible}
@@ -1155,7 +1216,7 @@ def finalist_board(db: Session, admin: Admin, department: str, settings: Setting
         categories=[
             FinalistCategoryOut(
                 category=number,
-                quota=rules.finalist_quota(department, number),
+                quota=limits_[(department, number)],
                 teams=summaries(db, [t for t in eligible if t.category == number]),
                 nominated=[n.team_id for n in nominated if n.category == number],
             )
@@ -1186,6 +1247,7 @@ def save_finalists(db: Session, admin: Admin, department: str, data: Nominations
     state = _lock_state(db, f"finalists:{department}")
 
     eligible = {t.id: t for t in _eligible(db, department, lock=True)}
+    limits_ = quotas(db)
     seen_categories: set[int] = set()
     for entry in data.nominations:
         if entry.category not in rules.CATEGORIES:
@@ -1194,7 +1256,7 @@ def save_finalists(db: Session, admin: Admin, department: str, data: Nominations
             raise ApiError(f"Category {entry.category} is listed twice.", 422)
         seen_categories.add(entry.category)
         team_ids = list(dict.fromkeys(entry.team_ids))
-        quota = rules.finalist_quota(department, entry.category)
+        quota = limits_[(department, entry.category)]
         if len(team_ids) > quota:
             raise ApiError(
                 f"{department} can nominate at most {quota} {'team' if quota == 1 else 'teams'} in Category {entry.category}.", 422
@@ -1219,6 +1281,7 @@ def save_finalists(db: Session, admin: Admin, department: str, data: Nominations
 
 def finalist_summary(db: Session, admin: Admin, settings: Settings) -> FinalistSummaryOut:
     _require_super(admin, "see every department's finalists")
+    limits_ = quotas(db)
     eligible = _eligible(db)
     eligible_count = Counter((t.department, t.category) for t in eligible)
     eligible_ids = {t.id for t in eligible}
@@ -1238,7 +1301,7 @@ def finalist_summary(db: Session, admin: Admin, settings: Settings) -> FinalistS
                 categories=[
                     MatrixCell(
                         category=number,
-                        quota=rules.finalist_quota(department, number),
+                        quota=limits_[(department, number)],
                         nominated=nominated_count[(department, number)],
                         eligible=eligible_count[(department, number)],
                     )
@@ -1441,7 +1504,7 @@ def audit_log(db: Session, admin: Admin, team_id: uuid.UUID | None, limit: int) 
     return [_audit_out(entry) for entry in db.scalars(statement)]
 
 
-ActivityKind = Literal["team", "member", "invitation", "finalists", "results", "admin", "schedule", "judging", "student"]
+ActivityKind = Literal["team", "member", "invitation", "finalists", "results", "admin", "schedule", "judging", "attendance", "student"]
 
 
 class ActivityFilters(Paging):

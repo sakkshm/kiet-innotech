@@ -705,10 +705,35 @@ class JurorOut(BaseModel):
     added_by: str | None
 
 
-class PanelInput(Input):
-    round: rules.JudgingRound
-    name: str = Field(min_length=2, max_length=60)
+class PanelPlace(Input):
+    """Where and when a room sits: a building, the room in it, optional directions, and its time slot."""
+
+    building: str = Field(default="", max_length=60)
+    # The room's name or number in its building (a finale panel's name).
+    name: str = Field(min_length=1, max_length=60)
     location: str = Field(default="", max_length=120)
+    slot_start: AwareDatetime | None = None
+    slot_end: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def check_place(self) -> "PanelPlace":
+        self.building = " ".join(self.building.split())
+        self.name = " ".join(self.name.split())
+        self.location = " ".join(self.location.split())
+        if not self.name:
+            raise ValueError("Enter the room's name or number.")
+        if (self.slot_start is None) != (self.slot_end is None):
+            raise ValueError("Give the time slot's start and end.")
+        if self.slot_start and self.slot_end:
+            if self.slot_end <= self.slot_start:
+                raise ValueError("The time slot must end after it starts.")
+            if self.slot_end - self.slot_start > rules.MAX_SLOT:
+                raise ValueError("A time slot can be at most 12 hours long.")
+        return self
+
+
+class PanelInput(PanelPlace):
+    round: rules.JudgingRound
     # Department round: whose teams are judged in this room.
     department: str | None = None
 
@@ -719,18 +744,20 @@ class PanelInput(Input):
 
     @model_validator(mode="after")
     def check_department(self) -> "PanelInput":
-        self.name = " ".join(self.name.split())
         if self.round == "department":
-            if self.department not in rules.DEPARTMENTS:
+            if self.department not in rules.DEPARTMENTS or self.department == rules.CLUB_DEPARTMENT:
                 raise ValueError("Choose the department whose teams are judged in this room.")
+            if not self.building:
+                raise ValueError("Enter the building the room is in.")
+            if self.slot_start is None:
+                raise ValueError("Give the room's time slot.")
         else:
             self.department = None
         return self
 
 
-class PanelUpdateInput(Input):
-    name: str = Field(min_length=2, max_length=60)
-    location: str = Field(default="", max_length=120)
+class PanelUpdateInput(PanelPlace):
+    pass
 
 
 class PanelTeamsInput(Input):
@@ -748,7 +775,7 @@ class PanelJurorInput(Input):
 
 
 class PanelJurorsInput(Input):
-    jurors: list[PanelJurorInput] = Field(max_length=10)
+    jurors: list[PanelJurorInput] = Field(max_length=20)
 
 
 class PanelJurorOut(BaseModel):
@@ -760,21 +787,41 @@ class PanelJurorOut(BaseModel):
     chair: bool
 
 
+class PanelScoreOut(BaseModel):
+    juror_email: str
+    juror_name: str
+    marks: list[int]
+    total: int
+    remarks: str
+    updated_at: datetime
+    # A super admin who changed the judge's submitted marks.
+    edited_by: str | None
+
+
 class PanelTeamOut(TeamSummaryOut):
     tent: str | None = None
     # Scores recorded by this panel's judges, and their average total (out of 50).
     scores: int = 0
     average: float | None = None
+    # Each judge's marks: super admins only (they alone can change a submitted score).
+    judge_scores: list[PanelScoreOut] | None = None
+    # Members marked present for this round.
+    present: int = 0
 
 
 class PanelOut(BaseModel):
     id: uuid.UUID
     round: str
+    building: str
     name: str
     location: str
+    slot_start: datetime | None
+    slot_end: datetime | None
     department: str | None
     jurors: list[PanelJurorOut]
     teams: list[PanelTeamOut]
+    # Whether the caller can change this room (super admins, and department admins for their own rooms).
+    can_edit: bool = False
 
 
 class RoundOut(BaseModel):
@@ -793,8 +840,10 @@ class TentRowOut(BaseModel):
 
 class JudgingOut(BaseModel):
     round: RoundOut
-    # True for super admins, who manage panels, judges and tents; everyone else sees this read-only.
+    # True for super admins, who open and lock rounds, allot stalls and see every judge's marks.
     can_manage: bool
+    # Whether the caller can create rooms in this round (super admins; department admins for their department).
+    can_create: bool = False
     panels: list[PanelOut]
     # Eligible teams of this round (in the caller's scope) not yet allotted to a panel.
     unallotted: list[TeamSummaryOut]
@@ -813,6 +862,7 @@ class TentsInput(Input):
 
 
 class AttendanceMember(BaseModel):
+    user_id: uuid.UUID
     full_name: str
     role: str
     year: int
@@ -821,6 +871,10 @@ class AttendanceMember(BaseModel):
     institution: str
     roll_number: str
     phone: str
+    # Marked present for this round: when, by whom, and how ("qr" or "manual").
+    present_at: datetime | None = None
+    marked_by: str | None = None
+    method: str | None = None
 
 
 class AttendanceTeam(BaseModel):
@@ -833,14 +887,83 @@ class AttendanceTeam(BaseModel):
     institution: str
     department: str | None
     members: list[AttendanceMember]
+    # The room (department round) or panel the team is allotted to, if any.
+    room: str | None = None
 
 
 class AttendanceSheet(BaseModel):
     round: str
     title: str
+    building: str = ""
+    room: str = ""
     location: str
+    slot_start: datetime | None = None
+    slot_end: datetime | None = None
     jurors: list[str]
     teams: list[AttendanceTeam]
+
+
+class ScanInput(Input):
+    code: str = Field(min_length=1, max_length=200)
+    round: rules.JudgingRound
+    # The room the scanner stands in, so a team from another room is flagged.
+    panel_id: uuid.UUID | None = None
+
+
+class ScanStudent(BaseModel):
+    user_id: uuid.UUID
+    full_name: str
+    roll_number: str
+    course: str
+    year: int
+    department: str | None
+    institution: str
+    participant_type: str
+    role: str
+
+
+class ScanOut(BaseModel):
+    # "marked" now, or "already" marked earlier.
+    result: Literal["marked", "already"]
+    student: ScanStudent
+    team: TeamSummaryOut
+    room: str | None
+    marked_at: datetime
+    marked_by: str
+    method: str
+    # Something the scanner should check, e.g. the team is allotted to another room.
+    warning: str | None = None
+
+
+class ManualAttendanceInput(Input):
+    user_id: uuid.UUID
+    round: rules.JudgingRound
+    # Why it is done by hand (no phone, pass not loading) or undone.
+    note: str = Field(min_length=3, max_length=300)
+
+
+class PassRound(BaseModel):
+    round: str
+    team_code: str
+    team_name: str
+    building: str | None = None
+    room: str | None = None
+    location: str | None = None
+    slot_start: datetime | None = None
+    slot_end: datetime | None = None
+    tent: str | None = None
+    present_at: datetime | None = None
+
+
+class PassOut(BaseModel):
+    # Null until the student is in a submitted team.
+    seed: str | None
+    # The IST day the seed is valid for; the portal fetches a new one each day.
+    day: date | None
+    period_seconds: int
+    server_time: datetime
+    user_id: uuid.UUID
+    rounds: list[PassRound]
 
 
 class RankedTeam(BaseModel):
@@ -886,6 +1009,27 @@ class ScoreOut(BaseModel):
     total: int
     remarks: str
     updated_at: datetime
+    edited_by: str | None = None
+
+
+class AdminScoreInput(ScoreInput):
+    # Why a super admin changes (or enters) a judge's marks; kept in the activity log.
+    reason: str = Field(min_length=5, max_length=300)
+
+
+class QuotaCell(Input):
+    department: str
+    category: int = Field(ge=1, le=8)
+    quota: int = Field(ge=0, le=10)
+
+    @field_validator("department", mode="before")
+    @classmethod
+    def legacy_department(cls, value):
+        return rules.canonical_department(value)
+
+
+class QuotasInput(Input):
+    quotas: list[QuotaCell] = Field(max_length=500)
 
 
 class JudgeMemberOut(BaseModel):
@@ -893,6 +1037,7 @@ class JudgeMemberOut(BaseModel):
     role: str
     year: int
     course: str
+    department: str | None = None
 
 
 class JudgeTeamOut(BaseModel):
@@ -915,8 +1060,11 @@ class JudgeTeamOut(BaseModel):
 class JudgePanelOut(BaseModel):
     id: uuid.UUID
     round: str
+    building: str
     name: str
     location: str
+    slot_start: datetime | None
+    slot_end: datetime | None
     department: str | None
     chair: bool
     # Scores can be saved only while the organisers keep this round open.

@@ -15,6 +15,19 @@ def marks(total_parts: list[int]) -> dict:
     return {"marks": total_parts, "remarks": ""}
 
 
+def room_body(department, building="CSIT Block", name="304", start="10:00", end="13:00", day="2026-10-22", **extra) -> dict:
+    """A department-round room: a building, a room in it and a time slot (IST)."""
+    return {
+        "round": "department",
+        "department": department,
+        "building": building,
+        "name": name,
+        "slot_start": f"{day}T{start}:00+05:30",
+        "slot_end": f"{day}T{end}:00+05:30",
+        **extra,
+    }
+
+
 @pytest.fixture
 def judging(world, settings):  # noqa: F811
     """Registration closed, three judges (IT faculty, CSE faculty, external) and a CSE room."""
@@ -29,7 +42,7 @@ def judging(world, settings):  # noqa: F811
     ):
         response = root.post("/admin/jurors", body)
         assert response.status_code == 201, response.text
-    room = root.post("/admin/panels", {"round": "department", "name": "Room 304", "location": "CSIT block", "department": "CSE"})
+    room = root.post("/admin/panels", room_body("CSE", location="2nd floor"))
     assert room.status_code == 201, room.text
     client = root.client
     return world | {
@@ -75,15 +88,39 @@ def test_an_admin_who_is_also_a_judge(judging):
     assert (me["role"], me["judge"]) == ("admin", True)
 
 
-def test_judge_management_is_for_super_admins(judging):
-    cse = judging["cse"]
-    assert cse.get("/admin/jurors").status_code == 403
-    assert (
-        cse.post("/admin/jurors", {"email": "x@kiet.edu", "name": "Xavier", "kind": "external", "organisation": "Y Labs"}).status_code
-        == 403
-    )
-    assert cse.post("/admin/panels", {"round": "department", "name": "Room 1", "department": "CSE"}).status_code == 403
-    root = judging["root"]
+def test_department_admins_manage_judges_and_their_own_rooms(judging, client):
+    cse, it, root = judging["cse"], judging["it"], judging["root"]
+    # Department admins add judges, but never faculty of their own department.
+    added = cse.post("/admin/jurors", {"email": "x@labs.com", "name": "Xavier", "kind": "external", "organisation": "Y Labs"})
+    assert added.status_code == 201 and added.json()["added_by"] == "cse.admin@kiet.edu"
+    own = cse.post("/admin/jurors", {"email": "own@kiet.edu", "name": "Own Dept", "kind": "faculty", "department": "CSE"})
+    assert own.status_code == 422 and "another department" in own.json()["detail"]
+    assert {j["email"] for j in cse.get("/admin/jurors").json()} >= {"x@labs.com", "it.prof@kiet.edu"}
+    # Rooms for their own department only, never the finale.
+    mine = cse.post("/admin/panels", room_body("CSE", building="G Block", name="112"))
+    assert mine.status_code == 201 and mine.json()["can_edit"] is True
+    assert cse.post("/admin/panels", room_body("IT", building="G Block", name="113")).status_code == 403
+    assert cse.post("/admin/panels", {"round": "final", "name": "Panel Z"}).status_code == 403
+    assert cse.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": [{"email": "x@labs.com", "chair": True}]}).status_code == 200
+    # Another department's admin cannot touch it.
+    place = {"building": "G Block", "name": "114", "slot_start": "2026-10-22T10:00:00+05:30", "slot_end": "2026-10-22T11:00:00+05:30"}
+    assert it.patch(f"/admin/panels/{mine.json()['id']}", place).status_code == 403
+    assert it.put(f"/admin/panels/{mine.json()['id']}/teams", {"team_ids": []}).status_code == 403
+    assert it.delete(f"/admin/panels/{mine.json()['id']}").status_code == 403
+    assert cse.patch(f"/admin/panels/{mine.json()['id']}", place).json()["name"] == "114"
+    # A department admin removes only judges they added (and only while unassigned).
+    assert cse.delete("/admin/jurors/judge@industry.com").status_code == 403
+    assert cse.delete("/admin/jurors/x@labs.com").status_code == 409
+    cse.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": []})
+    assert cse.delete("/admin/jurors/x@labs.com").status_code == 204
+    # A department admin cannot sit on their own department's panel, even as an external judge.
+    root.post("/admin/jurors", {"email": "cse.admin@kiet.edu", "name": "CSE Admin", "kind": "external", "organisation": "KIET"})
+    refused = root.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": [{"email": "cse.admin@kiet.edu"}]})
+    assert refused.status_code == 422 and "CSE admin" in refused.json()["detail"]
+    # The COE KIET admin has no department round, so no rooms.
+    root.post("/admin/admins", {"email": "coe.admin@kiet.edu", "name": "COE Admin", "role": "admin", "department": "COE"})
+    assert Api(client, "coe.admin@kiet.edu").post("/admin/panels", room_body("COE")).status_code == 422
+    assert Api(client, "coe.admin@kiet.edu").get("/admin/jurors").status_code == 403
     assert (
         root.post("/admin/jurors", {"email": "it.prof@kiet.edu", "name": "Again", "kind": "faculty", "department": "IT"}).status_code == 409
     )
@@ -98,10 +135,30 @@ def test_judge_management_is_for_super_admins(judging):
 
 def test_rooms_follow_the_rules(judging):
     root, room = judging["root"], judging["room"]
-    # Same name twice in a round is refused; the finale may reuse it.
-    assert root.post("/admin/panels", {"round": "department", "name": "room 304", "department": "IT"}).status_code == 409
-    assert root.post("/admin/panels", {"round": "final", "name": "Room 304"}).status_code == 201
-    assert root.post("/admin/panels", {"round": "department", "name": "No Dept"}).status_code == 422
+    assert (room["building"], room["name"], room["location"]) == ("CSIT Block", "304", "2nd floor")
+    # The same room cannot be booked twice at overlapping times (any case); back to back, another room or the finale is fine.
+    clash = root.post("/admin/panels", room_body("IT", building="csit  block", start="11:00", end="12:00"))
+    assert clash.status_code == 409 and "CSIT Block · 304 is already booked 22 Oct, 10:00 AM - 1:00 PM (CSE teams)" in clash.json()["detail"]
+    later = root.post("/admin/panels", room_body("IT", start="13:00", end="15:00"))
+    assert later.status_code == 201
+    assert root.post("/admin/panels", room_body("IT", name="305")).status_code == 201
+    assert root.post("/admin/panels", {"round": "final", "name": "304"}).status_code == 201
+    # Moving a room onto a booked slot is refused too.
+    place = {k: v for k, v in room_body("IT", start="12:00", end="14:00").items() if k not in ("round", "department")}
+    moved = root.patch(f"/admin/panels/{later.json()['id']}", place)
+    assert moved.status_code == 409
+    # A department room needs a department, a building and a sensible slot.
+    for bad in (
+        room_body(None),
+        room_body("COE"),
+        room_body("IT", building=""),
+        room_body("IT", start="12:00", end="11:00"),
+        room_body("IT", start="06:00", end="19:00"),
+        {**room_body("IT"), "slot_end": None},
+        {**room_body("IT"), "slot_start": None, "slot_end": None},
+        {**room_body("IT"), "slot_start": "2026-10-22T10:00:00"},
+    ):
+        assert root.post("/admin/panels", bad).status_code == 422, bad
     # Only submitted teams of the room's department.
     it_team = judging["teams"]["it_a"]["id"]
     assert root.put(f"/admin/panels/{room['id']}/teams", {"team_ids": [it_team]}).status_code == 422
@@ -120,21 +177,22 @@ def test_rooms_follow_the_rules(judging):
 def test_a_team_sits_in_one_room_per_round(judging):
     root = judging["root"]
     set_room(judging)
-    other = root.post("/admin/panels", {"round": "department", "name": "Room 305", "department": "CSE"}).json()
+    other = root.post("/admin/panels", room_body("CSE", name="305")).json()
     clash = root.put(f"/admin/panels/{other['id']}/teams", {"team_ids": [judging["teams"]["cse_a"]["id"]]})
-    assert clash.status_code == 409 and "Room 304" in clash.json()["detail"]
+    assert clash.status_code == 409 and "CSIT Block · 304" in clash.json()["detail"]
     overview = root.get("/admin/judging/department").json()
     # Every CSE team has a room; the super admin also sees other departments' teams still waiting.
     assert {t["name"] for t in overview["unallotted"]} == {"IT Alpha"} and len(overview["panels"]) == 2
 
 
-def test_department_admins_see_their_rooms_read_only(judging):
+def test_department_admins_see_only_their_rooms(judging):
     set_room(judging)
-    judging["root"].post("/admin/panels", {"round": "department", "name": "IT Room", "department": "IT"})
+    judging["root"].post("/admin/panels", room_body("IT", building="Main Block", name="IT Lab"))
     cse = judging["cse"].get("/admin/judging/department").json()
-    assert [p["name"] for p in cse["panels"]] == ["Room 304"] and cse["can_manage"] is False
+    assert [p["name"] for p in cse["panels"]] == ["304"] and cse["can_manage"] is False and cse["can_create"] is True
+    assert cse["panels"][0]["can_edit"] is True
     it = judging["it"].get("/admin/judging/department").json()
-    assert [p["name"] for p in it["panels"]] == ["IT Room"]
+    assert [p["name"] for p in it["panels"]] == ["IT Lab"]
     assert {t["name"] for t in it["unallotted"]} == {"IT Alpha"}
     assert judging["cse"].get("/admin/judging/final").status_code == 403
     assert judging["cse"].get("/admin/judging/department/attendance", params={"panel_id": judging["room"]["id"]}).status_code == 200
@@ -195,18 +253,37 @@ def test_scores_are_validated_and_scoped(judging):
         assert score(judge, room, team, bad).status_code == 422, bad
     saved = score(judge, room, team, [4, 3, 5, 2, 1, 0, 5, 5, 7])
     assert saved.status_code == 200 and saved.json()["total"] == 32
-    # Saving again replaces the marks.
-    assert score(judge, room, team, [5, 5, 5, 5, 5, 5, 5, 5, 9]).json()["total"] == 49
+    # Submitted marks are final for the judge.
+    again = score(judge, room, team, [5, 5, 5, 5, 5, 5, 5, 5, 9])
+    assert again.status_code == 409 and "Only a super admin" in again.json()["detail"]
+    # Only a super admin changes them, with a reason; the activity log keeps the old marks.
+    path = f"/admin/panels/{room['id']}/teams/{team['id']}/scores/it.prof@kiet.edu"
+    body = {"marks": [5, 5, 5, 5, 5, 5, 5, 5, 9], "remarks": "", "reason": "Judge asked to correct a typo"}
+    assert judging["cse"].put(path, body).status_code == 403
+    assert root.put(path, body | {"reason": "x"}).status_code == 422
+    assert root.put(path, body | {"marks": [6, 5, 5, 5, 5, 5, 5, 5, 9]}).status_code == 422
+    assert root.put(f"/admin/panels/{room['id']}/teams/{team['id']}/scores/cse.prof@kiet.edu", body).status_code == 422
+    edited = root.put(path, body)
+    assert edited.status_code == 200 and (edited.json()["total"], edited.json()["edited_by"]) == (49, "root@kiet.edu")
     mine = judge.get("/judge").json()["panels"][0]["teams"]
     assert next(t for t in mine if t["id"] == team["id"])["my_score"]["total"] == 49
+    log = root.get("/admin/activity", params={"kind": "judging", "page_size": 100}).json()["items"]
+    entry = next(e for e in log if e["action"] == "judging.score_edited")
+    assert "was: 32/50 [4, 3, 5, 2, 1, 0, 5, 5, 7]" in entry["detail"] and "correct a typo" in entry["detail"]
+    # The super admin can also enter marks for a judge who has none yet (e.g. from a paper sheet).
+    entered = root.put(f"/admin/panels/{room['id']}/teams/{judging['teams']['cse_b']['id']}/scores/judge@industry.com", body)
+    assert entered.status_code == 200
     # Not on this panel, a team from another room, a withdrawn team.
     assert score(judging["cse_prof"], room, team, FULL).status_code == 403
     assert score(judge, room, judging["teams"]["it_a"], FULL).status_code == 403
     root.post(f"/admin/teams/{judging['teams']['cse_c']['id']}/withdraw", {"reason": "Left the event"})
     assert score(judge, room, judging["teams"]["cse_c"], FULL).status_code == 409
-    # The scores show up for organisers, never for other judges.
+    # The scores show up for organisers, never for other judges; each judge's marks for super admins only.
     panel = root.get("/admin/judging/department").json()["panels"][0]
-    assert next(t for t in panel["teams"] if t["id"] == team["id"])["average"] == 49
+    row = next(t for t in panel["teams"] if t["id"] == team["id"])
+    assert row["average"] == 49 and [s["total"] for s in row["judge_scores"]] == [49]
+    cse_row = next(t for t in judging["cse"].get("/admin/judging/department").json()["panels"][0]["teams"] if t["id"] == team["id"])
+    assert cse_row["average"] == 49 and cse_row["judge_scores"] is None
     other = judging["external"].get("/judge").json()["panels"][0]["teams"]
     assert next(t for t in other if t["id"] == team["id"])["my_score"] is None
 
@@ -248,7 +325,8 @@ def test_rankings_use_the_tie_breakers(judging):
     assert group["teams"][0]["scores"] == 1 and group["teams"][0]["judges"] == 2
 
     # A full tie on all three: the chair decides, flagged, still no shared position.
-    score(judging["it_prof"], room, c, [5, 5, 3, 3, 5, 5, 4, 4, 6])
+    fix = {"marks": [5, 5, 3, 3, 5, 5, 4, 4, 6], "remarks": "", "reason": "Recounted the sheet"}
+    assert root.put(f"/admin/panels/{room['id']}/teams/{c['id']}/scores/it.prof@kiet.edu", fix).status_code == 200
     group = root.get("/admin/judging/department/rankings").json()["groups"][0]
     tied = [t for t in group["teams"] if t["team"]["name"] in ("CSE Alpha", "CSE Gamma")]
     assert [t["position"] for t in tied] == [2, 3] and tied[1]["tied"] is True
@@ -311,11 +389,15 @@ def test_finale_rankings_group_schools_separately(judging, settings):
 def test_attendance_sheet_for_a_room(judging):
     set_room(judging)
     sheet = judging["root"].get("/admin/judging/department/attendance", params={"panel_id": judging["room"]["id"]}).json()
-    assert sheet["title"] == "Room 304 · CSE teams" and sheet["location"] == "CSIT block"
+    assert sheet["title"] == "CSIT Block · 304 · CSE teams" and sheet["location"] == "2nd floor"
+    assert (sheet["building"], sheet["room"], sheet["slot_start"][:16]) == ("CSIT Block", "304", "2026-10-22T04:30")
     assert sheet["jurors"] == ["IT Professor (chair)", "Industry Judge"]
     assert [t["code"] for t in sheet["teams"]] == [judging["teams"][k]["code"] for k in ("cse_a", "cse_b", "cse_c")]
     assert {m["roll_number"] for t in sheet["teams"] for m in t["members"]} != {""}
     assert judging["root"].get("/admin/judging/department/attendance").status_code == 422
+    # A whole department's sheet, rooms first.
+    whole = judging["cse"].get("/admin/judging/department/attendance").json()
+    assert [t["room"] for t in whole["teams"]] == ["CSIT Block · 304"] * 3
 
 
 def test_judging_actions_are_audited(judging):

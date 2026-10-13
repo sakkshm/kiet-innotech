@@ -6,7 +6,7 @@ for guidance in the browser, so keep the two in step.
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -240,6 +240,12 @@ def normalise_join_code(code: str) -> str | None:
 
 JudgingRound = Literal["department", "final"]
 JUDGING_ROUNDS: tuple[JudgingRound, ...] = ("department", "final")
+# The longest time slot a judging room can have.
+MAX_SLOT = timedelta(hours=12)
+# Event passes: the QR code changes every minute and is accepted for two minutes after (one before, for clock drift).
+PASS_PERIOD_SECONDS = 60
+PASS_PAST_PERIODS = 2
+PASS_FUTURE_PERIODS = 1
 
 # Each category is judged with one of six common rubrics (event document: Evaluation Rubrics).
 RUBRIC_GROUPS = {1: "software", 2: "software", 3: "hardware", 4: "hardware", 5: "startup", 6: "genz", 7: "poster", 8: "cybershield"}

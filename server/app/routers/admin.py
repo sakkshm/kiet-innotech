@@ -6,13 +6,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
-from ..auth import CurrentAdmin, Identity, SuperAdmin, find_admin, get_admin_identity
+from ..auth import CurrentAdmin, CurrentStaff, Identity, SuperAdmin, find_admin, get_admin_identity
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..errors import ApiError
 from ..models import Juror
 from ..rules import JudgingRound
 from ..schemas import (
+    AdminScoreInput,
     AdminInput,
     AdminOut,
     AdminStudentInput,
@@ -27,6 +28,7 @@ from ..schemas import (
     JudgingOut,
     JurorInput,
     JurorOut,
+    ManualAttendanceInput,
     NominationsInput,
     OpenNowInput,
     PanelInput,
@@ -36,11 +38,15 @@ from ..schemas import (
     PanelUpdateInput,
     PublishInput,
     PublishOut,
+    QuotasInput,
     RankingsOut,
     ReasonInput,
     RestoreInput,
     RoundOut,
+    ScanInput,
+    ScanOut,
     ScheduleInput,
+    ScoreOut,
     ScheduleOut,
     StatsOut,
     StudentPage,
@@ -50,7 +56,7 @@ from ..schemas import (
     UnpublishInput,
 )
 from ..services import admin as service
-from ..services import judging, schedule
+from ..services import attendance, judging, schedule
 from ..services.admin import ActivityFilters, StudentFilters, TeamFilters
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -183,6 +189,11 @@ def finalist_board(
     return service.finalist_board(db, admin, department or admin.department or "", settings)
 
 
+@router.put("/finalists/quotas")
+def save_quotas(data: QuotasInput, admin: CurrentAdmin, db: Db, settings: AppSettings) -> FinalistSummaryOut:
+    return service.save_quotas(db, admin, data, settings)
+
+
 @router.put("/finalists/{department}")
 def save_finalists(
     department: Annotated[str, Path(max_length=20)], data: NominationsInput, admin: CurrentAdmin, db: Db, settings: AppSettings
@@ -290,8 +301,30 @@ def judging_rankings(
 
 
 @router.get("/judging/{round_}/attendance")
-def attendance_sheet(round_: JudgingRound, admin: CurrentAdmin, db: Db, panel_id: uuid.UUID | None = None) -> AttendanceSheet:
-    return judging.attendance(db, admin, round_, panel_id)
+def attendance_sheet(
+    round_: JudgingRound,
+    admin: CurrentAdmin,
+    db: Db,
+    panel_id: uuid.UUID | None = None,
+    department: Annotated[str | None, Query(max_length=20)] = None,
+) -> AttendanceSheet:
+    return judging.attendance(db, admin, round_, panel_id, department)
+
+
+@router.post("/attendance/scan")
+def scan_pass(data: ScanInput, staff: CurrentStaff, db: Db, settings: AppSettings) -> ScanOut:
+    return attendance.scan(db, staff, settings, data)
+
+
+@router.post("/attendance/mark")
+def mark_present(data: ManualAttendanceInput, staff: CurrentStaff, db: Db) -> ScanOut:
+    return attendance.mark_by_hand(db, staff, data)
+
+
+@router.post("/attendance/unmark", status_code=status.HTTP_204_NO_CONTENT)
+def unmark_present(data: ManualAttendanceInput, staff: CurrentStaff, db: Db) -> Response:
+    attendance.unmark(db, staff, data)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.put("/judging/final/tents")
@@ -318,6 +351,18 @@ def delete_panel(panel_id: uuid.UUID, admin: CurrentAdmin, db: Db) -> Response:
 @router.put("/panels/{panel_id}/teams")
 def set_panel_teams(panel_id: uuid.UUID, data: PanelTeamsInput, admin: CurrentAdmin, db: Db) -> PanelOut:
     return judging.set_panel_teams(db, admin, panel_id, data)
+
+
+@router.put("/panels/{panel_id}/teams/{team_id}/scores/{juror_email}")
+def edit_score(
+    panel_id: uuid.UUID,
+    team_id: uuid.UUID,
+    juror_email: Annotated[str, Path(max_length=320)],
+    data: AdminScoreInput,
+    admin: CurrentAdmin,
+    db: Db,
+) -> ScoreOut:
+    return judging.edit_score(db, admin, panel_id, team_id, juror_email, data)
 
 
 @router.put("/panels/{panel_id}/jurors")
