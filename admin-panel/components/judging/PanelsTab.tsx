@@ -63,7 +63,12 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
         )}
         <div className="flex flex-wrap gap-2">
           {round === "final" && <AttendanceButtons round="final" label="every finale team" />}
-          {isRooms && !isSuper && admin.department && <AttendanceButtons round="department" department={admin.department} label={`all ${admin.department} teams`} />}
+          {isRooms && !isSuper && admin.department && (
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Every {admin.department} team, all rooms</span>
+              <AttendanceButtons round="department" department={admin.department} label={`all ${admin.department} teams`} />
+            </div>
+          )}
           {judging.canCreate && (
             <Button onClick={() => setCreating(true)}>
               <Plus aria-hidden="true" className="size-4" />

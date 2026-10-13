@@ -9,7 +9,7 @@ import { finalistQuota } from "@/lib/rules";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Notice } from "@/components/ui/Notice";
-import { numClass, TableFrame, tdClass, Th } from "@/components/ui/Table";
+import { numClass, tdClass, Th } from "@/components/ui/Table";
 
 /** Super admin: how many teams each department may nominate in each category (problem statement). */
 export function QuotaDialog({ summary, onClose, onSaved }: { summary: FinalistSummary; onClose: () => void; onSaved: (summary: FinalistSummary) => void }) {
@@ -68,8 +68,9 @@ export function QuotaDialog({ summary, onClose, onSaved }: { summary: FinalistSu
             Event document numbers
           </Button>
         </div>
-        <TableFrame label="Finalist quota per department and category" minWidth="min-w-[720px]">
-          <thead>
+        <div className="max-h-[58dvh] overflow-auto rounded-xl ring-1 ring-line">
+          <table aria-label="Finalist quota per department and category" className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
+          <thead className="sticky top-0 z-10 bg-white">
             <tr>
               <Th>Department</Th>
               {categories.map((c) => (
@@ -110,7 +111,8 @@ export function QuotaDialog({ summary, onClose, onSaved }: { summary: FinalistSu
               </tr>
             ))}
           </tbody>
-        </TableFrame>
+          </table>
+        </div>
         {error && <Notice tone="error">{error}</Notice>}
       </div>
     </Dialog>

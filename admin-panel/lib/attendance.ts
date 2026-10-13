@@ -108,8 +108,8 @@ export async function downloadAttendancePdf(sheet: AttendanceSheet) {
     styles: { fontSize: 8, cellPadding: 1.8, valign: "middle", lineColor: [190, 198, 212], lineWidth: 0.2, textColor: [11, 22, 51] },
     headStyles: { fillColor: [11, 22, 51], textColor: 255, fontStyle: "bold" },
     columnStyles: showTent(sheet)
-      ? { 0: { cellWidth: 8 }, 1: { cellWidth: 14 }, 2: { cellWidth: 52 }, 7: { cellWidth: 16 }, 8: { cellWidth: 38 } }
-      : { 0: { cellWidth: 8 }, 1: { cellWidth: 56 }, 6: { cellWidth: 16 }, 7: { cellWidth: 40 } },
+      ? { 0: { cellWidth: 8 }, 1: { cellWidth: 14 }, 2: { cellWidth: 52 }, 7: { cellWidth: 22 }, 8: { cellWidth: 36 } }
+      : { 0: { cellWidth: 8 }, 1: { cellWidth: 56 }, 6: { cellWidth: 22 }, 7: { cellWidth: 38 } },
     bodyStyles: { minCellHeight: 9 },
     didDrawPage: () => {
       const page = doc.getNumberOfPages();

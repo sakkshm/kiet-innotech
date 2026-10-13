@@ -284,7 +284,7 @@ function Scanner({ round, panelId, onResult, onError }: { round: JudgingRound; p
             setProblem(null);
             setOn(!on);
           }}
-          className={`inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-semibold transition ${on ? "bg-white/10 text-white hover:bg-white/20" : "bg-accent-500 text-white hover:bg-accent-600"}`}
+          className={`inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition ${on ? "bg-white/10 text-white hover:bg-white/20" : "bg-accent-500 text-white hover:bg-accent-600"}`}
         >
           {on ? <CameraOff aria-hidden="true" className="size-4" /> : <Camera aria-hidden="true" className="size-4" />}
           {on ? "Stop camera" : "Start scanning"}
