@@ -835,6 +835,8 @@ function PanelJudgesDialog({ panel, onClose, onSaved }: { panel: Panel; onClose:
 }
 
 function NewJudgeForm({ panel, onCancel, onAdded }: { panel: Panel; onCancel: () => void; onAdded: (juror: Juror) => void }) {
+  // Department admins appoint KIET faculty only; outside experts are appointed by super admins.
+  const isSuper = useAdmin().role === "super_admin";
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"faculty" | "external">("faculty");
@@ -846,7 +848,7 @@ function NewJudgeForm({ panel, onCancel, onAdded }: { panel: Panel; onCancel: ()
   const options = departments.filter((d) => d !== panel.department);
 
   async function add() {
-    if (!/^\S+@\S+\.\S+$/.test(email.trim())) return setError("Enter the judge's email; they sign in with it.");
+    if (!/^[^\s@]+@kiet\.edu$/i.test(email.trim())) return setError("Judges need a @kiet.edu email: they sign in with their KIET Google account.");
     if (name.trim().length < 2) return setError("Enter the judge's name.");
     if (kind === "faculty" && !department) return setError("Choose the faculty member's department.");
     if (kind === "external" && organisation.trim().length < 2) return setError("Enter where the external judge comes from.");
@@ -873,7 +875,7 @@ function NewJudgeForm({ panel, onCancel, onAdded }: { panel: Panel; onCancel: ()
     <section className="space-y-3 rounded-2xl bg-surface p-4 ring-1 ring-inset ring-line">
       <p className="text-sm font-semibold text-navy-900">New judge</p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Email" htmlFor="new-judge-email" hint="The Google account they sign in with.">
+        <Field label="Email" htmlFor="new-judge-email" hint="Their KIET Google account (@kiet.edu).">
           <Input id="new-judge-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@kiet.edu" autoFocus />
         </Field>
         <Field label="Name" htmlFor="new-judge-name">
@@ -882,7 +884,7 @@ function NewJudgeForm({ panel, onCancel, onAdded }: { panel: Panel; onCancel: ()
         <Field label="Judge type" htmlFor="new-judge-kind">
           <Select id="new-judge-kind" value={kind} onChange={(e) => setKind(e.target.value as "faculty" | "external")}>
             <option value="faculty">KIET faculty</option>
-            <option value="external">External (industry, other institution)</option>
+            {isSuper && <option value="external">Outside expert, with a KIET account</option>}
           </Select>
         </Field>
         {kind === "faculty" ? (

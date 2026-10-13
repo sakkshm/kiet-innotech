@@ -453,8 +453,14 @@ def list_jurors(db: Session, admin: Admin) -> list[JurorOut]:
 
 def add_juror(db: Session, admin: Admin, data: JurorInput) -> JurorOut:
     _require_room_manager(admin)
-    if admin.role == "admin" and data.kind == "faculty" and data.department == admin.department:
-        raise ApiError(f"Faculty of {admin.department} cannot judge {admin.department} teams. Choose a judge from another department.", 422)
+    if admin.role == "admin":
+        # Department admins appoint KIET faculty only; outside experts (given a KIET account) are appointed by super admins.
+        if data.kind != "faculty":
+            raise ApiError("Department admins add KIET faculty as judges. Ask a super admin to appoint an outside expert.", 403)
+        if data.department == admin.department:
+            raise ApiError(
+                f"Faculty of {admin.department} cannot judge {admin.department} teams. Choose a judge from another department.", 422
+            )
     if db.get(Juror, data.email) is not None:
         raise ApiError("This email is already a judge.", 409)
     juror = Juror(

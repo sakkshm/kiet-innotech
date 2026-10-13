@@ -38,7 +38,7 @@ def judging(world, settings):  # noqa: F811
     for body in (
         {"email": "it.prof@kiet.edu", "name": "IT Professor", "kind": "faculty", "department": "IT"},
         {"email": "cse.prof@kiet.edu", "name": "CSE Professor", "kind": "faculty", "department": "CSE"},
-        {"email": "judge@industry.com", "name": "Industry Judge", "kind": "external", "organisation": "Acme Labs"},
+        {"email": "expert@kiet.edu", "name": "Industry Judge", "kind": "external", "organisation": "Acme Labs"},
     ):
         response = root.post("/admin/jurors", body)
         assert response.status_code == 201, response.text
@@ -49,11 +49,11 @@ def judging(world, settings):  # noqa: F811
         "room": room.json(),
         "it_prof": Api(client, "it.prof@kiet.edu"),
         "cse_prof": Api(client, "cse.prof@kiet.edu"),
-        "external": Api(client, "judge@industry.com"),
+        "external": Api(client, "expert@kiet.edu"),
     }
 
 
-def set_room(j, teams=("cse_a", "cse_b", "cse_c"), jurors=(("it.prof@kiet.edu", True), ("judge@industry.com", False))):
+def set_room(j, teams=("cse_a", "cse_b", "cse_c"), jurors=(("it.prof@kiet.edu", True), ("expert@kiet.edu", False))):
     root, room = j["root"], j["room"]
     response = root.put(f"/admin/panels/{room['id']}/teams", {"team_ids": [j["teams"][k]["id"] for k in teams]})
     assert response.status_code == 200, response.text
@@ -90,18 +90,20 @@ def test_an_admin_who_is_also_a_judge(judging):
 
 def test_department_admins_manage_judges_and_their_own_rooms(judging, client):
     cse, it, root = judging["cse"], judging["it"], judging["root"]
-    # Department admins add judges, but never faculty of their own department.
-    added = cse.post("/admin/jurors", {"email": "x@labs.com", "name": "Xavier", "kind": "external", "organisation": "Y Labs"})
+    # Department admins add KIET faculty as judges, but never faculty of their own department.
+    added = cse.post("/admin/jurors", {"email": "xavier@kiet.edu", "name": "Xavier", "kind": "faculty", "department": "ME"})
     assert added.status_code == 201 and added.json()["added_by"] == "cse.admin@kiet.edu"
     own = cse.post("/admin/jurors", {"email": "own@kiet.edu", "name": "Own Dept", "kind": "faculty", "department": "CSE"})
     assert own.status_code == 422 and "another department" in own.json()["detail"]
-    assert {j["email"] for j in cse.get("/admin/jurors").json()} >= {"x@labs.com", "it.prof@kiet.edu"}
+    assert {j["email"] for j in cse.get("/admin/jurors").json()} >= {"xavier@kiet.edu", "it.prof@kiet.edu"}
     # Rooms for their own department only, never the finale.
     mine = cse.post("/admin/panels", room_body("CSE", building="G Block", name="112"))
     assert mine.status_code == 201 and mine.json()["can_edit"] is True
     assert cse.post("/admin/panels", room_body("IT", building="G Block", name="113")).status_code == 403
     assert cse.post("/admin/panels", {"round": "final", "name": "Panel Z"}).status_code == 403
-    assert cse.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": [{"email": "x@labs.com", "chair": True}]}).status_code == 200
+    assert (
+        cse.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": [{"email": "xavier@kiet.edu", "chair": True}]}).status_code == 200
+    )
     # Another department's admin cannot touch it.
     place = {"building": "G Block", "name": "114", "slot_start": "2026-10-22T10:00:00+05:30", "slot_end": "2026-10-22T11:00:00+05:30"}
     assert it.patch(f"/admin/panels/{mine.json()['id']}", place).status_code == 403
@@ -109,15 +111,19 @@ def test_department_admins_manage_judges_and_their_own_rooms(judging, client):
     assert it.delete(f"/admin/panels/{mine.json()['id']}").status_code == 403
     assert cse.patch(f"/admin/panels/{mine.json()['id']}", place).json()["name"] == "114"
     # A department admin removes only judges they added (and only while unassigned).
-    assert cse.delete("/admin/jurors/judge@industry.com").status_code == 403
-    assert cse.delete("/admin/jurors/x@labs.com").status_code == 409
+    assert cse.delete("/admin/jurors/expert@kiet.edu").status_code == 403
+    assert cse.delete("/admin/jurors/xavier@kiet.edu").status_code == 409
     cse.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": []})
-    assert cse.delete("/admin/jurors/x@labs.com").status_code == 204
-    # A KIET account is never an "external" judge, so a department cannot slip its own staff onto its rooms.
-    disguised = cse.post(
-        "/admin/jurors", {"email": "colleague@kiet.edu", "name": "CSE Colleague", "kind": "external", "organisation": "KIET"}
-    )
-    assert disguised.status_code == 422 and "KIET faculty" in disguised.json()["detail"]
+    assert cse.delete("/admin/jurors/xavier@kiet.edu").status_code == 204
+    # Only KIET emails can judge, for super admins and department admins alike.
+    for who in (cse, root):
+        outsider = who.post("/admin/jurors", {"email": "judge@industry.com", "name": "Outsider", "kind": "faculty", "department": "ME"})
+        assert outsider.status_code == 422 and "@kiet.edu" in outsider.json()["detail"]
+    # Outside experts (with a KIET account) are appointed by super admins; department admins add faculty only.
+    expert = {"email": "guest@kiet.edu", "name": "Guest Expert", "kind": "external", "organisation": "Acme Labs"}
+    refused = cse.post("/admin/jurors", expert)
+    assert refused.status_code == 403 and "super admin" in refused.json()["detail"]
+    assert root.post("/admin/jurors", expert).status_code == 201
     # A department admin cannot sit on their own department's panel, even listed under another department.
     root.post("/admin/jurors", {"email": "cse.admin@kiet.edu", "name": "CSE Admin", "kind": "faculty", "department": "IT"})
     refused = root.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": [{"email": "cse.admin@kiet.edu"}]})
@@ -130,7 +136,7 @@ def test_department_admins_manage_judges_and_their_own_rooms(judging, client):
         root.post("/admin/jurors", {"email": "it.prof@kiet.edu", "name": "Again", "kind": "faculty", "department": "IT"}).status_code == 409
     )
     assert root.post("/admin/jurors", {"email": "f@kiet.edu", "name": "No Dept", "kind": "faculty"}).status_code == 422
-    assert root.post("/admin/jurors", {"email": "e@x.com", "name": "No Org", "kind": "external"}).status_code == 422
+    assert root.post("/admin/jurors", {"email": "e@kiet.edu", "name": "No Org", "kind": "external"}).status_code == 422
     listed = {j["email"]: j for j in root.get("/admin/jurors").json()}
     assert listed["cse.prof@kiet.edu"]["organisation"] == rules.KIET_INSTITUTION
 
@@ -174,7 +180,7 @@ def test_rooms_follow_the_rules(judging):
     refused = root.put(f"/admin/panels/{room['id']}/jurors", {"jurors": [{"email": "cse.prof@kiet.edu"}]})
     assert refused.status_code == 422 and "another department" in refused.json()["detail"]
     assert root.put(f"/admin/panels/{room['id']}/jurors", {"jurors": [{"email": "nobody@kiet.edu"}]}).status_code == 422
-    two_chairs = [{"email": "it.prof@kiet.edu", "chair": True}, {"email": "judge@industry.com", "chair": True}]
+    two_chairs = [{"email": "it.prof@kiet.edu", "chair": True}, {"email": "expert@kiet.edu", "chair": True}]
     assert root.put(f"/admin/panels/{room['id']}/jurors", {"jurors": two_chairs}).status_code == 422
     panel = set_room(judging)
     assert panel["jurors"][0]["email"] == "it.prof@kiet.edu" and panel["jurors"][0]["chair"]
@@ -278,7 +284,7 @@ def test_scores_are_validated_and_scoped(judging):
     entry = next(e for e in log if e["action"] == "judging.score_edited")
     assert "was: 32/50 [4, 3, 5, 2, 1, 0, 5, 5, 7]" in entry["detail"] and "correct a typo" in entry["detail"]
     # The super admin can also enter marks for a judge who has none yet (e.g. from a paper sheet).
-    entered = root.put(f"/admin/panels/{room['id']}/teams/{judging['teams']['cse_b']['id']}/scores/judge@industry.com", body)
+    entered = root.put(f"/admin/panels/{room['id']}/teams/{judging['teams']['cse_b']['id']}/scores/expert@kiet.edu", body)
     assert entered.status_code == 200
     # Not on this panel, a team from another room, a withdrawn team.
     assert score(judging["cse_prof"], room, team, FULL).status_code == 403
@@ -301,7 +307,7 @@ def test_scored_teams_and_judges_cannot_be_removed(judging):
     root.post("/admin/judging/department/open")
     score(judging["it_prof"], room, judging["teams"]["cse_a"], FULL)
     assert root.put(f"/admin/panels/{room['id']}/teams", {"team_ids": [judging["teams"]["cse_b"]["id"]]}).status_code == 409
-    assert root.put(f"/admin/panels/{room['id']}/jurors", {"jurors": [{"email": "judge@industry.com"}]}).status_code == 409
+    assert root.put(f"/admin/panels/{room['id']}/jurors", {"jurors": [{"email": "expert@kiet.edu"}]}).status_code == 409
     assert root.delete(f"/admin/panels/{room['id']}").status_code == 409
     assert root.delete("/admin/jurors/it.prof@kiet.edu").status_code == 409
     # An unscored team and an unassigned judge can go.
@@ -380,7 +386,7 @@ def test_finale_rankings_group_schools_separately(judging, settings):
     panel = root.post("/admin/panels", {"round": "final", "name": "Panel A"}).json()
     college, school = judging["teams"]["college"], judging["teams"]["school"]
     root.put(f"/admin/panels/{panel['id']}/teams", {"team_ids": [college["id"], school["id"]]})
-    root.put(f"/admin/panels/{panel['id']}/jurors", {"jurors": [{"email": "judge@industry.com", "chair": True}]})
+    root.put(f"/admin/panels/{panel['id']}/jurors", {"jurors": [{"email": "expert@kiet.edu", "chair": True}]})
     root.put("/admin/finalists/CSE", {"nominations": [{"category": 1, "team_ids": [judging["teams"]["cse_a"]["id"]]}]})
     assert publish(root, settings).status_code == 200
     assert root.post("/admin/judging/final/open").status_code == 200

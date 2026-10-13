@@ -130,7 +130,7 @@ function AddJurorForm({ onAdded }: { onAdded: (juror: Juror) => void }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError("Enter the judge's email address.");
+    if (!/^[^\s@]+@kiet\.edu$/i.test(email.trim())) return setError("Judges need a @kiet.edu email: they sign in with their KIET Google account.");
     if (name.trim().length < 2) return setError("Enter the judge's name.");
     if (kind === "faculty" && !department) return setError("Choose the faculty member's department. They will not judge that department's teams.");
     if (kind === "external" && organisation.trim().length < 2) return setError("Enter the organisation an external judge comes from.");
@@ -160,8 +160,8 @@ function AddJurorForm({ onAdded }: { onAdded: (juror: Juror) => void }) {
   return (
     <form onSubmit={submit} noValidate className="space-y-4 rounded-2xl bg-white p-4 ring-1 ring-line sm:p-5">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Field label="Email" htmlFor="juror-email" hint="Their Google account.">
-          <Input id="juror-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+        <Field label="Email" htmlFor="juror-email" hint="Their KIET Google account (@kiet.edu).">
+          <Input id="juror-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" placeholder="name@kiet.edu" />
         </Field>
         <Field label="Name" htmlFor="juror-name">
           <Input id="juror-name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -169,7 +169,7 @@ function AddJurorForm({ onAdded }: { onAdded: (juror: Juror) => void }) {
         <Field label="Type" htmlFor="juror-kind">
           <Select id="juror-kind" value={kind} onChange={(e) => setKind(e.target.value as Juror["kind"])}>
             <option value="faculty">KIET faculty (department round)</option>
-            <option value="external">External judge (finale)</option>
+            <option value="external">Outside expert (finale), with a KIET account</option>
           </Select>
         </Field>
         {kind === "faculty" ? (
@@ -183,7 +183,7 @@ function AddJurorForm({ onAdded }: { onAdded: (juror: Juror) => void }) {
           </Field>
         ) : (
           <Field label="Organisation" htmlFor="juror-organisation">
-            <Input id="juror-organisation" value={organisation} onChange={(e) => setOrganisation(e.target.value)} placeholder="Company or institution" />
+            <Input id="juror-organisation" value={organisation} onChange={(e) => setOrganisation(e.target.value)} placeholder="Where they come from" />
           </Field>
         )}
         <Field label="Phone" htmlFor="juror-phone" hint="Optional.">
