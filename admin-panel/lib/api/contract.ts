@@ -14,6 +14,7 @@ import type {
   PanelPlace,
   QuotaCell,
   ScanResult,
+  Timetable,
   Rankings,
   RoundState,
   Score,
@@ -95,6 +96,8 @@ export interface AdminApi {
   activity(query: ActivityQuery): Promise<Page<AuditEntry>>;
 
   judging(round: JudgingRound): Promise<Judging>;
+  /** The department round timetable; only a super admin can change it. `moveRooms` moves rooms still at a department's old time. */
+  saveTimetable(slots: { department: string; slotStart: string | null; slotEnd: string | null }[], graceMinutes: number, moveRooms: boolean): Promise<Timetable>;
   openJudging(round: JudgingRound): Promise<RoundState>;
   lockJudging(round: JudgingRound): Promise<RoundState>;
   rankings(round: JudgingRound, department?: string): Promise<Rankings>;

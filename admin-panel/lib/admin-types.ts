@@ -354,7 +354,8 @@ export type Juror = {
   department: string | null;
   organisation: string;
   phone: string;
-  panels: { id: string; round: JudgingRound; name: string; chair: boolean }[];
+  /** Rooms and panels the judge sits in (one per round). */
+  panels: { id: string; round: JudgingRound; building: string; name: string; department: string | null; slotStart: string | null; chair: boolean }[];
   scores: number;
   addedAt: string | null;
   addedBy: string | null;
@@ -403,7 +404,14 @@ export type Panel = {
   teams: PanelTeam[];
   /** Super admins, and department admins for their own rooms. */
   canEdit: boolean;
+  /** Department rooms: judges submit marks from the slot's start until this moment (slot end + extra minutes). */
+  scoringUntil: string | null;
 };
+
+/** One department's slot in the department round timetable (null: no slot yet). */
+export type TimetableSlot = { department: string; slotStart: string | null; slotEnd: string | null };
+
+export type Timetable = { slots: TimetableSlot[]; graceMinutes: number; customised: boolean; updatedBy: string | null };
 
 export type RoundState = {
   round: JudgingRound;
@@ -424,6 +432,9 @@ export type Judging = {
   unallotted: TeamSummary[];
   /** Final round only: every Grand Finale team and its stall (the field is still called tent). */
   tents: { team: TeamSummary; tent: string | null }[] | null;
+  /** Department round: each department's slot and the extra scoring minutes. */
+  timetable: Timetable | null;
+  serverTime: string | null;
 };
 
 /** Where and when a room sits. Times are ISO 8601 with an offset. */
@@ -544,12 +555,15 @@ export type JudgePanel = {
   slotEnd: string | null;
   department: string | null;
   chair: boolean;
-  /** Scores can be saved only while organisers keep the round open. */
+  /** Scores can be saved only while organisers keep the round open... */
   open: boolean;
+  /** ...and, for a department room, between these moments (its slot plus the extra minutes). */
+  scoringFrom: string | null;
+  scoringUntil: string | null;
   teams: JudgeTeam[];
 };
 
-export type JudgeView = { email: string; name: string; panels: JudgePanel[] };
+export type JudgeView = { email: string; name: string; panels: JudgePanel[]; serverTime: string };
 
 /** An organiser registers a student: the portal's profile fields plus the student's Google email. */
 export type AdminStudentInput = {

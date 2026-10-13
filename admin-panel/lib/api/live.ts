@@ -146,6 +146,9 @@
  *   Judging (super admins: everything; department admins: their own department's rooms and judges; outside admins
  *   read the finale)
  *   GET    /admin/judging/{round}                 → Judging        round: department | final
+ *   GET|PUT /admin/judging/timetable  (PUT: super admin) body { slots: [{ department, slot_start, slot_end }], grace_minutes,
+ *          move_rooms } → Timetable. A department room has two judges (one from its department, one from another), a judge
+ *          sits in one room per round, and judges submit marks only from the slot's start to its end + grace_minutes.
  *   POST   /admin/judging/{round}/open | /lock    → RoundState     409 with the reason when it cannot open (super admin)
  *   GET    /admin/judging/{round}/rankings?department=   → Rankings
  *   GET    /admin/judging/{round}/attendance?panel_id=&department=   → AttendanceSheet (a room, a department, or the finale)
@@ -183,6 +186,7 @@ import type {
   Panel,
   Rankings,
   ScanResult,
+  Timetable,
   RoundState,
   Score,
   AdminStudent,
@@ -359,6 +363,7 @@ export const liveApi: AdminApi = {
   activity: (query) => request<Page<AuditEntry>>("GET", `/admin/activity${queryString(query)}`),
 
   judging: (round) => request<Judging>("GET", `/admin/judging/${round}`),
+  saveTimetable: (slots, graceMinutes, moveRooms) => request<Timetable>("PUT", "/admin/judging/timetable", { slots, graceMinutes, moveRooms }),
   openJudging: (round) => request<RoundState>("POST", `/admin/judging/${round}/open`),
   lockJudging: (round) => request<RoundState>("POST", `/admin/judging/${round}/lock`),
   rankings: (round, department) => request<Rankings>("GET", `/admin/judging/${round}/rankings${queryString({ department })}`),

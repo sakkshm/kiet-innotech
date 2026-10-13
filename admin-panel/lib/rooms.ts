@@ -20,3 +20,18 @@ export function slotState(start: string | null, end: string | null, now = Date.n
   if (now < new Date(start).getTime()) return "upcoming";
   return now <= new Date(end).getTime() ? "now" : "over";
 }
+
+/** Where a department room's scoring stands: before its slot, during it, in the extra time after it, or done. */
+export function scoringState(from: string | null, slotEnd: string | null, until: string | null, now: number): "before" | "slot" | "extra" | "done" | null {
+  if (!from || !slotEnd || !until) return null;
+  if (now < new Date(from).getTime()) return "before";
+  if (now <= new Date(slotEnd).getTime()) return "slot";
+  return now <= new Date(until).getTime() ? "extra" : "done";
+}
+
+const clock = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: TIME_ZONE });
+
+/** "1:00 pm" in IST. */
+export function timeLabel(iso: string) {
+  return clock.format(new Date(iso));
+}

@@ -1121,6 +1121,7 @@ export const mockApi: AdminApi = {
 
   saveQuotas: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   judging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  saveTimetable: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   openJudging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   lockJudging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   rankings: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),

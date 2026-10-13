@@ -522,7 +522,7 @@ def test_marks_only_during_the_slot_and_the_extra_time(judging, monkeypatch):
 
 
 def test_scoring_opens_only_when_every_room_has_both_judges(judging):
-    root, room = judging["root"], judging["room"]
+    root = judging["root"]
     set_room(judging, jurors=(("it.prof@kiet.edu", True),))
     blocked = root.post("/admin/judging/department/open")
     assert blocked.status_code == 409 and "CSIT Block · 304 needs a judge from CSE" in blocked.json()["detail"]

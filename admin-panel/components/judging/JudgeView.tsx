@@ -6,7 +6,8 @@ import { api, errorMessage } from "@/lib/api";
 import type { JudgePanel, JudgeTeam } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { categoryTitle, formatDateTime, plural, roundLabels } from "@/lib/format";
-import { roomLabel, slotLabel, slotState } from "@/lib/rooms";
+import { roomLabel, scoringState, slotLabel, slotState, timeLabel } from "@/lib/rooms";
+import { useNow } from "@/lib/use-now";
 import { yearLabel } from "@/lib/rules";
 import { useQuery } from "@/lib/use-query";
 import { Button } from "@/components/ui/Button";
@@ -22,9 +23,26 @@ import { PARTS, RubricForm, RubricSummary, rubricFor, TOTAL } from "./RubricForm
 
 type Draft = { marks: (number | null)[]; remarks: string };
 
+const dayLabel = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+
+/** Whether this judge can submit marks in this room now, and how to say so. The server checks the same rules. */
+function scoringFor(panel: JudgePanel, now: number): { can: boolean; label: string; note: string | null; live: boolean } {
+  if (!panel.open) return { can: false, label: "Scoring is locked", note: "You can read every team now. Marks can be submitted once the organisers open scoring for this round.", live: false };
+  const state = scoringState(panel.scoringFrom, panel.slotEnd, panel.scoringUntil, now);
+  if (state === null) return { can: true, label: "Scoring is open", note: null, live: true };
+  if (state === "before") {
+    return { can: false, label: `Opens ${dayLabel.format(new Date(panel.scoringFrom!))}, ${timeLabel(panel.scoringFrom!)}`, note: `You can read every team now. Marks can be submitted from ${timeLabel(panel.scoringFrom!)} on ${dayLabel.format(new Date(panel.scoringFrom!))}.`, live: false };
+  }
+  const minutes = Math.max(0, Math.ceil((new Date(panel.scoringUntil!).getTime() - now) / 60_000));
+  if (state === "slot") return { can: true, label: `Scoring open · slot ends ${timeLabel(panel.slotEnd!)}`, note: null, live: true };
+  if (state === "extra") return { can: true, label: `Extra time · closes ${timeLabel(panel.scoringUntil!)}`, note: `The slot is over. ${minutes} ${minutes === 1 ? "minute" : "minutes"} left to submit the remaining marks.`, live: true };
+  return { can: false, label: `Closed at ${timeLabel(panel.scoringUntil!)}`, note: "Scoring for this room has closed. If a team is still to be scored, ask a super admin.", live: false };
+}
+
 /** A judge's page: their rooms, each team, and the rubric to score it. Submitted marks are final and stay hidden. */
 export function JudgeView() {
   const me = useAdmin();
+  const now = useNow(15_000);
   const view = useQuery("judge", () => api.judgeView());
   const [scoring, setScoring] = useState<{ panel: JudgePanel; team: JudgeTeam } | null>(null);
   const [desk, setDesk] = useState<JudgePanel | null>(null);
@@ -58,6 +76,7 @@ export function JudgeView() {
           <RoomSection
             key={panel.id}
             panel={panel}
+            now={now}
             onScore={(team) => {
               setSubmitted(null);
               setScoring({ panel, team });
@@ -69,7 +88,7 @@ export function JudgeView() {
                   tone="success"
                   title={`Marks submitted for ${submitted.teamName}`}
                   action={
-                    next && panel.open ? (
+                    next && scoringFor(panel, now).can ? (
                       <Button size="sm" onClick={() => setScoring({ panel, team: next })}>
                         Score {next.name}
                         <ArrowRight aria-hidden="true" className="size-3.5" />
@@ -89,6 +108,7 @@ export function JudgeView() {
           key={scoring.team.id}
           panel={scoring.panel}
           team={scoring.team}
+          canScore={scoringFor(scoring.panel, now).can}
           draft={drafts[`${scoring.panel.id}:${scoring.team.id}`]}
           onDraft={(draft) => setDrafts((all) => ({ ...all, [`${scoring.panel.id}:${scoring.team.id}`]: draft }))}
           onClose={() => setScoring(null)}
@@ -123,7 +143,8 @@ export function JudgeView() {
   );
 }
 
-function RoomSection({ panel, onScore, onAttendance, banner }: { panel: JudgePanel; onScore: (team: JudgeTeam) => void; onAttendance: () => void; banner: ReactNode }) {
+function RoomSection({ panel, now, onScore, onAttendance, banner }: { panel: JudgePanel; now: number; onScore: (team: JudgeTeam) => void; onAttendance: () => void; banner: ReactNode }) {
+  const status = scoringFor(panel, now);
   const done = panel.teams.filter((t) => t.myScore).length;
   const students = panel.teams.reduce((sum, t) => sum + t.members.length, 0);
   const slot = slotLabel(panel.slotStart, panel.slotEnd);
@@ -176,9 +197,9 @@ function RoomSection({ panel, onScore, onAttendance, banner }: { panel: JudgePan
               )}
             </div>
           </div>
-          <p className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${panel.open ? "bg-emerald-400 text-navy-950" : "bg-white/10 text-white"}`}>
-            {panel.open ? <LockOpen aria-hidden="true" className="size-4" /> : <Lock aria-hidden="true" className="size-4" />}
-            {panel.open ? "Scoring is open" : "Scoring is locked"}
+          <p className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${status.live ? "bg-emerald-400 text-navy-950" : "bg-white/10 text-white"}`}>
+            {status.live ? <LockOpen aria-hidden="true" className="size-4" /> : <Lock aria-hidden="true" className="size-4" />}
+            {status.label}
           </p>
         </div>
         <div className="mt-5 grid grid-cols-3 gap-3">
@@ -214,10 +235,8 @@ function RoomSection({ panel, onScore, onAttendance, banner }: { panel: JudgePan
         {error && <p role="alert" className="mt-2 text-sm font-medium text-red-200">{error}</p>}
       </header>
 
-      {!panel.open && (
-        <p className="border-b border-line bg-surface px-5 py-3 text-sm text-muted sm:px-6">
-          You can read every team now. Marks can be submitted once the organisers open scoring for this round.
-        </p>
+      {status.note && (
+        <p className={`border-b border-line px-5 py-3 text-sm sm:px-6 ${status.can ? "bg-accent-50 font-semibold text-accent-600" : "bg-surface text-muted"}`}>{status.note}</p>
       )}
       {banner && <div className="px-5 pt-5 sm:px-6">{banner}</div>}
 
@@ -226,7 +245,7 @@ function RoomSection({ panel, onScore, onAttendance, banner }: { panel: JudgePan
       ) : (
         <ol className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
           {panel.teams.map((team, index) => (
-            <TeamCard key={team.id} team={team} index={index} open={panel.open} onScore={() => onScore(team)} />
+            <TeamCard key={team.id} team={team} index={index} open={status.can} onScore={() => onScore(team)} />
           ))}
         </ol>
       )}
@@ -282,6 +301,7 @@ function TeamCard({ team, index, open, onScore }: { team: JudgeTeam; index: numb
 function ScoreSheet({
   panel,
   team,
+  canScore,
   draft,
   onDraft,
   onClose,
@@ -289,6 +309,7 @@ function ScoreSheet({
 }: {
   panel: JudgePanel;
   team: JudgeTeam;
+  canScore: boolean;
   draft: Draft | undefined;
   onDraft: (draft: Draft) => void;
   onClose: () => void;
@@ -302,7 +323,7 @@ function ScoreSheet({
   const [error, setError] = useState<string | null>(null);
   const reveal = useHoldToReveal();
   const scored = team.myScore;
-  const editable = !scored && panel.open && team.status === "submitted";
+  const editable = !scored && canScore && team.status === "submitted";
   const total = marks.reduce<number>((sum, m) => sum + (m ?? 0), 0);
   const missing = marks.filter((m) => m === null).length;
 
@@ -376,8 +397,8 @@ function ScoreSheet({
       <div className="space-y-5">
         {step === "marks" && <TeamBrief team={team} />}
 
-        {!panel.open && !scored && <Notice tone="info">Scoring is locked. You can read the team and the rubric; marks can be submitted once the organisers open this round.</Notice>}
-        {panel.open && !scored && team.status !== "submitted" && <Notice tone="warning">This team has been {team.status}, so it is not scored.</Notice>}
+        {!canScore && !scored && <Notice tone="info">Marks cannot be submitted right now. You can read the team and the rubric; see the room&apos;s status for when scoring is open.</Notice>}
+        {canScore && !scored && team.status !== "submitted" && <Notice tone="warning">This team has been {team.status}, so it is not scored.</Notice>}
 
         {scored ? (
           <section className="space-y-3 rounded-2xl bg-surface p-4">

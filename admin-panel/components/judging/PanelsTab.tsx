@@ -4,11 +4,11 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { CalendarClock, ChevronDown, Crown, MapPin, Pencil, Plus, Trash2, UserCog, UserPlus, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
-import type { Judging, Juror, Panel, PanelScore, PanelTeam, TeamSummary } from "@/lib/admin-types";
+import type { Judging, Juror, Panel, PanelJuror, PanelScore, PanelTeam, TeamSummary, Timetable } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { categoryTitle, formatDateTime, plural } from "@/lib/format";
-import { roomLabel, slotLabel, slotState } from "@/lib/rooms";
+import { roomLabel, slotLabel, slotState, timeLabel } from "@/lib/rooms";
 import { teamHref } from "@/lib/routes";
 import { useQuery } from "@/lib/use-query";
 import { Button } from "@/components/ui/Button";
@@ -23,6 +23,7 @@ import { YearChips } from "@/components/teams/YearChips";
 import { AttendanceButtons } from "./AttendanceButtons";
 import { HiddenMarks } from "./HiddenMarks";
 import { PARTS, RubricForm, TOTAL } from "./RubricForm";
+import { TimetableStrip } from "./TimetableStrip";
 
 const roomDepartments = departments.filter((d) => d !== clubDepartment);
 
@@ -48,6 +49,7 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
 
   return (
     <div className="space-y-5">
+      {isRooms && <TimetableStrip judging={judging} onSaved={reload} />}
       <div className="flex flex-wrap items-end justify-between gap-3">
         {isRooms && isSuper ? (
           <Field label="Department" htmlFor="rooms-department" className="w-56">
@@ -129,6 +131,7 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
           round={round}
           panel={editing}
           buildings={buildings}
+          timetable={judging.timetable}
           defaultDepartment={isSuper ? department : (admin.department ?? "")}
           fixedDepartment={!isSuper}
           onClose={() => {
@@ -244,6 +247,11 @@ function PanelCard({
                 </span>
               )}
             </p>
+            {panel.slotStart && panel.scoringUntil && (
+              <p className="mt-1 text-xs text-muted">
+                Judges can submit marks {timeLabel(panel.slotStart)} – {timeLabel(panel.scoringUntil)} (the slot plus extra time).
+              </p>
+            )}
           </div>
           <AttendanceButtons round={panel.round} panelId={panel.id} label={label} />
         </div>
@@ -255,6 +263,12 @@ function PanelCard({
           <Stat label="Scores in" value={expected ? `${scored} / ${expected}` : "—"} bar={expected ? scored / expected : 0} tone="brand" />
         </dl>
 
+        {panel.round === "department" ? (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <JudgeSeat label={`Judge from ${panel.department}`} juror={panel.jurors.find((j) => j.department === panel.department)} />
+            <JudgeSeat label="Judge from another department" juror={panel.jurors.find((j) => j.department !== panel.department)} />
+          </div>
+        ) : (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           {panel.jurors.length === 0 ? (
             <span className="text-sm font-medium text-accent-600">No judges yet</span>
@@ -268,6 +282,7 @@ function PanelCard({
             ))
           )}
         </div>
+        )}
 
         {panel.canEdit && (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -324,6 +339,28 @@ function PanelCard({
         </div>
       )}
     </article>
+  );
+}
+
+function JudgeSeat({ label, juror }: { label: string; juror: PanelJuror | undefined }) {
+  return (
+    <div className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ring-1 ring-inset ${juror ? "bg-white ring-line" : "bg-accent-50 ring-accent-100"}`}>
+      <span className={`flex size-9 shrink-0 items-center justify-center rounded-full ${juror ? "bg-navy-900 text-white" : "bg-white text-accent-600 ring-1 ring-inset ring-accent-100"}`}>
+        {juror?.chair ? <Crown aria-label="Chair" className="size-4 text-accent-500" /> : <UserCog aria-hidden="true" className="size-4" />}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</span>
+        {juror ? (
+          <span className="block truncate font-semibold text-navy-900" title={juror.email}>
+            {juror.name}
+            <span className="font-normal text-muted"> · {juror.kind === "faculty" ? juror.department : juror.organisation}</span>
+            {juror.chair && <span className="ml-1 text-xs font-semibold text-accent-600">(chair)</span>}
+          </span>
+        ) : (
+          <span className="block text-sm font-semibold text-accent-600">Not chosen yet</span>
+        )}
+      </span>
+    </div>
   );
 }
 
@@ -456,6 +493,7 @@ function PanelFormDialog({
   round,
   panel,
   buildings,
+  timetable,
   defaultDepartment,
   fixedDepartment,
   onClose,
@@ -464,18 +502,22 @@ function PanelFormDialog({
   round: Judging["round"]["round"];
   panel: Panel | null;
   buildings: string[];
+  timetable: Timetable | null;
   defaultDepartment: string;
   fixedDepartment: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const isRoom = round === "department";
-  const start = istParts(panel?.slotStart ?? null);
-  const end = istParts(panel?.slotEnd ?? null);
+  // A new room starts at its department's slot in the timetable.
+  const slotOf = (d: string) => timetable?.slots.find((s) => s.department === d) ?? null;
+  const planned = panel ? null : slotOf(defaultDepartment);
+  const start = istParts(panel?.slotStart ?? planned?.slotStart ?? null);
+  const end = istParts(panel?.slotEnd ?? planned?.slotEnd ?? null);
   const [building, setBuilding] = useState(panel?.building ?? "");
   const [name, setName] = useState(panel?.name ?? "");
   const [location, setLocation] = useState(panel?.location ?? "");
-  const [date, setDate] = useState(start.date || "2026-10-22");
+  const [date, setDate] = useState(start.date);
   const [from, setFrom] = useState(start.time);
   const [to, setTo] = useState(end.time);
   const [department, setDepartment] = useState(panel?.department ?? defaultDepartment);
@@ -561,7 +603,19 @@ function PanelFormDialog({
             {fixedDepartment ? (
               <Input id="panel-department" value={departmentLabel(department)} disabled />
             ) : (
-              <Select id="panel-department" value={department} onChange={(e) => setDepartment(e.target.value)}>
+              <Select
+                id="panel-department"
+                value={department}
+                onChange={(e) => {
+                  setDepartment(e.target.value);
+                  const slot = slotOf(e.target.value);
+                  if (slot?.slotStart && slot.slotEnd) {
+                    setDate(istParts(slot.slotStart).date);
+                    setFrom(istParts(slot.slotStart).time);
+                    setTo(istParts(slot.slotEnd).time);
+                  }
+                }}
+              >
                 <option value="">Choose a department</option>
                 {roomDepartments.map((d) => (
                   <option key={d} value={d}>{departmentLabel(d)}</option>
@@ -570,7 +624,10 @@ function PanelFormDialog({
             )}
           </Field>
         )}
-        <p className="text-xs text-muted sm:col-span-2">Times are Indian Standard Time.</p>
+        <p className="text-xs text-muted sm:col-span-2">
+          Times are Indian Standard Time.{" "}
+          {isRoom && "The date and time come from the department timetable; change them only if this room runs at a different time."}
+        </p>
         {error && (
           <div className="sm:col-span-2">
             <Notice tone="error">{error}</Notice>
@@ -710,14 +767,40 @@ function AllotTeamsDialog({ panel, candidates, onClose, onSaved }: { panel: Pane
   );
 }
 
-function conflict(juror: Juror, panel: Panel) {
-  return panel.round === "department" && juror.kind === "faculty" && juror.department === panel.department
-    ? `From ${juror.department}: faculty judge other departments' teams`
-    : null;
+/** The room or panel of the same round where this judge already sits, if any (a judge sits in one room). */
+function sitsElsewhere(juror: Juror, panel: Panel) {
+  return juror.panels.find((p) => p.round === panel.round && p.id !== panel.id) ?? null;
+}
+
+function elsewhereLabel(p: Juror["panels"][number]) {
+  return `${p.building ? `${p.building} · ` : ""}${p.name}${p.department ? ` (${p.department})` : ""}`;
+}
+
+function JudgeOption({ juror, panel, name, checked, onPick }: { juror: Juror; panel: Panel; name: string; checked: boolean; onPick: () => void }) {
+  const busy = sitsElsewhere(juror, panel);
+  return (
+    <li>
+      <label className={`flex items-start gap-3 px-3 py-2.5 ${busy ? "cursor-not-allowed bg-surface/70" : "cursor-pointer hover:bg-brand-50/60"} ${checked ? "bg-brand-50" : ""}`}>
+        <input type="radio" name={name} className="mt-1 accent-accent-500" checked={checked} disabled={!!busy} onChange={onPick} />
+        <span className="min-w-0 flex-1">
+          <span className={`block font-semibold ${busy ? "text-muted" : "text-navy-900"}`}>{juror.name}</span>
+          <span className="block truncate text-xs text-muted">
+            {juror.email} · {juror.kind === "faculty" ? juror.department : `Outside expert, ${juror.organisation}`}
+          </span>
+          {busy && <span className="mt-0.5 inline-block rounded-full bg-accent-50 px-2 py-0.5 text-[11px] font-semibold text-accent-600">Judging in {elsewhereLabel(busy)}</span>}
+        </span>
+      </label>
+    </li>
+  );
 }
 
 function PanelJudgesDialog({ panel, onClose, onSaved }: { panel: Panel; onClose: () => void; onSaved: () => void }) {
   const jurors = useQuery("jurors", () => api.listJurors());
+  const seats = panel.round === "department";
+  // Department rooms: two seats, one judge from the room's department and one from another department.
+  const [own, setOwn] = useState(panel.jurors.find((j) => j.department === panel.department)?.email ?? "");
+  const [other, setOther] = useState(panel.jurors.find((j) => j.department !== panel.department)?.email ?? "");
+  // Finale panels: any judges.
   const [chosen, setChosen] = useState(() => new Set(panel.jurors.map((j) => j.email)));
   const [chair, setChair] = useState(panel.jurors.find((j) => j.chair)?.email ?? "");
   const [text, setText] = useState("");
@@ -725,11 +808,22 @@ function PanelJudgesDialog({ panel, onClose, onSaved }: { panel: Panel; onClose:
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const all = jurors.data ?? [];
+  const byEmail = new Map(all.map((j) => [j.email, j]));
+  const picked = seats ? [own, other].filter(Boolean) : [...chosen];
+  const chairOf = picked.includes(chair) ? chair : (picked[0] ?? "");
+  const q = text.trim().toLowerCase();
+  const matches = (j: Juror) => !q || [j.name, j.email, j.department ?? "", j.organisation].some((v) => v.toLowerCase().includes(q));
+  // Free judges first, then those already in another room.
+  const order = (list: Juror[]) => [...list].sort((a, b) => Number(!!sitsElsewhere(a, panel)) - Number(!!sitsElsewhere(b, panel)) || a.name.localeCompare(b.name));
+  const ownList = order(all.filter((j) => j.department === panel.department && (j.email === own || matches(j))));
+  const otherList = order(all.filter((j) => j.department !== panel.department && (j.email === other || matches(j))));
+
   async function save() {
     setPending(true);
     setError(null);
     try {
-      await api.setPanelJurors(panel.id, [...chosen].map((email) => ({ email, chair: email === chair })));
+      await api.setPanelJurors(panel.id, picked.map((email) => ({ email, chair: email === chairOf })));
       onSaved();
     } catch (err) {
       setError(errorMessage(err));
@@ -737,22 +831,23 @@ function PanelJudgesDialog({ panel, onClose, onSaved }: { panel: Panel; onClose:
     }
   }
 
-  const q = text.trim().toLowerCase();
-  const list = (jurors.data ?? []).filter((j) => chosen.has(j.email) || !q || [j.name, j.email, j.organisation, j.department ?? ""].some((v) => v.toLowerCase().includes(q)));
   return (
     <Dialog
       title={`Judges for ${roomLabel(panel)}`}
       description={
-        panel.round === "department"
-          ? `Any number of judges. Faculty of another department, so not ${panel.department}. Pick one chair; the chair settles ties.`
-          : "The plan is two external judges per finale panel. Pick one chair; the chair settles ties."
+        seats
+          ? `Two judges: one from ${panel.department} and one from another department. A judge sits in one room only.`
+          : "The plan is two outside experts per finale panel. A judge sits on one panel only."
       }
       onClose={onClose}
       busy={pending}
-      size="lg"
+      size="xl"
       footer={
         <>
-          <span className="mr-auto self-center text-sm text-muted">{plural(chosen.size, "judge")} selected</span>
+          <span className="mr-auto self-center text-sm text-muted">
+            {seats ? `${picked.length} of 2 chosen` : `${picked.length} chosen`}
+            {seats && picked.length < 2 && " · scoring can open once both are chosen"}
+          </span>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
@@ -762,14 +857,16 @@ function PanelJudgesDialog({ panel, onClose, onSaved }: { panel: Panel; onClose:
         </>
       }
     >
-      <div className="space-y-3">
+      <div className="space-y-4">
         {adding ? (
           <NewJudgeForm
             panel={panel}
             onCancel={() => setAdding(false)}
             onAdded={(juror) => {
               setAdding(false);
-              setChosen((current) => new Set(current).add(juror.email));
+              if (!seats) setChosen((current) => new Set(current).add(juror.email));
+              else if (juror.department === panel.department) setOwn(juror.email);
+              else setOther(juror.email);
               jurors.reload();
             }}
           />
@@ -786,47 +883,81 @@ function PanelJudgesDialog({ panel, onClose, onSaved }: { panel: Panel; onClose:
         )}
         {jurors.error && <Notice tone="error">{jurors.error}</Notice>}
         {!jurors.data && !jurors.error && <Loading label="Loading judges" />}
-        {jurors.data && jurors.data.length === 0 && !adding && <EmptyState title="No judges yet">Add the first judge with their email.</EmptyState>}
-        {list.length > 0 && (
+
+        {jurors.data && seats && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {[
+              { key: "own", title: `1 · Judge from ${panel.department}`, list: ownList, value: own, set: setOwn, empty: `No ${panel.department} faculty added yet. Use “Add a new judge”.` },
+              { key: "other", title: "2 · Judge from another department", list: otherList, value: other, set: setOther, empty: "No faculty from other departments yet. Use “Add a new judge”." },
+            ].map((seat) => (
+              <section key={seat.key} aria-label={seat.title} className="overflow-hidden rounded-2xl ring-1 ring-line">
+                <header className="flex items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2.5">
+                  <p className="text-sm font-bold text-navy-900">{seat.title}</p>
+                  {seat.value ? (
+                    <button type="button" onClick={() => seat.set("")} className="text-xs font-semibold text-brand-700 hover:underline">
+                      Clear
+                    </button>
+                  ) : (
+                    <span className="text-xs font-semibold text-accent-600">Not chosen</span>
+                  )}
+                </header>
+                {seat.list.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-muted">{q ? "Nobody matches." : seat.empty}</p>
+                ) : (
+                  <ul className="max-h-[38dvh] divide-y divide-line overflow-y-auto">
+                    {seat.list.map((j) => (
+                      <JudgeOption key={j.email} juror={j} panel={panel} name={`seat-${seat.key}`} checked={seat.value === j.email} onPick={() => seat.set(j.email)} />
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
+
+        {jurors.data && !seats && (
           <ul className="max-h-[50dvh] divide-y divide-line overflow-y-auto rounded-xl ring-1 ring-line">
-            {list.map((j) => {
-              const blocked = conflict(j, panel);
-              const on = chosen.has(j.email);
-              const elsewhere = j.panels.filter((p) => p.id !== panel.id);
+            {order(all.filter((j) => chosen.has(j.email) || matches(j))).map((j) => {
+              const busy = sitsElsewhere(j, panel);
               return (
-                <li key={j.email} className={`flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 ${blocked ? "opacity-60" : ""}`}>
-                  <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5">
-                    <Checkbox
-                      label={`Appoint ${j.name}`}
-                      checked={on}
-                      disabled={!!blocked && !on}
-                      onChange={(value) => {
-                        setChosen((current) => {
-                          const next = new Set(current);
-                          if (value) next.add(j.email);
-                          else next.delete(j.email);
-                          return next;
-                        });
-                        if (!value && chair === j.email) setChair("");
-                      }}
-                    />
-                    <span className="min-w-0">
-                      <span className="block font-semibold text-navy-900">{j.name}</span>
-                      <span className="block text-xs text-muted">
-                        {j.email} · {j.kind === "faculty" ? `KIET faculty, ${j.department}` : `External, ${j.organisation}`}
-                        {elsewhere.length > 0 && ` · also in ${elsewhere.map((p) => p.name).join(", ")}`}
-                      </span>
-                      {blocked && <span className="block text-xs font-medium text-red-700">{blocked}</span>}
-                    </span>
-                  </label>
-                  <label className={`flex items-center gap-1.5 text-xs font-semibold ${on ? "text-navy-900" : "text-muted"}`}>
-                    <input type="radio" name="chair" className="accent-accent-500" checked={chair === j.email} disabled={!on} onChange={() => setChair(j.email)} />
-                    Chair
-                  </label>
+                <li key={j.email} className="flex items-start gap-3 px-3 py-2.5">
+                  <Checkbox
+                    label={`Appoint ${j.name}`}
+                    checked={chosen.has(j.email)}
+                    disabled={!!busy && !chosen.has(j.email)}
+                    onChange={(on) =>
+                      setChosen((current) => {
+                        const next = new Set(current);
+                        if (on) next.add(j.email);
+                        else next.delete(j.email);
+                        return next;
+                      })
+                    }
+                  />
+                  <span className="min-w-0">
+                    <span className="block font-semibold text-navy-900">{j.name}</span>
+                    <span className="block text-xs text-muted">{j.email}</span>
+                    {busy && <span className="mt-0.5 inline-block rounded-full bg-accent-50 px-2 py-0.5 text-[11px] font-semibold text-accent-600">On {elsewhereLabel(busy)}</span>}
+                  </span>
                 </li>
               );
             })}
           </ul>
+        )}
+
+        {picked.length > 1 && (
+          <fieldset className="rounded-2xl bg-surface px-4 py-3">
+            <legend className="sr-only">Chair</legend>
+            <p className="text-sm font-semibold text-navy-900">Chair (settles a tie)</p>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+              {picked.map((email) => (
+                <label key={email} className="flex items-center gap-2 text-sm text-navy-800">
+                  <input type="radio" name="chair" className="accent-accent-500" checked={chairOf === email} onChange={() => setChair(email)} />
+                  {byEmail.get(email)?.name ?? email}
+                </label>
+              ))}
+            </div>
+          </fieldset>
         )}
         {error && <Notice tone="error">{error}</Notice>}
       </div>
@@ -845,7 +976,7 @@ function NewJudgeForm({ panel, onCancel, onAdded }: { panel: Panel; onCancel: ()
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const options = departments.filter((d) => d !== panel.department);
+  const options = departments.filter((d) => d !== clubDepartment);
 
   async function add() {
     if (!/^[^\s@]+@kiet\.edu$/i.test(email.trim())) return setError("Judges need a @kiet.edu email: they sign in with their KIET Google account.");
@@ -888,7 +1019,7 @@ function NewJudgeForm({ panel, onCancel, onAdded }: { panel: Panel; onCancel: ()
           </Select>
         </Field>
         {kind === "faculty" ? (
-          <Field label="Department" htmlFor="new-judge-department" hint={panel.department ? `Not ${panel.department}: faculty judge other departments.` : undefined}>
+          <Field label="Department" htmlFor="new-judge-department" hint={panel.department ? `${panel.department} faculty fill seat 1; others fill seat 2.` : undefined}>
             <Select id="new-judge-department" value={department} onChange={(e) => setDepartment(e.target.value)}>
               <option value="">Choose a department</option>
               {options.map((d) => (

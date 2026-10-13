@@ -26,9 +26,10 @@ type Tab = "rooms" | "judges" | "tents" | "rankings";
 /** The event document's rules for each round, shown on the page so nobody has to look them up. */
 const roundRules: Record<JudgingRound, string[]> = {
   department: [
-    "22 to 24 October. KIET teams are judged in rooms: a building, a room and a time slot. Each room takes one department's teams and has its own judges.",
-    "Department admins set up their own rooms, add judges by email and allot teams; super admins can do this for every department.",
-    "Judges are faculty of another department (the room refuses faculty and admins of its own department). One judge chairs the room.",
+    "23 and 24 October, by the department timetable. Each room (a building, a room and a time slot) takes one department's teams.",
+    "Department admins set up their own rooms, add judges (KIET emails only) and allot teams; super admins can do this for every department.",
+    "Two judges per room: one from the room's own department and one from another department. A judge sits in one room only; one of the two chairs.",
+    "Judges submit marks during the room's slot and the extra minutes after it (30 by default). Super admins can change the timetable.",
     "Every category is marked out of 50 on its common rubric: four criteria of 10 (two parts of 5), then Query Addressing out of 10.",
     "A judge submits each team's marks once. Submitted marks are final and hidden on screen; only a super admin can change them, with a reason.",
     "Ties: higher Innovation / Originality score, then Query Addressing, then the room's chair decides. No shared positions.",
