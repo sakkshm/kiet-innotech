@@ -270,20 +270,30 @@ class Juror(Base):
 
 
 class Panel(Base):
-    """A judging room (department round, one department's teams) or a finale panel."""
+    """
+    A judging room (department round, one department's teams) or a finale panel.
+
+    A room is a building and a room in it ("G Block", "112") with a time slot. The same room can host other
+    departments at other times, so the clash check (services.judging) compares building, room and slot.
+    """
 
     __tablename__ = "panels"
     __table_args__ = (
         CheckConstraint("round IN ('department', 'final')", name="round"),
         CheckConstraint("round = 'final' OR department IS NOT NULL", name="department"),
-        Index("uq_panels_round_name_key", "round", "name_key", unique=True),
+        CheckConstraint("slot_end IS NULL OR slot_end > slot_start", name="slot"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     round: Mapped[str] = mapped_column(String(10))
+    building: Mapped[str] = mapped_column(String(60), default="")
+    # The room's name or number in its building.
     name: Mapped[str] = mapped_column(String(60))
     name_key: Mapped[str] = mapped_column(String(60))
+    # Optional directions, e.g. "2nd floor, next to the lift".
     location: Mapped[str] = mapped_column(String(120), default="")
+    slot_start: Mapped[datetime | None] = mapped_column(Timestamp)
+    slot_end: Mapped[datetime | None] = mapped_column(Timestamp)
     # Department round: the department whose teams are judged here.
     department: Mapped[str | None] = mapped_column(String(20), index=True)
     created_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)
@@ -343,3 +353,23 @@ class Score(Base):
     remarks: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow, onupdate=utcnow)
+    # A judge's submitted marks are final; only a super admin can change them, and is then named here.
+    edited_by: Mapped[str | None] = mapped_column(String(320))
+
+
+class Attendance(Base):
+    """A student marked present for a round, by a scanned event pass (QR) or by hand. Deleting the row unmarks them."""
+
+    __tablename__ = "attendance"
+    __table_args__ = (
+        CheckConstraint("round IN ('department', 'final')", name="round"),
+        CheckConstraint("method IN ('qr', 'manual')", name="method"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    round: Mapped[str] = mapped_column(String(10), primary_key=True)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
+    marked_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)
+    marked_by: Mapped[str] = mapped_column(String(320))
+    method: Mapped[str] = mapped_column(String(10))
+    note: Mapped[str] = mapped_column(Text, default="")
