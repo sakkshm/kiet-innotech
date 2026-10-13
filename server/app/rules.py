@@ -242,6 +242,17 @@ JudgingRound = Literal["department", "final"]
 JUDGING_ROUNDS: tuple[JudgingRound, ...] = ("department", "final")
 # The longest time slot a judging room can have.
 MAX_SLOT = timedelta(hours=12)
+# Department round timetable (event schedule, status as on 12 October 2026), in IST. Super admins can change it on the
+# Judging page; a new room takes its department's slot. Departments not listed here have no slot until one is set.
+DEFAULT_TIMETABLE: list[tuple[str, str, list[str]]] = [
+    ("2026-10-23T09:30:00+05:30", "2026-10-23T12:30:00+05:30", ["CSE(AI)", "CSE(AIML)"]),
+    ("2026-10-23T13:30:00+05:30", "2026-10-23T17:00:00+05:30", ["CSE", "CS"]),
+    ("2026-10-24T09:30:00+05:30", "2026-10-24T12:30:00+05:30", ["IT", "CSIT", "KSOM"]),
+    ("2026-10-24T13:30:00+05:30", "2026-10-24T17:00:00+05:30", ["EN", "EC", "ELCE", "ME", "VLSI", "AMIA", "KSOP"]),
+]
+# Judges submit marks during their room's slot and this many minutes after it.
+DEFAULT_GRACE_MINUTES = 30
+MAX_GRACE_MINUTES = 240
 # Event passes: the QR code changes every minute and is accepted for two minutes after (one before, for clock drift).
 PASS_PERIOD_SECONDS = 60
 PASS_PAST_PERIODS = 2

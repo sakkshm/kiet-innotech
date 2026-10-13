@@ -53,6 +53,8 @@ from ..schemas import (
     TeamBanInput,
     TeamPage,
     TentsInput,
+    TimetableInput,
+    TimetableOut,
     UnpublishInput,
 )
 from ..services import admin as service
@@ -276,6 +278,17 @@ def activity(admin: CurrentAdmin, db: Db, filters: Annotated[ActivityFilters, Qu
 
 
 # ---------- Judging ----------
+
+
+@router.get("/judging/timetable")
+def judging_timetable(admin: CurrentAdmin, db: Db) -> TimetableOut:
+    """Each department's slot for the department round and the extra scoring minutes. Every organiser can read it."""
+    return judging.timetable_out(judging.timetable(db))
+
+
+@router.put("/judging/timetable")
+def save_judging_timetable(data: TimetableInput, admin: CurrentAdmin, db: Db) -> TimetableOut:
+    return judging.save_timetable(db, admin, data)
 
 
 @router.get("/judging/{round_}")

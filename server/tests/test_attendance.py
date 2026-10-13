@@ -69,7 +69,7 @@ def test_scanning_marks_once_and_only_in_scope(judging, as_user):  # noqa: F811
     refused = scan(judging["it"], code_for(alpha))
     assert refused.status_code == 403 and "not in your room or department" in refused.json()["detail"]
     assert "CSE" not in refused.json()["detail"] and "Alpha" not in refused.json()["detail"]
-    assert scan(judging["cse_prof"], code_for(alpha)).status_code == 403
+    assert scan(judging["external"], code_for(alpha)).status_code == 403
     # The department's admin can; scanning again only reports the first mark.
     first = scan(judging["cse"], code_for(alpha))
     assert first.status_code == 200 and (first.json()["result"], first.json()["marked_by"]) == ("marked", "cse.admin@kiet.edu")
@@ -94,7 +94,7 @@ def test_scanning_marks_once_and_only_in_scope(judging, as_user):  # noqa: F811
     assert {m["phone"] for t in sheet["teams"] for m in t["members"]} == {""}
     organiser = judging["cse"].get("/admin/judging/department/attendance", params={"panel_id": room["id"]}).json()
     assert all(m["phone"] for t in organiser["teams"] for m in t["members"])
-    assert judging["cse_prof"].get(f"/judge/panels/{room['id']}/attendance").status_code == 403
+    assert judging["external"].get(f"/judge/panels/{room['id']}/attendance").status_code == 403
 
 
 def test_students_who_cannot_be_marked(judging, as_user):  # noqa: F811
@@ -201,7 +201,7 @@ def test_races_never_leave_a_score_or_mark_inconsistent(judging, as_user):  # no
     # A judge submits while the room's admin removes them: the score is never left behind without its judge.
     keep_chair = {"jurors": [{"email": "it.prof@kiet.edu", "chair": True}]}
     codes = parallel(
-        lambda: judging["external"].put(path("cse_b"), full), lambda: judging["cse"].put(f"/admin/panels/{room['id']}/jurors", keep_chair)
+        lambda: judging["cse_prof"].put(path("cse_b"), full), lambda: judging["cse"].put(f"/admin/panels/{room['id']}/jurors", keep_chair)
     )
     with get_sessionmaker()() as db:
         on_panel = set(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == room["id"])))

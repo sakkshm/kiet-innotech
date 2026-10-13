@@ -691,7 +691,10 @@ class JurorInput(Input):
 class JurorPanelRef(BaseModel):
     id: uuid.UUID
     round: str
+    building: str = ""
     name: str
+    department: str | None = None
+    slot_start: datetime | None = None
     chair: bool
 
 
@@ -752,8 +755,6 @@ class PanelInput(PanelPlace):
                 raise ValueError("Choose the department whose teams are judged in this room.")
             if not self.building:
                 raise ValueError("Enter the building the room is in.")
-            if self.slot_start is None:
-                raise ValueError("Give the room's time slot.")
         else:
             self.department = None
         return self
@@ -761,6 +762,45 @@ class PanelInput(PanelPlace):
 
 class PanelUpdateInput(PanelPlace):
     pass
+
+
+class TimetableSlot(Input):
+    department: str
+    # Null: no slot for this department.
+    slot_start: AwareDatetime | None = None
+    slot_end: AwareDatetime | None = None
+
+    @field_validator("department", mode="before")
+    @classmethod
+    def legacy_department(cls, value):
+        return rules.canonical_department(value)
+
+    @model_validator(mode="after")
+    def check_slot(self) -> "TimetableSlot":
+        if self.department not in rules.NOMINATING_DEPARTMENTS:
+            raise ValueError(f'"{self.department}" has no department round.')
+        if (self.slot_start is None) != (self.slot_end is None):
+            raise ValueError(f"Give both the start and the end of {self.department}'s slot.")
+        if self.slot_start and self.slot_end:
+            if self.slot_end <= self.slot_start:
+                raise ValueError(f"{self.department}'s slot must end after it starts.")
+            if self.slot_end - self.slot_start > rules.MAX_SLOT:
+                raise ValueError(f"{self.department}'s slot can be at most 12 hours long.")
+        return self
+
+
+class TimetableInput(Input):
+    slots: list[TimetableSlot] = Field(max_length=40)
+    grace_minutes: int = Field(ge=0, le=rules.MAX_GRACE_MINUTES)
+    # Also move the department's rooms that still sit at the old time.
+    move_rooms: bool = True
+
+
+class TimetableOut(BaseModel):
+    slots: list[TimetableSlot]
+    grace_minutes: int
+    customised: bool
+    updated_by: str | None = None
 
 
 class PanelTeamsInput(Input):
@@ -825,6 +865,8 @@ class PanelOut(BaseModel):
     teams: list[PanelTeamOut]
     # Whether the caller can change this room (super admins, and department admins for their own rooms).
     can_edit: bool = False
+    # Department rooms: judges submit marks from the slot's start until this moment (slot end + extra minutes).
+    scoring_until: datetime | None = None
 
 
 class RoundOut(BaseModel):
@@ -852,6 +894,9 @@ class JudgingOut(BaseModel):
     unallotted: list[TeamSummaryOut]
     # Final round: every team going to the Grand Finale and its tent.
     tents: list[TentRowOut] | None
+    # Department round: the timetable (each department's slot and the extra minutes for scoring).
+    timetable: TimetableOut | None = None
+    server_time: datetime | None = None
 
 
 class TentAssignment(Input):
@@ -1070,8 +1115,11 @@ class JudgePanelOut(BaseModel):
     slot_end: datetime | None
     department: str | None
     chair: bool
-    # Scores can be saved only while the organisers keep this round open.
+    # Scores can be saved only while the organisers keep this round open...
     open: bool
+    # ...and, for a department room, from its slot's start until the slot's end plus the extra minutes.
+    scoring_from: datetime | None = None
+    scoring_until: datetime | None = None
     teams: list[JudgeTeamOut]
 
 
@@ -1079,3 +1127,5 @@ class JudgeOut(BaseModel):
     email: str
     name: str
     panels: list[JudgePanelOut]
+    # So the page counts down by the server's clock, not the phone's.
+    server_time: datetime

@@ -14,10 +14,13 @@ A judge sees and scores only the teams of their own rooms, only while the round 
 marks are final: only a super admin can change them, and every change is logged with the old marks and a reason.
 """
 
+import json
+import logging
 import re
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from statistics import mean
 
 from sqlalchemy import delete, func, or_, select
@@ -60,9 +63,14 @@ from ..schemas import (
     ScoreOut,
     TentRowOut,
     TentsInput,
+    TimetableInput,
+    TimetableOut,
+    TimetableSlot,
 )
 from . import admin as admin_service
 from . import audit, schedule
+
+logger = logging.getLogger(__name__)
 
 ROUND_LABELS = {"department": "department round", "final": "Grand Finale"}
 
@@ -125,6 +133,110 @@ def slot_label(start: datetime | None, end: datetime | None) -> str:
         return ""
     s, e = start.astimezone(rules.IST), end.astimezone(rules.IST)
     return f"{s.day} {s:%b}, {s:%I:%M %p} - {e:%I:%M %p}".replace(" 0", " ")
+
+
+# ---------- Timetable ----------
+
+TIMETABLE_KEY = "judging_timetable"
+
+
+@dataclass(frozen=True)
+class Timetable:
+    slots: dict[str, tuple[datetime, datetime]]
+    grace: timedelta
+    customised: bool
+    updated_by: str | None
+
+
+def timetable(db: Session) -> Timetable:
+    """Each department's slot for the department round and the extra scoring minutes: the event schedule, as changed."""
+    slots = {
+        d: (datetime.fromisoformat(start), datetime.fromisoformat(end))
+        for start, end, departments in rules.DEFAULT_TIMETABLE
+        for d in departments
+    }
+    grace, by = rules.DEFAULT_GRACE_MINUTES, None
+    row = db.get(AppState, TIMETABLE_KEY)
+    if row is not None and row.value:
+        try:
+            stored = json.loads(row.value)
+            slots = {
+                d: (datetime.fromisoformat(s), datetime.fromisoformat(e))
+                for d, (s, e) in stored["slots"].items()
+                if d in rules.NOMINATING_DEPARTMENTS
+            }
+            grace, by = int(stored["grace_minutes"]), stored.get("by")
+        except (ValueError, KeyError, TypeError):
+            logger.error("Ignoring an unreadable judging timetable row")
+    return Timetable(slots=slots, grace=timedelta(minutes=grace), customised=row is not None, updated_by=by)
+
+
+def timetable_out(table: Timetable) -> TimetableOut:
+    return TimetableOut(
+        slots=[
+            TimetableSlot(
+                department=d,
+                slot_start=table.slots[d][0] if d in table.slots else None,
+                slot_end=table.slots[d][1] if d in table.slots else None,
+            )
+            for d in rules.NOMINATING_DEPARTMENTS
+        ],
+        grace_minutes=int(table.grace.total_seconds() // 60),
+        customised=table.customised,
+        updated_by=table.updated_by,
+    )
+
+
+def scoring_window(panel: Panel, grace: timedelta) -> tuple[datetime | None, datetime | None]:
+    """When a department room's judges can submit marks: its slot, plus the extra minutes after it."""
+    if panel.round != "department" or panel.slot_start is None or panel.slot_end is None:
+        return None, None
+    return panel.slot_start, panel.slot_end + grace
+
+
+def save_timetable(db: Session, admin: Admin, data: TimetableInput) -> TimetableOut:
+    """Super admin: changes department slots and the extra minutes; rooms still at a department's old time move with it."""
+    _require_super(admin)
+    state = admin_service._lock_state(db, TIMETABLE_KEY)
+    before = timetable(db)
+    after = dict(before.slots)
+    for slot in data.slots:
+        if slot.slot_start and slot.slot_end:
+            after[slot.department] = (slot.slot_start, slot.slot_end)
+        else:
+            after.pop(slot.department, None)
+    changes, moved = [], 0
+    for department in rules.NOMINATING_DEPARTMENTS:
+        old, new = before.slots.get(department), after.get(department)
+        if old == new:
+            continue
+        changes.append(f"{department}: {slot_label(*old) if old else 'no slot'} to {slot_label(*new) if new else 'no slot'}")
+        if data.move_rooms and old and new:
+            rooms = db.scalars(
+                select(Panel).where(
+                    Panel.round == "department", Panel.department == department, Panel.slot_start == old[0], Panel.slot_end == old[1]
+                )
+            )
+            for room in rooms:
+                _check_free(
+                    db,
+                    "department",
+                    PanelUpdateInput(building=room.building, name=room.name, slot_start=new[0], slot_end=new[1]),
+                    exclude=room.id,
+                )
+                room.slot_start, room.slot_end = new
+                moved += 1
+    grace = data.grace_minutes
+    if grace != int(before.grace.total_seconds() // 60):
+        changes.append(f"extra scoring minutes: {int(before.grace.total_seconds() // 60)} to {grace}")
+    state.value = json.dumps(
+        {"slots": {d: [s.isoformat(), e.isoformat()] for d, (s, e) in after.items()}, "grace_minutes": grace, "by": admin.email}
+    )
+    state.updated_at = utcnow()
+    if changes:
+        audit.record(db, admin.email, "judging.timetable_updated", detail="; ".join(changes) + (f" ({moved} rooms moved)" if moved else ""))
+    db.commit()
+    return timetable_out(timetable(db))
 
 
 def _check_view(admin: Admin, round_: str) -> None:
@@ -241,6 +353,7 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
     ).tuples():
         scores[(panel_id, score.team_id)].append(score)
     round_of = {p.id: p.round for p in panels}
+    grace = timetable(db).grace
     present: dict[tuple[str, uuid.UUID], int] = {}
     if teams:
         present = {
@@ -290,6 +403,7 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
             jurors=sorted(jurors[p.id], key=lambda j: not j.chair),
             teams=by_panel[p.id],
             can_edit=viewer is not None and _can_edit(viewer, p),
+            scoring_until=scoring_window(p, grace)[1],
         )
         for p in panels
     ]
@@ -322,8 +436,25 @@ def open_blocker(db: Session, settings: Settings, round_: str) -> str | None:
         return "Allot teams to the rooms or panels first."
     for panel in panels:
         if team_counts.get(panel.id) and not juror_counts.get(panel.id):
-            return f"{panel.name} has teams but no judges. Appoint its judges first."
+            return f"{room_label(panel)} has teams but no judges. Appoint its judges first."
+    if round_ == "department":
+        departments = defaultdict(list)
+        for panel_id, department in db.execute(
+            select(PanelJuror.panel_id, Juror.department).join(Juror, Juror.email == PanelJuror.juror_email)
+        ).tuples():
+            departments[panel_id].append(department)
+        for panel in panels:
+            if team_counts.get(panel.id) and _missing_judges(panel, departments[panel.id]):
+                return f"{room_label(panel)} needs {_missing_judges(panel, departments[panel.id])}."
     return None
+
+
+def _missing_judges(panel: Panel, departments: list[str | None]) -> str | None:
+    """A department room has two judges: one from its own department and one from another. What is missing, if anything."""
+    own = sum(1 for d in departments if d == panel.department)
+    other = len(departments) - own
+    missing = [f"a judge from {panel.department}"] * (own == 0) + ["a judge from another department"] * (other == 0)
+    return " and ".join(missing) or None
 
 
 def round_out(db: Session, settings: Settings, round_: str) -> RoundOut:
@@ -365,6 +496,8 @@ def overview(db: Session, admin: Admin, settings: Settings, round_: str) -> Judg
         panels=_panels_out(db, panels, admin),
         unallotted=admin_service.summaries(db, unallotted),
         tents=tents,
+        timetable=timetable_out(timetable(db)) if round_ == "department" else None,
+        server_time=utcnow(),
     )
 
 
@@ -418,7 +551,17 @@ def _juror_out(db: Session, jurors: list[Juror]) -> list[JurorOut]:
             .where(PanelJuror.juror_email.in_(emails))
             .order_by(Panel.round, Panel.name_key)
         ).tuples():
-            panels[link.juror_email].append(JurorPanelRef(id=panel.id, round=panel.round, name=panel.name, chair=link.chair))
+            panels[link.juror_email].append(
+                JurorPanelRef(
+                    id=panel.id,
+                    round=panel.round,
+                    building=panel.building,
+                    name=panel.name,
+                    department=panel.department,
+                    slot_start=panel.slot_start,
+                    chair=link.chair,
+                )
+            )
         scores = dict(
             db.execute(select(Score.juror_email, func.count()).where(Score.juror_email.in_(emails)).group_by(Score.juror_email))
             .tuples()
@@ -457,10 +600,6 @@ def add_juror(db: Session, admin: Admin, data: JurorInput) -> JurorOut:
         # Department admins appoint KIET faculty only; outside experts (given a KIET account) are appointed by super admins.
         if data.kind != "faculty":
             raise ApiError("Department admins add KIET faculty as judges. Ask a super admin to appoint an outside expert.", 403)
-        if data.department == admin.department:
-            raise ApiError(
-                f"Faculty of {admin.department} cannot judge {admin.department} teams. Choose a judge from another department.", 422
-            )
     if db.get(Juror, data.email) is not None:
         raise ApiError("This email is already a judge.", 409)
     juror = Juror(
@@ -530,6 +669,12 @@ def _describe_room(panel: Panel) -> str:
 
 def create_panel(db: Session, admin: Admin, data: PanelInput) -> PanelOut:
     _require_creator(admin, data.round, data.department)
+    if data.round == "department" and data.slot_start is None:
+        # A room without a time takes its department's slot from the timetable.
+        slot = timetable(db).slots.get(data.department or "")
+        if slot is None:
+            raise ApiError(f"{data.department} has no slot in the timetable yet. Give the room's date and time.", 422)
+        data = data.model_copy(update={"slot_start": slot[0], "slot_end": slot[1]})
     _check_free(db, data.round, data)
     panel = Panel(
         round=data.round,
@@ -648,16 +793,31 @@ def set_panel_jurors(db: Session, admin: Admin, panel_id: uuid.UUID, data: Panel
         raise ApiError("A judge is listed more than once.", 422)
     if sum(1 for j in data.jurors if j.chair) > 1:
         raise ApiError("Only one judge can chair a panel.", 422)
-    jurors = {j.email: j for j in db.scalars(select(Juror).where(Juror.email.in_(emails)))}
+    # Locks these judges (in a fixed order), so two rooms saved at once cannot both take the same judge.
+    jurors = {j.email: j for j in db.scalars(select(Juror).where(Juror.email.in_(emails)).order_by(Juror.email).with_for_update())}
     for email in emails:
-        juror = jurors.get(email)
-        if juror is None:
+        if email not in jurors:
             raise ApiError(f"{email} is not an appointed judge. Add them under Judges first.", 422)
-        if panel.round == "department" and juror.kind == "faculty" and juror.department == panel.department:
-            raise ApiError(f"{juror.name} is from {juror.department}. Department teams are judged by faculty of another department.", 422)
-        own = db.get(Admin, email)
-        if panel.round == "department" and own is not None and own.role == "admin" and own.department == panel.department:
-            raise ApiError(f"{juror.name} is a {panel.department} admin, so they cannot judge {panel.department} teams.", 422)
+    if panel.round == "department":
+        # Two judges per room: one from the room's own department and one from another department.
+        own = [jurors[e] for e in emails if jurors[e].department == panel.department]
+        if len(emails) > 2:
+            raise ApiError(f"A room has two judges: one from {panel.department} and one from another department.", 422)
+        if len(own) > 1:
+            raise ApiError(f"Only one of the two judges can be from {panel.department}; the other comes from another department.", 422)
+        if len(emails) - len(own) > 1:
+            raise ApiError(f"Only one judge can come from another department; the other is from {panel.department}.", 422)
+    # A judge sits in one room (or panel) per round.
+    elsewhere = db.execute(
+        select(Juror.name, Panel)
+        .join(PanelJuror, PanelJuror.juror_email == Juror.email)
+        .join(Panel, Panel.id == PanelJuror.panel_id)
+        .where(Juror.email.in_(emails), Panel.round == panel.round, Panel.id != panel.id)
+    ).first()
+    if elsewhere:
+        name, other = elsewhere
+        where = ", ".join(p for p in (other.department and f"{other.department} teams", slot_label(other.slot_start, other.slot_end)) if p)
+        raise ApiError(f"{name} already judges in {room_label(other)}{f' ({where})' if where else ''}. A judge sits in one room only.", 409)
     current = set(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == panel.id)))
     removed = [e for e in current if e not in emails]
     if removed and _scored(db, panel, juror_emails=removed):
@@ -1028,6 +1188,7 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
         for score in db.scalars(select(Score).where(Score.juror_email == juror.email, Score.team_id.in_(team_ids))):
             mine[(score.round, score.team_id)] = score
     open_rounds = {r for r in rules.JUDGING_ROUNDS if round_open(db, r)}
+    grace = timetable(db).grace
     by_panel: dict[uuid.UUID, list[JudgeTeamOut]] = defaultdict(list)
     round_of = {panel.id: panel.round for _, panel in links}
     for panel_id, team in rows:
@@ -1065,10 +1226,13 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
                 department=panel.department,
                 chair=link.chair,
                 open=panel.round in open_rounds,
+                scoring_from=scoring_window(panel, grace)[0],
+                scoring_until=scoring_window(panel, grace)[1],
                 teams=by_panel[panel.id],
             )
             for link, panel in links
         ],
+        server_time=utcnow(),
     )
 
 
@@ -1094,6 +1258,13 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
     # Locks the round state for the length of the save, so a lock by the organisers is never overtaken.
     if db.scalar(select(AppState).where(AppState.key == _round_key(panel.round)).with_for_update(read=True)) is None:
         raise ApiError("Judging is locked. Scores can be saved once the organisers open this round.", 423)
+    opens, closes = scoring_window(panel, timetable(db).grace)
+    if opens is not None and closes is not None and not opens <= utcnow() <= closes:
+        raise ApiError(
+            f"Marks for this room can be submitted {slot_label(opens, closes).replace(' - ', ' to ')} (the slot and the extra time "
+            "after it). Ask an organiser if the time has changed.",
+            423,
+        )
     team = db.get(Team, team_id)
     if team is None or team.status != "submitted":
         raise ApiError("This team has been withdrawn or disqualified, so it is not scored.", 409)
