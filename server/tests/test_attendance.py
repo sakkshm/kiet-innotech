@@ -65,8 +65,10 @@ def test_scanning_marks_once_and_only_in_scope(judging, as_user):  # noqa: F811
     set_room(judging)
     room = judging["room"]
     alpha = as_user("a@kiet.edu").get("/me/pass").json()
-    # Another department's admin and a judge of another room cannot mark this student.
-    assert scan(judging["it"], code_for(alpha)).status_code == 403
+    # Another department's admin and a judge of another room cannot mark this student, and learn nothing about them.
+    refused = scan(judging["it"], code_for(alpha))
+    assert refused.status_code == 403 and "not in your room or department" in refused.json()["detail"]
+    assert "CSE" not in refused.json()["detail"] and "Alpha" not in refused.json()["detail"]
     assert scan(judging["cse_prof"], code_for(alpha)).status_code == 403
     # The department's admin can; scanning again only reports the first mark.
     first = scan(judging["cse"], code_for(alpha))
@@ -88,6 +90,10 @@ def test_scanning_marks_once_and_only_in_scope(judging, as_user):  # noqa: F811
     sheet = judging["it_prof"].get(f"/judge/panels/{room['id']}/attendance").json()
     leader = sheet["teams"][0]["members"][0]
     assert (leader["role"], leader["method"], leader["marked_by"]) == ("leader", "qr", "cse.admin@kiet.edu")
+    # Judges never get students' phone numbers; organisers do.
+    assert {m["phone"] for t in sheet["teams"] for m in t["members"]} == {""}
+    organiser = judging["cse"].get("/admin/judging/department/attendance", params={"panel_id": room["id"]}).json()
+    assert all(m["phone"] for t in organiser["teams"] for m in t["members"])
     assert judging["cse_prof"].get(f"/judge/panels/{room['id']}/attendance").status_code == 403
 
 
@@ -172,3 +178,44 @@ def test_super_admins_set_the_finalist_quotas(judging, settings):  # noqa: F811
     # Fixed once results are out.
     assert publish(root, settings).status_code == 200
     assert root.put("/admin/finalists/quotas", {"quotas": [{"department": "IT", "category": 1, "quota": 2}]}).status_code == 409
+
+
+# ---------- Races on the day ----------
+
+
+def test_races_never_leave_a_score_or_mark_inconsistent(judging, as_user):  # noqa: F811
+    from sqlalchemy import select
+
+    from app.db import get_sessionmaker
+    from app.models import Attendance, PanelJuror, Score
+    from test_concurrency import parallel
+
+    root, room = judging["root"], judging["room"]
+    set_room(judging)
+    root.post("/admin/judging/department/open")
+    path = lambda key: f"/judge/panels/{room['id']}/teams/{judging['teams'][key]['id']}/score"  # noqa: E731
+    full = {"marks": [5, 5, 5, 5, 5, 5, 5, 5, 10], "remarks": ""}
+    # A double tap on "Submit": one score, the other refused as final.
+    codes = parallel(lambda: judging["it_prof"].put(path("cse_a"), full), lambda: judging["it_prof"].put(path("cse_a"), full))
+    assert sorted(codes) == [200, 409]
+    # A judge submits while the room's admin removes them: the score is never left behind without its judge.
+    keep_chair = {"jurors": [{"email": "it.prof@kiet.edu", "chair": True}]}
+    codes = parallel(
+        lambda: judging["external"].put(path("cse_b"), full), lambda: judging["cse"].put(f"/admin/panels/{room['id']}/jurors", keep_chair)
+    )
+    with get_sessionmaker()() as db:
+        on_panel = set(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == room["id"])))
+        scorers = set(db.scalars(select(Score.juror_email)))
+        assert scorers <= on_panel, (codes, scorers, on_panel)
+    # Two desks scan the same student at once: one mark.
+    pass_json = as_user("a@kiet.edu").get("/me/pass").json()
+    results = []
+    parallel(
+        *(
+            lambda staff=staff: results.append(scan(staff, code_for(pass_json))) or results[-1]
+            for staff in (judging["cse"], root, judging["it_prof"])
+        )
+    )
+    assert sorted(r.json()["result"] for r in results) == ["already", "already", "marked"]
+    with get_sessionmaker()() as db:
+        assert len(list(db.scalars(select(Attendance)))) == 1

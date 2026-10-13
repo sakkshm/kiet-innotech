@@ -106,12 +106,27 @@ export function EventPass() {
     return () => clearInterval(timer);
   }, []);
 
-  // Keeps the screen on while the pass is shown, where the phone allows it.
+  // Keeps the screen on while the pass is shown, where the phone allows it. The phone drops the lock whenever the
+  // page is hidden, so it is asked for again each time the pass comes back into view.
   useEffect(() => {
-    let lock: { release: () => Promise<void> } | null = null;
-    const nav = navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> } };
-    nav.wakeLock?.request("screen").then((l) => (lock = l), () => undefined);
-    return () => void lock?.release();
+    type Lock = { release: () => Promise<void> };
+    const nav = navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<Lock> } };
+    let lock: Lock | null = null;
+    let gone = false;
+    const request = () => {
+      if (document.visibilityState !== "visible" || !nav.wakeLock) return;
+      nav.wakeLock.request("screen").then(
+        (l) => (gone ? void l.release().catch(() => undefined) : (lock = l)),
+        () => undefined,
+      );
+    };
+    request();
+    document.addEventListener("visibilitychange", request);
+    return () => {
+      gone = true;
+      document.removeEventListener("visibilitychange", request);
+      void lock?.release().catch(() => undefined);
+    };
   }, []);
 
   const pass = state?.pass ?? null;

@@ -750,14 +750,18 @@ def attendance(db: Session, admin: Admin, round_: str, panel_id: uuid.UUID | Non
 
 
 def judge_attendance(db: Session, juror: Juror, panel_id: uuid.UUID) -> AttendanceSheet:
-    """A judge's own room: its teams and who is present (judges may mark attendance there)."""
+    """A judge's own room: its teams and who is present (judges may mark attendance there). No phone numbers."""
     panel = db.get(Panel, panel_id)
     if panel is None or db.get(PanelJuror, (panel_id, juror.email)) is None:
         raise ApiError("You are not a judge in this room.", 403)
     teams = list(
         db.scalars(select(Team).join(PanelTeam, PanelTeam.team_id == Team.id).where(PanelTeam.panel_id == panel.id).order_by(Team.number))
     )
-    return _sheet(db, panel.round, teams, panel=panel)
+    sheet = _sheet(db, panel.round, teams, panel=panel)
+    for team in sheet.teams:
+        for member in team.members:
+            member.phone = ""
+    return sheet
 
 
 def _sheet(db: Session, round_: str, teams: list[Team], *, panel: Panel | None = None, title: str = "") -> AttendanceSheet:
@@ -1073,8 +1077,10 @@ FINAL_SCORE = "Your marks for this team are already submitted and are final. Onl
 
 def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUID, data: ScoreInput) -> ScoreOut:
     """A judge's marks for a team of their own panel, while the round is open. Once submitted they are final."""
+    # A shared lock on the room: changes to its judges or teams (which lock it for update) wait until this save is done,
+    # so a score is never saved for a link that is being removed. Judges of the same room still save side by side.
+    panel = db.scalar(select(Panel).where(Panel.id == panel_id).with_for_update(read=True).execution_options(populate_existing=True))
     link = db.scalar(select(PanelJuror).where(PanelJuror.panel_id == panel_id, PanelJuror.juror_email == juror.email))
-    panel = db.get(Panel, panel_id)
     if link is None or panel is None:
         raise ApiError("You are not a judge on this panel.", 403)
     if db.scalar(select(PanelTeam.team_id).where(PanelTeam.panel_id == panel_id, PanelTeam.team_id == team_id)) is None:
@@ -1152,6 +1158,10 @@ def edit_score(db: Session, admin: Admin, panel_id: uuid.UUID, team_id: uuid.UUI
         team,
         f"{juror_email} in {room_label(panel)}: {total}/{rules.RUBRIC_TOTAL} {data.marks} (was: {was}). Reason: {data.reason}",
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ApiError("The judge submitted marks for this team just now. Reload to see them, then change them if needed.", 409) from exc
     db.refresh(current)
     return _score_out(current)

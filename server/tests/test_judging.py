@@ -113,8 +113,13 @@ def test_department_admins_manage_judges_and_their_own_rooms(judging, client):
     assert cse.delete("/admin/jurors/x@labs.com").status_code == 409
     cse.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": []})
     assert cse.delete("/admin/jurors/x@labs.com").status_code == 204
-    # A department admin cannot sit on their own department's panel, even as an external judge.
-    root.post("/admin/jurors", {"email": "cse.admin@kiet.edu", "name": "CSE Admin", "kind": "external", "organisation": "KIET"})
+    # A KIET account is never an "external" judge, so a department cannot slip its own staff onto its rooms.
+    disguised = cse.post(
+        "/admin/jurors", {"email": "colleague@kiet.edu", "name": "CSE Colleague", "kind": "external", "organisation": "KIET"}
+    )
+    assert disguised.status_code == 422 and "KIET faculty" in disguised.json()["detail"]
+    # A department admin cannot sit on their own department's panel, even listed under another department.
+    root.post("/admin/jurors", {"email": "cse.admin@kiet.edu", "name": "CSE Admin", "kind": "faculty", "department": "IT"})
     refused = root.put(f"/admin/panels/{mine.json()['id']}/jurors", {"jurors": [{"email": "cse.admin@kiet.edu"}]})
     assert refused.status_code == 422 and "CSE admin" in refused.json()["detail"]
     # The COE KIET admin has no department round, so no rooms.

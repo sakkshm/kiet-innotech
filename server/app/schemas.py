@@ -674,6 +674,10 @@ class JurorInput(Input):
 
     @model_validator(mode="after")
     def check_kind(self) -> "JurorInput":
+        # A KIET account belongs to KIET staff, so its department is known: it cannot be entered as "external" to get
+        # around the rule that a department does not judge its own teams.
+        if self.kind == "external" and rules.is_kiet_email(self.email):
+            raise ValueError("A @kiet.edu judge is KIET faculty: choose KIET faculty and their department.")
         if self.kind == "faculty":
             if self.department not in rules.DEPARTMENTS:
                 raise ValueError("Choose the KIET department this faculty member belongs to.")

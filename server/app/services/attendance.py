@@ -148,18 +148,16 @@ def _student(db: Session, staff: Staff, user_id: uuid.UUID, round_: str) -> tupl
     member = db.scalar(select(TeamMember).where(TeamMember.user_id == user_id))
     if user is None or profile is None or member is None:
         raise ApiError("This student is not in a team.", 404)
-    if user.banned_at is not None:
-        raise ApiError(f"{profile.full_name}'s account is suspended by the organisers. Do not mark them present.", 409)
     team = db.get(Team, member.team_id)
     assert team is not None
+    # Scope first, so nothing about a student outside the caller's rooms or department is revealed.
+    if not _may_mark(db, staff, team, round_):
+        raise ApiError("This student is not in your room or department. Send them to their own room's desk.", 403)
+    if user.banned_at is not None:
+        raise ApiError(f"{profile.full_name}'s account is suspended by the organisers. Do not mark them present.", 409)
     label = judging.ROUND_LABELS[round_]
     if not db.scalar(select(Team.id).where(Team.id == team.id, judging._eligible_condition(round_))):
         raise ApiError(f"{profile.full_name}'s team {team.code} is not taking part in the {label} (status: {team.status}).", 409)
-    if not _may_mark(db, staff, team, round_):
-        where = team.department if team.participant_type == "kiet" else team.institution
-        raise ApiError(
-            f"{profile.full_name} ({team.code}, {where}) is not a student you can mark. Send them to their own room's desk.", 403
-        )
     return user, profile, member, team
 
 
