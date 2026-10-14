@@ -29,10 +29,15 @@ def test_the_pass_shows_once_the_team_is_submitted(judging, as_user):  # noqa: F
     mine = as_user("a@kiet.edu").get("/me/pass").json()
     assert mine["seed"] and mine["period_seconds"] == 60 and [r["round"] for r in mine["rounds"]] == ["department"]
     assert mine["rounds"][0]["room"] is None
+    # Before a room is allotted, the pass says when the team's department is judged (the timetable's CSE slot).
+    assert (
+        mine["rounds"][0]["planned_start"] == "2026-10-23T13:30:00+05:30"
+        and mine["rounds"][0]["planned_end"] == "2026-10-23T17:00:00+05:30"
+    )
     set_room(judging)
     room = as_user("a@kiet.edu").get("/me/pass").json()["rounds"][0]
     assert (room["building"], room["room"], room["location"]) == ("CSIT Block", "304", "2nd floor")
-    assert room["slot_start"].startswith("2026-10-22T04:30")
+    assert room["slot_start"].startswith("2026-10-22T04:30") and room["planned_start"] is None
     # Teams from other colleges have only the finale.
     assert [r["round"] for r in as_user("r@gmail.com").get("/me/pass").json()["rounds"]] == ["final"]
 

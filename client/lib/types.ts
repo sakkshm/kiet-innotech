@@ -120,6 +120,9 @@ export type PassRound = {
   location: string | null;
   slotStart: string | null;
   slotEnd: string | null;
+  /** Before a room is allotted: when the team's department is judged, from the timetable. */
+  plannedStart: string | null;
+  plannedEnd: string | null;
   tent: string | null;
   presentAt: string | null;
 };

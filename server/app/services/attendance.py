@@ -95,6 +95,7 @@ def my_pass(db: Session, user: User, settings: Settings) -> PassOut:
     )
     marks = {a.round: a for a in db.scalars(select(Attendance).where(Attendance.user_id == user.id))}
     tent = db.get(FinalTent, team.id)
+    planned = judging.timetable(db).slots.get(team.department or "")
     out = []
     for round_ in rounds:
         room = rooms.get(round_)
@@ -108,6 +109,8 @@ def my_pass(db: Session, user: User, settings: Settings) -> PassOut:
                 location=room.location if room else None,
                 slot_start=room.slot_start if room else None,
                 slot_end=room.slot_end if room else None,
+                planned_start=planned[0] if planned and round_ == "department" and room is None else None,
+                planned_end=planned[1] if planned and round_ == "department" and room is None else None,
                 tent=tent.tent if tent and round_ == "final" else None,
                 present_at=marks[round_].marked_at if round_ in marks else None,
             )

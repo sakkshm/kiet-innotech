@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, CalendarClock, Clock, Frown, MapPin, PartyPopper, QrCode, Trophy } from "lucide-react";
+import { ArrowRight, CalendarClock, Clock, Frown, Hourglass, MapPin, PartyPopper, QrCode, Trophy } from "lucide-react";
 import { api } from "@/lib/api";
 import type { EventPass, ResultCard } from "@/lib/types";
 
@@ -61,7 +61,7 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
 
       {rounds.map((round) => (
         <section key={round.round} className="rounded-3xl bg-white p-5 ring-1 ring-line sm:p-6">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent-500">{round.round === "final" ? "Grand Finale" : "Your judging room"}</p>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent-500">{round.round === "final" ? "Grand Finale" : "Your room"}</p>
           {round.round === "department" ? (
             round.room ? (
               <div className="mt-2 space-y-2">
@@ -83,7 +83,25 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
                 <p className="text-sm text-muted">Be there 15 minutes early with your whole team and your college ID cards.</p>
               </div>
             ) : (
-              <p className="mt-2 text-sm text-muted">Your room and time will appear here once your department allots them.</p>
+              <div className="mt-2 flex items-start gap-4">
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-accent-50 text-accent-500">
+                  <Hourglass size={24} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-display text-xl font-bold text-ink">Your room will be allotted soon</p>
+                  <p className="mt-1 text-sm text-muted">
+                    Your department will allot your room and time slot before the department round. Come back to this page: it appears here
+                    as soon as it is ready, and on your event pass.
+                  </p>
+                  {round.plannedStart && round.plannedEnd && (
+                    <p className="mt-3 inline-flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-ink">
+                      <CalendarClock size={18} className="shrink-0 text-accent-500" aria-hidden="true" />
+                      Your department is judged {day.format(new Date(round.plannedStart))} · {time.format(new Date(round.plannedStart))} –{" "}
+                      {time.format(new Date(round.plannedEnd))}
+                    </p>
+                  )}
+                </div>
+              </div>
             )
           ) : (
             <p className="mt-2 text-sm text-muted">

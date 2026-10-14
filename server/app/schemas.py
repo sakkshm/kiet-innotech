@@ -999,6 +999,9 @@ class PassRound(BaseModel):
     location: str | None = None
     slot_start: datetime | None = None
     slot_end: datetime | None = None
+    # Before a room is allotted: when the team's department is judged, from the timetable.
+    planned_start: datetime | None = None
+    planned_end: datetime | None = None
     tent: str | None = None
     present_at: datetime | None = None
 

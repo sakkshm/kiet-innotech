@@ -248,7 +248,15 @@ export function EventPass() {
                   )}
                 </dl>
               ) : (
-                <p className="mt-2 text-sm text-muted">Your room and time slot will appear here once your department allots them.</p>
+                <p className="mt-2 text-sm text-muted">
+                  Your room will be allotted soon. It appears here as soon as your department allots it.
+                  {round.plannedStart && round.plannedEnd && (
+                    <span className="mt-2 block font-semibold text-ink">
+                      Your department is judged {day.format(new Date(round.plannedStart))} · {time.format(new Date(round.plannedStart))} –{" "}
+                      {time.format(new Date(round.plannedEnd))}.
+                    </span>
+                  )}
+                </p>
               )
             ) : (
               <p className="mt-2 text-sm text-muted">
