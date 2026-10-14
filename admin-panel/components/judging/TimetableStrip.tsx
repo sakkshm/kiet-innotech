@@ -53,7 +53,8 @@ export function TimetableStrip({ judging, onSaved }: { judging: Judging; onSaved
             Department round timetable
           </h2>
           <p className="text-sm text-muted">
-            Judges submit marks during their room&apos;s slot and up to {timetable.graceMinutes} minutes after it. New rooms take their department&apos;s slot.
+            Judges submit marks during their room&apos;s slot and up to {timetable.graceMinutes} minutes after it, and can sign in from{" "}
+            {timetable.loginLeadMinutes} minutes before it. New rooms take their department&apos;s slot.
           </p>
         </div>
         {admin.role === "super_admin" && (
@@ -136,6 +137,7 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
     timetable.slots.map((s) => ({ department: s.department, date: parts(s.slotStart).date, from: parts(s.slotStart).time, to: parts(s.slotEnd).time })),
   );
   const [grace, setGrace] = useState(String(timetable.graceMinutes));
+  const [lead, setLead] = useState(String(timetable.loginLeadMinutes));
   const [move, setMove] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +146,8 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
   async function save() {
     const minutes = Number(grace);
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) return setError("Extra minutes: a whole number from 0 to 240.");
+    const before = Number(lead);
+    if (!Number.isInteger(before) || before < 0 || before > 1440) return setError("Judge sign-in: a whole number of minutes from 0 to 1440.");
     for (const r of rows) {
       const any = r.date || r.from || r.to;
       if (any && !(r.date && r.from && r.to)) return setError(`${r.department}: give the date, start and end, or clear all three.`);
@@ -159,6 +163,7 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
           slotEnd: r.date ? `${r.date}T${r.to}:00+05:30` : null,
         })),
         minutes,
+        before,
         move,
       );
       onSaved();
@@ -190,6 +195,9 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
         <div className="flex flex-wrap items-end gap-4">
           <Field label="Extra minutes after each slot" htmlFor="grace" hint="Time for judges to finish entering marks." className="w-56">
             <Input id="grace" type="number" min={0} max={240} step={5} value={grace} onChange={(e) => setGrace(e.target.value)} />
+          </Field>
+          <Field label="Judges can sign in (minutes before the slot)" htmlFor="lead" hint="Until their scoring closes." className="w-64">
+            <Input id="lead" type="number" min={0} max={1440} step={15} value={lead} onChange={(e) => setLead(e.target.value)} />
           </Field>
           <label className="flex items-center gap-2 pb-2 text-sm text-navy-800">
             <Checkbox label="Also move rooms that are still at a department's old time" checked={move} onChange={setMove} />

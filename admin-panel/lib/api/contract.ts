@@ -97,7 +97,17 @@ export interface AdminApi {
 
   judging(round: JudgingRound): Promise<Judging>;
   /** The department round timetable; only a super admin can change it. `moveRooms` moves rooms still at a department's old time. */
-  saveTimetable(slots: { department: string; slotStart: string | null; slotEnd: string | null }[], graceMinutes: number, moveRooms: boolean): Promise<Timetable>;
+  saveTimetable(
+    slots: { department: string; slotStart: string | null; slotEnd: string | null }[],
+    graceMinutes: number,
+    loginLeadMinutes: number,
+    moveRooms: boolean,
+  ): Promise<Timetable>;
+  /** Gives a fully scored team a prize place (department round: department admins for their department, and super admins). */
+  declareAward(round: JudgingRound, teamId: string, place: number): Promise<void>;
+  removeAward(round: JudgingRound, teamId: string): Promise<void>;
+  /** Super admin: shows (true) or hides the round's winners and prize money to students. */
+  publishAwards(round: JudgingRound, publish: boolean): Promise<void>;
   openJudging(round: JudgingRound): Promise<RoundState>;
   lockJudging(round: JudgingRound): Promise<RoundState>;
   rankings(round: JudgingRound, department?: string): Promise<Rankings>;

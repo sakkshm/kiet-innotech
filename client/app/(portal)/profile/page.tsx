@@ -9,6 +9,7 @@ import { participantTypeLabels, yearLabel } from "@/lib/rules";
 import type { Profile } from "@/lib/types";
 import { Button, Notice } from "@/components/ui/form";
 import { PageHeading, Panel } from "@/components/portal/PageHeading";
+import { JudgingStatus } from "@/components/portal/JudgingStatus";
 import { ProfileForm } from "@/components/portal/ProfileForm";
 import { usePortal } from "@/components/portal/PortalProvider";
 import { useAction } from "@/components/portal/useAction";
@@ -55,6 +56,12 @@ export default function ProfilePage() {
         <Notice tone="success" className="mb-6">
           Your profile has been updated.
         </Notice>
+      )}
+
+      {team && team.status === "submitted" && (
+        <div className="mb-6">
+          <JudgingStatus />
+        </div>
       )}
 
       <Panel>

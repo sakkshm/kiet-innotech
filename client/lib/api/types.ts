@@ -1,4 +1,4 @@
-import type { EventPass, Invitation, Me, ProfileInput, Profile, Team, TeamInput } from "../types";
+import type { EventPass, Invitation, Me, ProfileInput, Profile, ResultCard, Team, TeamInput } from "../types";
 
 /** An error the API reports to the student, e.g. "This student is already part of another team." */
 export class ApiError extends Error {
@@ -34,4 +34,6 @@ export interface StudentApi {
 
   /** The event pass shown at the venue (see lib/pass.ts). */
   getMyPass(): Promise<EventPass>;
+  /** The team's results, once announced (awaiting until then). */
+  getMyResults(): Promise<{ cards: ResultCard[] }>;
 }

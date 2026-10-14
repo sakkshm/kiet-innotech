@@ -563,4 +563,9 @@ export const mockApi: StudentApi = {
     // The demo has no venue: the pass explains it appears once the team is submitted.
     return { seed: null, day: null, periodSeconds: 60, serverTime: new Date().toISOString(), userId: profile.userId, rounds: [] };
   },
+
+  async getMyResults() {
+    await sleep();
+    return { cards: [] };
+  },
 };

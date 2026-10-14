@@ -136,3 +136,13 @@ export type EventPass = {
   userId: string;
   rounds: PassRound[];
 };
+
+/** One announced (or awaited) result for the student's team. */
+export type ResultCard = {
+  round: "department" | "final";
+  status: "awaiting" | "finalist" | "not_selected" | "winner" | "participated";
+  title: string;
+  message: string;
+  place: number | null;
+  amount: number | null;
+};

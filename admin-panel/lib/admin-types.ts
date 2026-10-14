@@ -64,6 +64,11 @@ export type AuditAction =
   | "judging.teams_allotted"
   | "judging.judges_assigned"
   | "judging.score_edited"
+  | "judging.timetable_updated"
+  | "judging.award_declared"
+  | "judging.award_removed"
+  | "judging.awards_published"
+  | "judging.awards_withdrawn"
   | "attendance.marked"
   | "attendance.unmarked"
   | "finalists.quotas_updated"
@@ -411,7 +416,14 @@ export type Panel = {
 /** One department's slot in the department round timetable (null: no slot yet). */
 export type TimetableSlot = { department: string; slotStart: string | null; slotEnd: string | null };
 
-export type Timetable = { slots: TimetableSlot[]; graceMinutes: number; customised: boolean; updatedBy: string | null };
+export type Timetable = {
+  slots: TimetableSlot[];
+  graceMinutes: number;
+  /** Judges can sign in this many minutes before their room's slot (until scoring closes). */
+  loginLeadMinutes: number;
+  customised: boolean;
+  updatedBy: string | null;
+};
 
 export type RoundState = {
   round: JudgingRound;
@@ -519,11 +531,27 @@ export type RankedTeam = {
   query: number | null;
   /** Level with the team above on total, innovation and query addressing: the panel chair decides. */
   tied: boolean;
+  /** Every judge of the room has scored the team; only complete teams get a place. */
+  complete: boolean;
+  /** A prize place declared by the organisers. */
+  award: { place: number; amount: number; declaredBy: string; declaredAt: string } | null;
 };
 
 export type Rankings = {
   round: JudgingRound;
-  groups: { key: string; label: string; department: string | null; category: number | null; teams: RankedTeam[] }[];
+  groups: {
+    key: string;
+    label: string;
+    department: string | null;
+    category: number | null;
+    teams: RankedTeam[];
+    /** Places with a cash prize in this group. */
+    prizes: { place: number; amount: number }[];
+  }[];
+  /** Students see the winners only once a super admin publishes them. */
+  awardsPublished: boolean;
+  canAward: boolean;
+  canPublishAwards: boolean;
 };
 
 export type Score = { marks: number[]; total: number; remarks: string; updatedAt: string; editedBy: string | null };

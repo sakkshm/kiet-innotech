@@ -12,6 +12,7 @@ import type { Invitation, Team } from "@/lib/types";
 import { Button, Notice, buttonStyles } from "@/components/ui/form";
 import { CreateOrJoin } from "@/components/portal/CreateOrJoin";
 import { FinaleNote } from "@/components/portal/FinaleNote";
+import { JudgingStatus } from "@/components/portal/JudgingStatus";
 import { PageHeading, Panel } from "@/components/portal/PageHeading";
 import { usePortal } from "@/components/portal/PortalProvider";
 import { TeamStatusNotice, categoryName, statusLabels } from "@/components/portal/TeamManager";
@@ -58,6 +59,11 @@ export default function DashboardPage() {
         </div>
       )}
       {direct && <FinaleNote kind={direct} team={team} className="mb-6" />}
+      {accepted && (
+        <div className="mb-6">
+          <JudgingStatus />
+        </div>
+      )}
 
       <Panel className="mb-6">
         <ol
