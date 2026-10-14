@@ -418,9 +418,8 @@ export type TimetableSlot = { department: string; slotStart: string | null; slot
 
 export type Timetable = {
   slots: TimetableSlot[];
+  /** Relaxation time: judges can still submit this many minutes after their slot (they are not told). */
   graceMinutes: number;
-  /** Judges can sign in this many minutes before their room's slot (until scoring closes). */
-  loginLeadMinutes: number;
   customised: boolean;
   updatedBy: string | null;
 };

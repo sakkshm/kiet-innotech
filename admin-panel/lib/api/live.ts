@@ -363,8 +363,7 @@ export const liveApi: AdminApi = {
   activity: (query) => request<Page<AuditEntry>>("GET", `/admin/activity${queryString(query)}`),
 
   judging: (round) => request<Judging>("GET", `/admin/judging/${round}`),
-  saveTimetable: (slots, graceMinutes, loginLeadMinutes, moveRooms) =>
-    request<Timetable>("PUT", "/admin/judging/timetable", { slots, graceMinutes, loginLeadMinutes, moveRooms }),
+  saveTimetable: (slots, graceMinutes, moveRooms) => request<Timetable>("PUT", "/admin/judging/timetable", { slots, graceMinutes, moveRooms }),
   declareAward: (round, teamId, place) => request<void>("POST", `/admin/judging/${round}/awards`, { teamId, place }),
   removeAward: (round, teamId) => request<void>("DELETE", `/admin/judging/${round}/awards/${id(teamId)}`),
   publishAwards: (round, publish) => request<void>("POST", `/admin/judging/${round}/awards/${publish ? "publish" : "withdraw"}`),

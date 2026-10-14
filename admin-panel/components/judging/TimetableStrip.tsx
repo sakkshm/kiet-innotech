@@ -13,7 +13,6 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Input } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
-import { tdClass, Th } from "@/components/ui/Table";
 
 const day = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 const tones = ["bg-brand-500", "bg-violet-600", "bg-accent-500", "bg-emerald-600", "bg-navy-700", "bg-rose-600"];
@@ -53,8 +52,8 @@ export function TimetableStrip({ judging, onSaved }: { judging: Judging; onSaved
             Department round timetable
           </h2>
           <p className="text-sm text-muted">
-            Judges submit marks during their room&apos;s slot and up to {timetable.graceMinutes} minutes after it, and can sign in from{" "}
-            {timetable.loginLeadMinutes} minutes before it. New rooms take their department&apos;s slot.
+            New rooms take their department&apos;s slot. Judges submit marks during their room&apos;s slot, plus a relaxation time of{" "}
+            {timetable.graceMinutes} minutes that only organisers see.
           </p>
         </div>
         {admin.role === "super_admin" && (
@@ -74,7 +73,7 @@ export function TimetableStrip({ judging, onSaved }: { judging: Judging; onSaved
               <div className={`flex items-center justify-between gap-2 px-4 py-2.5 text-white ${tones[i % tones.length]}`}>
                 <span className="font-display text-sm font-bold">{day.format(new Date(g.start))}</span>
                 <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold">
-                  {state === "upcoming" ? "Upcoming" : state === "now" ? "Judging now" : state === "extra" ? `Extra time · till ${timeLabel(new Date(end + graceMs).toISOString())}` : "Done"}
+                  {state === "upcoming" ? "Upcoming" : state === "now" ? "Judging now" : state === "extra" ? `Relaxation · till ${timeLabel(new Date(end + graceMs).toISOString())}` : "Done"}
                 </span>
               </div>
               <div className="px-4 py-3">
@@ -132,38 +131,51 @@ function parts(iso: string | null) {
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
 }
 
+type SlotRow = { id: number; date: string; from: string; to: string; departments: string[] };
+
+/**
+ * The super admin edits the timetable slot by slot, the way it is printed: a date, a time, and the departments judged
+ * then. Each department sits in one slot; departments left out have no slot (their rooms need their own time).
+ */
 function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable; onClose: () => void; onSaved: () => void }) {
-  const [rows, setRows] = useState(() =>
-    timetable.slots.map((s) => ({ department: s.department, date: parts(s.slotStart).date, from: parts(s.slotStart).time, to: parts(s.slotEnd).time })),
+  const all = timetable.slots.map((s) => s.department);
+  const [rows, setRows] = useState<SlotRow[]>(() =>
+    groups(timetable).map((g, i) => ({ id: i, date: parts(g.start).date, from: parts(g.start).time, to: parts(g.end).time, departments: g.departments })),
   );
   const [grace, setGrace] = useState(String(timetable.graceMinutes));
-  const [lead, setLead] = useState(String(timetable.loginLeadMinutes));
   const [move, setMove] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const set = (i: number, key: "date" | "from" | "to", value: string) => setRows((all) => all.map((r, j) => (j === i ? { ...r, [key]: value } : r)));
+  const placed = new Set(rows.flatMap((r) => r.departments));
+  const unplaced = all.filter((d) => !placed.has(d));
+  const update = (id: number, change: Partial<SlotRow>) => setRows((list) => list.map((r) => (r.id === id ? { ...r, ...change } : r)));
+  // A department belongs to one slot: adding it here takes it out of any other.
+  const toggle = (id: number, department: string) =>
+    setRows((list) =>
+      list.map((r) =>
+        r.id === id
+          ? { ...r, departments: r.departments.includes(department) ? r.departments.filter((d) => d !== department) : [...r.departments, department] }
+          : { ...r, departments: r.departments.filter((d) => d !== department) },
+      ),
+    );
 
   async function save() {
     const minutes = Number(grace);
-    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) return setError("Extra minutes: a whole number from 0 to 240.");
-    const before = Number(lead);
-    if (!Number.isInteger(before) || before < 0 || before > 1440) return setError("Judge sign-in: a whole number of minutes from 0 to 1440.");
-    for (const r of rows) {
-      const any = r.date || r.from || r.to;
-      if (any && !(r.date && r.from && r.to)) return setError(`${r.department}: give the date, start and end, or clear all three.`);
-      if (any && r.to <= r.from) return setError(`${r.department}: the slot must end after it starts.`);
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) return setError("Relaxation time: a whole number of minutes from 0 to 240.");
+    for (const [i, r] of rows.entries()) {
+      if (!r.date || !r.from || !r.to) return setError(`Slot ${i + 1}: give the date, the start and the end.`);
+      if (r.to <= r.from) return setError(`Slot ${i + 1}: the end must be after the start.`);
     }
+    const slotOf = new Map(rows.flatMap((r) => r.departments.map((d) => [d, r] as const)));
     setPending(true);
     setError(null);
     try {
       await api.saveTimetable(
-        rows.map((r) => ({
-          department: r.department,
-          slotStart: r.date ? `${r.date}T${r.from}:00+05:30` : null,
-          slotEnd: r.date ? `${r.date}T${r.to}:00+05:30` : null,
-        })),
+        all.map((department) => {
+          const r = slotOf.get(department);
+          return { department, slotStart: r ? `${r.date}T${r.from}:00+05:30` : null, slotEnd: r ? `${r.date}T${r.to}:00+05:30` : null };
+        }),
         minutes,
-        before,
         move,
       );
       onSaved();
@@ -176,7 +188,7 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
   return (
     <Dialog
       title="Department round timetable"
-      description="When each department is judged (IST). Judges can submit marks during the slot and the extra minutes after it."
+      description="Each slot is a date and time (IST) and the departments judged then. Click a department to put it in a slot."
       onClose={onClose}
       busy={pending}
       size="xl"
@@ -192,53 +204,66 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
       }
     >
       <div className="space-y-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <Field label="Extra minutes after each slot" htmlFor="grace" hint="Time for judges to finish entering marks." className="w-56">
-            <Input id="grace" type="number" min={0} max={240} step={5} value={grace} onChange={(e) => setGrace(e.target.value)} />
-          </Field>
-          <Field label="Judges can sign in (minutes before the slot)" htmlFor="lead" hint="Until their scoring closes." className="w-64">
-            <Input id="lead" type="number" min={0} max={1440} step={15} value={lead} onChange={(e) => setLead(e.target.value)} />
+        <ol className="space-y-3">
+          {rows.map((r, i) => (
+            <li key={r.id} className="rounded-2xl p-4 ring-1 ring-line">
+              <div className="flex flex-wrap items-end gap-3">
+                <span className={`mb-1 inline-flex size-8 items-center justify-center rounded-full font-display text-sm font-bold text-white ${tones[i % tones.length]}`}>{i + 1}</span>
+                <Field label="Date" htmlFor={`slot-${r.id}-date`} className="w-44">
+                  <Input id={`slot-${r.id}-date`} type="date" value={r.date} onChange={(e) => update(r.id, { date: e.target.value })} />
+                </Field>
+                <Field label="From" htmlFor={`slot-${r.id}-from`} className="w-32">
+                  <Input id={`slot-${r.id}-from`} type="time" step={300} value={r.from} onChange={(e) => update(r.id, { from: e.target.value })} />
+                </Field>
+                <Field label="To" htmlFor={`slot-${r.id}-to`} className="w-32">
+                  <Input id={`slot-${r.id}-to`} type="time" step={300} value={r.to} onChange={(e) => update(r.id, { to: e.target.value })} />
+                </Field>
+                <Button size="sm" variant="ghost" className="mb-1 ml-auto text-red-700" onClick={() => setRows((list) => list.filter((x) => x.id !== r.id))}>
+                  Remove slot
+                </Button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label={`Departments in slot ${i + 1}`}>
+                {all.map((d) => {
+                  const on = r.departments.includes(d);
+                  const elsewhere = !on && placed.has(d);
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggle(r.id, d)}
+                      title={elsewhere ? "In another slot: clicking moves it here" : undefined}
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset transition ${
+                        on ? "bg-navy-900 text-white ring-navy-900" : elsewhere ? "bg-white text-muted/70 ring-line hover:text-navy-900" : "bg-accent-50 text-accent-600 ring-accent-100 hover:bg-accent-100"
+                      }`}
+                    >
+                      {on && "✓ "}
+                      {departmentLabel(d)}
+                    </button>
+                  );
+                })}
+              </div>
+            </li>
+          ))}
+        </ol>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setRows((list) => [...list, { id: Math.max(0, ...list.map((r) => r.id)) + 1, date: "", from: "", to: "", departments: [] }])}
+        >
+          Add a slot
+        </Button>
+        {unplaced.length > 0 && (
+          <p className="text-sm text-accent-600">Not in any slot: {unplaced.map(departmentLabel).join(", ")}. Their rooms will need their own date and time.</p>
+        )}
+        <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-surface p-4">
+          <Field label="Relaxation time after every slot (minutes)" htmlFor="grace" hint="Judges can still submit marks for this long after their slot ends. They are not told about it." className="w-80">
+            <Input id="grace" type="number" min={0} max={240} step={15} value={grace} onChange={(e) => setGrace(e.target.value)} />
           </Field>
           <label className="flex items-center gap-2 pb-2 text-sm text-navy-800">
-            <Checkbox label="Also move rooms that are still at a department's old time" checked={move} onChange={setMove} />
-            Also move rooms that are still at a department&apos;s old time
+            <Checkbox label="Move rooms that are still at a department's old time" checked={move} onChange={setMove} />
+            Move rooms that are still at a department&apos;s old time
           </label>
-        </div>
-        <div className="max-h-[52dvh] overflow-auto rounded-xl ring-1 ring-line">
-          <table className="w-full min-w-[620px] border-separate border-spacing-0 text-sm">
-            <thead className="sticky top-0 z-10 bg-white">
-              <tr>
-                <Th>Department</Th>
-                <Th>Date</Th>
-                <Th>From</Th>
-                <Th>To</Th>
-                <Th>
-                  <span className="sr-only">Clear</span>
-                </Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.department} className={r.date ? "" : "bg-accent-50/60"}>
-                  <td className={`${tdClass} font-semibold text-navy-900`}>{departmentLabel(r.department)}</td>
-                  <td className={tdClass}>
-                    <Input type="date" aria-label={`${r.department} date`} value={r.date} onChange={(e) => set(i, "date", e.target.value)} />
-                  </td>
-                  <td className={tdClass}>
-                    <Input type="time" aria-label={`${r.department} from`} step={300} value={r.from} onChange={(e) => set(i, "from", e.target.value)} />
-                  </td>
-                  <td className={tdClass}>
-                    <Input type="time" aria-label={`${r.department} to`} step={300} value={r.to} onChange={(e) => set(i, "to", e.target.value)} />
-                  </td>
-                  <td className={tdClass}>
-                    <Button size="sm" variant="ghost" onClick={() => setRows((all) => all.map((x, j) => (j === i ? { ...x, date: "", from: "", to: "" } : x)))}>
-                      Clear
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
         {error && <Notice tone="error">{error}</Notice>}
       </div>

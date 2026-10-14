@@ -1,31 +1,9 @@
-import { Clock, ShieldAlert } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { KietLogo } from "./Brand";
 
 /** Shown when the signed-in account is not (or is no longer) on the admin list. `message` is the server's explanation. */
 export function NotAuthorised({ email, message, onSignOut }: { email: string | null; message?: string; onSignOut: () => void }) {
-  // A judge outside their sign-in window (or not yet in a room) is not refused for good: say when they can come back.
-  if (message && /judging/i.test(message)) {
-    return (
-      <main className="flex min-h-screen items-center justify-center px-4 py-12">
-        <section aria-labelledby="judge-wait-title" className="w-full max-w-md rounded-2xl bg-white p-6 ring-1 ring-line sm:p-8">
-          <KietLogo className="h-9 w-auto" />
-          <div className="mt-6 flex items-center gap-2 text-brand-700">
-            <Clock aria-hidden="true" className="size-5" />
-            <p className="text-xs font-semibold uppercase tracking-[0.16em]">Judging</p>
-          </div>
-          <h1 id="judge-wait-title" className="mt-2 font-display text-2xl font-bold text-navy-900">
-            Not open for you right now
-          </h1>
-          <p className="mt-3 rounded-xl bg-brand-50 px-4 py-3 text-sm font-medium text-navy-900">{message}</p>
-          {email && <p className="mt-3 text-xs text-muted">Signed in as {email}.</p>}
-          <div className="mt-6 flex flex-wrap gap-2">
-            <Button onClick={onSignOut}>Sign out</Button>
-          </div>
-        </section>
-      </main>
-    );
-  }
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-12">
       <section aria-labelledby="not-authorised-title" className="w-full max-w-md rounded-2xl bg-white p-6 ring-1 ring-line sm:p-8">

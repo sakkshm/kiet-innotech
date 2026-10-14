@@ -792,7 +792,6 @@ class TimetableSlot(Input):
 class TimetableInput(Input):
     slots: list[TimetableSlot] = Field(max_length=40)
     grace_minutes: int = Field(ge=0, le=rules.MAX_GRACE_MINUTES)
-    login_lead_minutes: int = Field(default=rules.DEFAULT_LOGIN_LEAD_MINUTES, ge=0, le=rules.MAX_LOGIN_LEAD_MINUTES)
     # Also move the department's rooms that still sit at the old time.
     move_rooms: bool = True
 
@@ -800,7 +799,6 @@ class TimetableInput(Input):
 class TimetableOut(BaseModel):
     slots: list[TimetableSlot]
     grace_minutes: int
-    login_lead_minutes: int
     customised: bool
     updated_by: str | None = None
 

@@ -100,7 +100,6 @@ export interface AdminApi {
   saveTimetable(
     slots: { department: string; slotStart: string | null; slotEnd: string | null }[],
     graceMinutes: number,
-    loginLeadMinutes: number,
     moveRooms: boolean,
   ): Promise<Timetable>;
   /** Gives a fully scored team a prize place (department round: department admins for their department, and super admins). */

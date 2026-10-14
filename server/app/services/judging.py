@@ -162,7 +162,6 @@ TIMETABLE_KEY = "judging_timetable"
 class Timetable:
     slots: dict[str, tuple[datetime, datetime]]
     grace: timedelta
-    login_lead: timedelta
     customised: bool
     updated_by: str | None
 
@@ -174,7 +173,7 @@ def timetable(db: Session) -> Timetable:
         for start, end, departments in rules.DEFAULT_TIMETABLE
         for d in departments
     }
-    grace, lead, by = rules.DEFAULT_GRACE_MINUTES, rules.DEFAULT_LOGIN_LEAD_MINUTES, None
+    grace, by = rules.DEFAULT_GRACE_MINUTES, None
     row = db.get(AppState, TIMETABLE_KEY)
     if row is not None and row.value:
         try:
@@ -185,12 +184,9 @@ def timetable(db: Session) -> Timetable:
                 if d in rules.NOMINATING_DEPARTMENTS
             }
             grace, by = int(stored["grace_minutes"]), stored.get("by")
-            lead = int(stored.get("login_lead_minutes", lead))
         except (ValueError, KeyError, TypeError):
             logger.error("Ignoring an unreadable judging timetable row")
-    return Timetable(
-        slots=slots, grace=timedelta(minutes=grace), login_lead=timedelta(minutes=lead), customised=row is not None, updated_by=by
-    )
+    return Timetable(slots=slots, grace=timedelta(minutes=grace), customised=row is not None, updated_by=by)
 
 
 def timetable_out(table: Timetable) -> TimetableOut:
@@ -204,7 +200,6 @@ def timetable_out(table: Timetable) -> TimetableOut:
             for d in rules.NOMINATING_DEPARTMENTS
         ],
         grace_minutes=int(table.grace.total_seconds() // 60),
-        login_lead_minutes=int(table.login_lead.total_seconds() // 60),
         customised=table.customised,
         updated_by=table.updated_by,
     )
@@ -249,18 +244,11 @@ def save_timetable(db: Session, admin: Admin, data: TimetableInput) -> Timetable
                 )
                 room.slot_start, room.slot_end = new
                 moved += 1
-    grace, lead = data.grace_minutes, data.login_lead_minutes
+    grace = data.grace_minutes
     if grace != int(before.grace.total_seconds() // 60):
         changes.append(f"extra scoring minutes: {int(before.grace.total_seconds() // 60)} to {grace}")
-    if lead != int(before.login_lead.total_seconds() // 60):
-        changes.append(f"judge sign-in opens {int(before.login_lead.total_seconds() // 60)} to {lead} minutes before the slot")
     state.value = json.dumps(
-        {
-            "slots": {d: [s.isoformat(), e.isoformat()] for d, (s, e) in after.items()},
-            "grace_minutes": grace,
-            "login_lead_minutes": lead,
-            "by": admin.email,
-        }
+        {"slots": {d: [s.isoformat(), e.isoformat()] for d, (s, e) in after.items()}, "grace_minutes": grace, "by": admin.email}
     )
     state.updated_at = utcnow()
     if changes:
@@ -1288,34 +1276,6 @@ def publish_awards(db: Session, admin: Admin, round_: str, publish: bool) -> Non
     db.commit()
 
 
-def judge_access(db: Session, juror: Juror, now: datetime | None = None) -> str | None:
-    """
-    Why a judge (who is not an organiser) cannot sign in now, or None. They can from a while before their room's
-    slot (the timetable's sign-in lead) until scoring for the room closes.
-    """
-    now = now or utcnow()
-    panels = list(db.scalars(select(Panel).join(PanelJuror, PanelJuror.panel_id == Panel.id).where(PanelJuror.juror_email == juror.email)))
-    if not panels:
-        return "You have not been put in a judging room yet. Your department admin will let you know when you have."
-    table = timetable(db)
-    upcoming = []
-    for panel in panels:
-        opens, closes = scoring_window(panel, table.grace)
-        if opens is None or closes is None:
-            return None
-        if opens - table.login_lead <= now <= closes:
-            return None
-        if now < opens:
-            upcoming.append(opens)
-    if upcoming:
-        first = min(upcoming)
-        local = (first - table.login_lead).astimezone(rules.IST)
-        return (
-            f"Your judging starts {first.astimezone(rules.IST):%a %d %b at %I:%M %p}. You can sign in from {local:%I:%M %p} that day."
-        ).replace(" 0", " ")
-    return "Your judging time has ended. Thank you! If marks still need to be entered, please contact the organisers."
-
-
 # ---------- Judges' own view ----------
 
 
@@ -1445,12 +1405,12 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
     if db.scalar(select(AppState).where(AppState.key == _round_key(panel.round)).with_for_update(read=True)) is None:
         raise ApiError("Judging is locked. Scores can be saved once the organisers open this round.", 423)
     opens, closes = scoring_window(panel, timetable(db).grace)
-    if opens is not None and closes is not None and not opens <= utcnow() <= closes:
-        raise ApiError(
-            f"Marks for this room can be submitted {slot_label(opens, closes).replace(' - ', ' to ')} (the slot and the extra time "
-            "after it). Ask an organiser if the time has changed.",
-            423,
-        )
+    now = utcnow()
+    # Judges are told the slot; the extra time after it is not announced.
+    if opens is not None and now < opens:
+        raise ApiError(f"Scoring for this room opens {slot_label(opens, panel.slot_end).split(' - ')[0].replace(',', ' at')}.", 423)
+    if closes is not None and now > closes:
+        raise ApiError("Scoring for this room has closed. If a team still needs marks, please contact the organisers.", 423)
     team = db.get(Team, team_id)
     if team is None or team.status != "submitted":
         raise ApiError("This team has been withdrawn or disqualified, so it is not scored.", 409)

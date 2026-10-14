@@ -248,14 +248,17 @@ DEFAULT_TIMETABLE: list[tuple[str, str, list[str]]] = [
     ("2026-10-23T09:30:00+05:30", "2026-10-23T12:30:00+05:30", ["CSE(AI)", "CSE(AIML)"]),
     ("2026-10-23T13:30:00+05:30", "2026-10-23T17:00:00+05:30", ["CSE", "CS"]),
     ("2026-10-24T09:30:00+05:30", "2026-10-24T12:30:00+05:30", ["IT", "CSIT", "KSOM"]),
-    ("2026-10-24T13:30:00+05:30", "2026-10-24T17:00:00+05:30", ["EN", "EC", "ELCE", "ME", "VLSI", "AMIA", "KSOP"]),
+    # Core branches, Pharmacy and the other branches.
+    (
+        "2026-10-24T13:30:00+05:30",
+        "2026-10-24T17:00:00+05:30",
+        ["EN", "EC", "ELCE", "ME", "VLSI", "AMIA", "KSOP", "CSE(DS)", "CSE(CS)", "MCA"],
+    ),
 ]
-# Judges submit marks during their room's slot and this many minutes after it.
-DEFAULT_GRACE_MINUTES = 30
+# Judges submit marks during their room's slot and, quietly, this many minutes after it (judges are not told about the
+# extra time; it absorbs delays on the day).
+DEFAULT_GRACE_MINUTES = 60
 MAX_GRACE_MINUTES = 240
-# Judges (who are not organisers) can sign in from this many minutes before their room's slot until scoring closes.
-DEFAULT_LOGIN_LEAD_MINUTES = 60
-MAX_LOGIN_LEAD_MINUTES = 1440
 
 # Cash prizes (event document). Department round: 1st place in each category in every department. Grand Finale: 1st and
 # 2nd in each category, and the Best School Project.

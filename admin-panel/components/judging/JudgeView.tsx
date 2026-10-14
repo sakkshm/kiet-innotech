@@ -25,18 +25,25 @@ type Draft = { marks: (number | null)[]; remarks: string };
 
 const dayLabel = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 
-/** Whether this judge can submit marks in this room now, and how to say so. The server checks the same rules. */
+/**
+ * Whether this judge can submit marks in this room now, and how to say so. The relaxation time after the slot is not
+ * announced: during it the room simply stays "Scoring open". The server checks the same rules.
+ */
 function scoringFor(panel: JudgePanel, now: number): { can: boolean; label: string; note: string | null; live: boolean } {
   if (!panel.open) return { can: false, label: "Scoring is locked", note: "You can read every team now. Marks can be submitted once the organisers open scoring for this round.", live: false };
   const state = scoringState(panel.scoringFrom, panel.slotEnd, panel.scoringUntil, now);
   if (state === null) return { can: true, label: "Scoring is open", note: null, live: true };
   if (state === "before") {
-    return { can: false, label: `Opens ${dayLabel.format(new Date(panel.scoringFrom!))}, ${timeLabel(panel.scoringFrom!)}`, note: `You can read every team now. Marks can be submitted from ${timeLabel(panel.scoringFrom!)} on ${dayLabel.format(new Date(panel.scoringFrom!))}.`, live: false };
+    const when = `${dayLabel.format(new Date(panel.scoringFrom!))}, ${timeLabel(panel.scoringFrom!)}`;
+    return {
+      can: false,
+      label: `Scoring opens ${when}`,
+      note: `Get familiar with your room: read every team and open the score sheet. Marks can be submitted from ${when}.`,
+      live: false,
+    };
   }
-  const minutes = Math.max(0, Math.ceil((new Date(panel.scoringUntil!).getTime() - now) / 60_000));
-  if (state === "slot") return { can: true, label: `Scoring open · slot ends ${timeLabel(panel.slotEnd!)}`, note: null, live: true };
-  if (state === "extra") return { can: true, label: `Extra time · closes ${timeLabel(panel.scoringUntil!)}`, note: `The slot is over. ${minutes} ${minutes === 1 ? "minute" : "minutes"} left to submit the remaining marks.`, live: true };
-  return { can: false, label: `Closed at ${timeLabel(panel.scoringUntil!)}`, note: "Scoring for this room has closed. If a team is still to be scored, ask a super admin.", live: false };
+  if (state === "slot" || state === "extra") return { can: true, label: "Scoring is open", note: null, live: true };
+  return { can: false, label: "Scoring closed", note: "Scoring for this room has closed. If a team still needs marks, please contact the organisers.", live: false };
 }
 
 /** A judge's page: their rooms, each team, and the rubric to score it. Submitted marks are final and stay hidden. */
@@ -397,7 +404,7 @@ function ScoreSheet({
       <div className="space-y-5">
         {step === "marks" && <TeamBrief team={team} />}
 
-        {!canScore && !scored && <Notice tone="info">Marks cannot be submitted right now. You can read the team and the rubric; see the room&apos;s status for when scoring is open.</Notice>}
+        {!canScore && !scored && <Notice tone="info">Practice view: read the team and the rubric to get familiar. Marks can be submitted once scoring opens for your room.</Notice>}
         {canScore && !scored && team.status !== "submitted" && <Notice tone="warning">This team has been {team.status}, so it is not scored.</Notice>}
 
         {scored ? (

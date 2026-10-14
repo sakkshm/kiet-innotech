@@ -249,7 +249,7 @@ function PanelCard({
             </p>
             {panel.slotStart && panel.scoringUntil && (
               <p className="mt-1 text-xs text-muted">
-                Judges can submit marks {timeLabel(panel.slotStart)} – {timeLabel(panel.scoringUntil)} (the slot plus extra time).
+                Judges can submit marks {timeLabel(panel.slotStart)} – {timeLabel(panel.scoringUntil)} (the slot plus the relaxation time).
               </p>
             )}
           </div>

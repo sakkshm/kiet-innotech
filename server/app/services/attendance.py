@@ -20,7 +20,7 @@ import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -130,15 +130,16 @@ def _may_mark(db: Session, staff: Staff, team: Team, round_: str) -> bool:
         elif admin_service.can_see_team(admin, team):
             return True
     if staff.juror is not None:
-        # A judge marks the teams of their own rooms.
-        judged_here = (
-            select(func.count())
-            .select_from(PanelTeam)
-            .join(PanelJuror, PanelJuror.panel_id == PanelTeam.panel_id)
+        # A judge marks the teams of their own room, on the day: from two hours before its slot until scoring closes.
+        room = db.scalar(
+            select(Panel)
+            .join(PanelTeam, PanelTeam.panel_id == Panel.id)
+            .join(PanelJuror, PanelJuror.panel_id == Panel.id)
             .where(PanelTeam.team_id == team.id, PanelTeam.round == round_, PanelJuror.juror_email == staff.juror.email)
         )
-        if db.scalar(judged_here):
-            return True
+        if room is not None:
+            opens, closes = judging.scoring_window(room, judging.timetable(db).grace)
+            return opens is None or closes is None or opens - timedelta(hours=2) <= judging.utcnow() <= closes
     return False
 
 

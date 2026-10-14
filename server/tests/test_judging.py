@@ -76,9 +76,8 @@ def score(judge, room, team, parts):
 
 
 def test_judges_sign_in_and_see_only_their_page(judging, client):
-    # A judge without a room cannot sign in yet.
-    early = judging["it_prof"].get("/admin/me")
-    assert early.status_code == 403 and "not been put in a judging room" in early.json()["detail"]
+    # A judge can sign in before being put in a room; their page is simply empty.
+    assert judging["it_prof"].get("/judge").json()["panels"] == []
     set_room(judging)
     me = judging["it_prof"].get("/admin/me").json()
     assert (me["role"], me["judge"], me["department"]) == ("judge", True, "IT")
@@ -182,7 +181,6 @@ def test_rooms_follow_the_rules(judging):
         room_body("IT", start="06:00", end="19:00"),
         {**room_body("IT"), "slot_end": None},
         {**room_body("IT"), "slot_start": "2026-10-22T10:00:00"},
-        {**room_body("CSE(DS)"), "slot_start": None, "slot_end": None},
     ):
         assert root.post("/admin/panels", bad).status_code == 422, bad
     # A room given no time takes its department's slot from the timetable (IT: 24 October, 9:30 AM to 12:30 PM).
@@ -472,7 +470,9 @@ def test_the_department_timetable(judging):
     assert slots["CSE(AI)"] == ("2026-10-23T09:30:00+05:30", "2026-10-23T12:30:00+05:30")
     assert slots["CSE"] == ("2026-10-23T13:30:00+05:30", "2026-10-23T17:00:00+05:30")
     assert slots["KSOM"][0] == "2026-10-24T09:30:00+05:30" and slots["KSOP"][0] == "2026-10-24T13:30:00+05:30"
-    assert slots["CSE(DS)"] == (None, None) and "COE" not in slots and table["grace_minutes"] == 30
+    # The other branches share the Saturday afternoon slot; the relaxation time after each slot is an hour.
+    assert slots["CSE(DS)"] == slots["CSE(CS)"] == slots["MCA"] == ("2026-10-24T13:30:00+05:30", "2026-10-24T17:00:00+05:30")
+    assert "COE" not in slots and table["grace_minutes"] == 60
     assert cse.get("/admin/judging/timetable").status_code == 200
     body = {
         "slots": [{"department": "CSE", "slot_start": "2026-10-23T14:00:00+05:30", "slot_end": "2026-10-23T17:30:00+05:30"}],
@@ -500,6 +500,9 @@ def test_the_department_timetable(judging):
         assert root.put("/admin/judging/timetable", bad).status_code == 422, bad
     log = root.get("/admin/activity", params={"kind": "judging", "page_size": 100}).json()["items"]
     assert any(e["action"] == "judging.timetable_updated" and "1 rooms moved" in e["detail"] for e in log)
+    # A department with no slot (cleared by the super admin) needs a time on each new room.
+    root.put("/admin/judging/timetable", {"slots": [{"department": "MCA", "slot_start": None, "slot_end": None}], "grace_minutes": 45})
+    assert root.post("/admin/panels", {**room_body("MCA"), "slot_start": None, "slot_end": None}).status_code == 422
 
 
 def test_marks_only_during_the_slot_and_the_extra_time(judging, monkeypatch):
@@ -509,17 +512,18 @@ def test_marks_only_during_the_slot_and_the_extra_time(judging, monkeypatch):
     a, b, c = (judging["teams"][k] for k in ("cse_a", "cse_b", "cse_c"))
     view = judging["it_prof"].get("/judge").json()
     assert view["panels"][0]["scoring_from"].startswith("2026-10-22T04:30") and view["panels"][0]["scoring_until"].startswith(
-        "2026-10-22T08:00"
+        "2026-10-22T08:30"
     )
     monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 9, 55, tzinfo=rules.IST))
     early = score(judging["it_prof"], room, a, FULL)
-    assert early.status_code == 423 and "22 Oct, 10:00 AM to 1:30 PM" in early.json()["detail"]
+    assert early.status_code == 423 and "opens 22 Oct at 10:00 AM" in early.json()["detail"] and "1:" not in early.json()["detail"]
     monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 13, 20, tzinfo=rules.IST))
-    assert score(judging["it_prof"], room, a, FULL).status_code == 200  # in the extra 30 minutes
-    monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 13, 31, tzinfo=rules.IST))
-    # Once scoring has closed, the judge's sign-in window has closed too.
+    assert score(judging["it_prof"], room, a, FULL).status_code == 200  # in the unannounced relaxation hour
+    monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 14, 1, tzinfo=rules.IST))
     late = score(judging["it_prof"], room, b, FULL)
-    assert late.status_code == 403 and "judging time has ended" in late.json()["detail"]
+    assert late.status_code == 423 and "has closed" in late.json()["detail"]
+    # The judge still signs in and reads the room afterwards.
+    assert judging["it_prof"].get("/judge").status_code == 200
     # The super admin can still enter marks afterwards, and moving the room's time reopens it for the judges.
     fix = {"marks": FULL, "remarks": "", "reason": "Judge was delayed, marks from the paper sheet"}
     assert root.put(f"/admin/panels/{room['id']}/teams/{b['id']}/scores/it.prof@kiet.edu", fix).status_code == 200
@@ -548,31 +552,21 @@ def test_scoring_opens_only_when_every_room_has_both_judges(judging):
 # ---------- Judge sign-in window ----------
 
 
-def test_judges_sign_in_only_around_their_slot(judging, monkeypatch, client):
+def test_judges_read_any_time_but_mark_attendance_only_on_the_day(judging, monkeypatch, as_user):
+    from test_attendance import code_for
+
     set_room(judging)
     at = lambda *t: monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(*t, tzinfo=rules.IST))  # noqa: E731
-    at(2026, 10, 22, 8, 30)  # the room's slot starts at 10:00; sign-in opens 60 minutes before
-    early = judging["it_prof"].get("/admin/me")
-    assert (
-        early.status_code == 403 and "starts Thu 22 Oct at 10:00 AM" in early.json()["detail"] and "from 9:00 AM" in early.json()["detail"]
-    )
-    assert judging["it_prof"].get("/judge").status_code == 403
-    at(2026, 10, 22, 9, 5)
-    assert judging["it_prof"].get("/admin/me").status_code == 200
-    at(2026, 10, 22, 13, 40)  # slot ends 1:00 PM, extra time until 1:30 PM
-    assert "ended" in judging["it_prof"].get("/judge").json()["detail"]
-    # Judges cannot mark attendance outside it either.
-    assert judging["it_prof"].post("/admin/attendance/scan", {"code": "x", "round": "department"}).status_code == 403
-    # An organiser who also judges is never locked out.
-    judging["root"].post("/admin/jurors", {"email": "cse.admin@kiet.edu", "name": "CSE Admin", "kind": "faculty", "department": "CSE"})
-    assert judging["cse"].get("/admin/me").json()["role"] == "admin"
-    # The super admin can open sign-in earlier with the timetable's lead time.
-    table = judging["root"].get("/admin/judging/timetable").json()
-    assert table["login_lead_minutes"] == 60
-    at(2026, 10, 22, 7, 30)
-    body = {"slots": [], "grace_minutes": 30, "login_lead_minutes": 180}
-    assert judging["root"].put("/admin/judging/timetable", body).json()["login_lead_minutes"] == 180
-    assert judging["it_prof"].get("/admin/me").status_code == 200
+    alpha = as_user("a@kiet.edu").get("/me/pass").json()
+    scan = lambda: judging["it_prof"].post("/admin/attendance/scan", {"code": code_for(alpha), "round": "department"})  # noqa: E731
+    # Days before: the judge signs in and reads the room, but cannot mark attendance or submit marks.
+    at(2026, 10, 20, 11, 0)
+    assert judging["it_prof"].get("/admin/me").json()["role"] == "judge"
+    assert judging["it_prof"].get("/judge").json()["panels"][0]["name"] == "304"
+    assert scan().status_code == 403
+    # On the day, from two hours before the slot (10:00 AM).
+    at(2026, 10, 22, 8, 5)
+    assert scan().json()["result"] == "marked"
 
 
 # ---------- Winners and prizes ----------

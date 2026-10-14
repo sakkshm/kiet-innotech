@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
-from ..auth import CurrentAdmin, CurrentStaff, Identity, SuperAdmin, check_judge_window, find_admin, get_admin_identity
+from ..auth import CurrentAdmin, CurrentStaff, Identity, SuperAdmin, find_admin, get_admin_identity
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..errors import ApiError
@@ -76,7 +76,6 @@ def me(identity: Annotated[Identity, Depends(get_admin_identity)], db: Db, setti
     if admin is not None:
         return service.admin_out(admin).model_copy(update={"judge": juror is not None})
     if juror is not None:
-        check_judge_window(db, juror)
         return AdminOut(email=juror.email, name=juror.name, role="judge", department=juror.department, judge=True)
     raise ApiError("This account is not an InnoTech26 organiser or judge.", 403)
 

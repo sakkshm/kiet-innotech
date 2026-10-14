@@ -127,11 +127,8 @@ def sign_in(db: Session, identity: Identity, app: App, settings: Settings, googl
     """Checks the account may use `app`, records the sign-in and issues a session."""
     if app == "admin":
         # Organisers and appointed judges use the admin panel; judges see only their own judging page.
-        if find_admin(db, identity.email, settings) is None:
-            juror = db.get(Juror, identity.email)
-            if juror is None:
-                raise ApiError("This account is not an InnoTech26 organiser or judge.", 403)
-            check_judge_window(db, juror)
+        if find_admin(db, identity.email, settings) is None and db.get(Juror, identity.email) is None:
+            raise ApiError("This account is not an InnoTech26 organiser or judge.", 403)
     else:
         user = _get_or_create_user(db, identity)
         if user.banned_at is not None:
@@ -248,24 +245,13 @@ def require_super_admin(admin: CurrentAdmin) -> Admin:
 SuperAdmin = Annotated[Admin, Depends(require_super_admin)]
 
 
-def check_judge_window(db: Session, juror: Juror) -> None:
-    """Judges who are not organisers use the panel only around their room's time slot (see services.judging.judge_access)."""
-    from .services.judging import judge_access  # imported here: the services import this module's helpers
-
-    if reason := judge_access(db, juror):
-        raise ApiError(reason, 403)
-
-
 def get_current_juror(
     identity: Annotated[Identity, Depends(get_admin_identity)],
     db: Annotated[Session, Depends(get_db)],
-    settings: Annotated[Settings, Depends(get_settings)],
 ) -> Juror:
     juror = db.get(Juror, identity.email)
     if juror is None:
         raise ApiError("This account is not an appointed InnoTech26 judge.", 403)
-    if find_admin(db, identity.email, settings) is None:
-        check_judge_window(db, juror)
     return juror
 
 
@@ -290,8 +276,6 @@ def get_current_staff(
     juror = db.get(Juror, identity.email)
     if admin is None and juror is None:
         raise ApiError("This account is not an InnoTech26 organiser or judge.", 403)
-    if admin is None and juror is not None:
-        check_judge_window(db, juror)
     return Staff(email=identity.email, admin=admin, juror=juror)
 
 

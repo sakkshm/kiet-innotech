@@ -29,7 +29,7 @@ const roundRules: Record<JudgingRound, string[]> = {
     "23 and 24 October, by the department timetable. Each room (a building, a room and a time slot) takes one department's teams.",
     "Department admins set up their own rooms, add judges (KIET emails only) and allot teams; super admins can do this for every department.",
     "Two judges per room: one from the room's own department and one from another department. A judge sits in one room only; one of the two chairs.",
-    "Judges submit marks during the room's slot and the extra minutes after it (30 by default). Super admins can change the timetable.",
+    "Judges can sign in and read their room any time; they submit marks during the room's slot. A relaxation time after each slot (1 hour by default, not shown to judges) absorbs delays. Super admins change the timetable and the relaxation time.",
     "Every category is marked out of 50 on its common rubric: four criteria of 10 (two parts of 5), then Query Addressing out of 10.",
     "A judge submits each team's marks once. Submitted marks are final and hidden on screen; only a super admin can change them, with a reason.",
     "Ties: higher Innovation / Originality score, then Query Addressing, then the room's chair decides. No shared positions.",
