@@ -423,6 +423,7 @@ export function StudentsView() {
             </>
           }
           confirmLabel="Delete profile"
+          typeToConfirm="DELETE"
           tone="danger"
           reasonLabel="Reason"
           onClose={() => setDeleting(null)}
