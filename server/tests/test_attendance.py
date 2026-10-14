@@ -224,3 +224,22 @@ def test_races_never_leave_a_score_or_mark_inconsistent(judging, as_user):  # no
     assert sorted(r.json()["result"] for r in results) == ["already", "already", "marked"]
     with get_sessionmaker()() as db:
         assert len(list(db.scalars(select(Attendance)))) == 1
+
+
+def test_attendance_is_off_unless_switched_on(judging, as_user, settings):  # noqa: F811
+    set_room(judging)
+    alpha = as_user("a@kiet.edu").get("/me/pass").json()
+    assert alpha["seed"]
+    settings.attendance_enabled = False
+    # Students still see where to go, but no QR seed is issued.
+    off = as_user("a@kiet.edu").get("/me/pass").json()
+    assert off["seed"] is None and off["rounds"][0]["room"] == "304" and off["rounds"][0]["building"] == "CSIT Block"
+    # Nothing can be recorded or read from the attendance desk.
+    root, room = judging["root"], judging["room"]
+    assert scan(root, code_for(alpha)).status_code == 404
+    body = {"user_id": alpha["user_id"], "round": "department", "note": "Phone battery dead"}
+    assert root.post("/admin/attendance/mark", body).status_code == 404
+    assert root.post("/admin/attendance/unmark", body).status_code == 404
+    assert judging["it_prof"].get(f"/judge/panels/{room['id']}/attendance").status_code == 404
+    # The printable roster for manual attendance is untouched.
+    assert root.get("/admin/judging/department/attendance", params={"panel_id": room["id"]}).status_code == 200

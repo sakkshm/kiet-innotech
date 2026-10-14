@@ -7,13 +7,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentJuror
+from ..config import Settings, get_settings
 from ..db import get_db
 from ..schemas import AttendanceSheet, JudgeOut, ScoreInput, ScoreOut
-from ..services import judging
+from ..services import attendance, judging
 
 router = APIRouter(prefix="/judge", tags=["judge"])
 
 Db = Annotated[Session, Depends(get_db)]
+AppSettings = Annotated[Settings, Depends(get_settings)]
 
 
 @router.get("")
@@ -27,5 +29,6 @@ def save_score(panel_id: uuid.UUID, team_id: uuid.UUID, data: ScoreInput, juror:
 
 
 @router.get("/panels/{panel_id}/attendance")
-def room_attendance(panel_id: uuid.UUID, juror: CurrentJuror, db: Db) -> AttendanceSheet:
+def room_attendance(panel_id: uuid.UUID, juror: CurrentJuror, db: Db, settings: AppSettings) -> AttendanceSheet:
+    attendance.require_enabled(settings)
     return judging.judge_attendance(db, juror, panel_id)

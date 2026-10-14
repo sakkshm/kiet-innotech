@@ -1,10 +1,18 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { EventPass } from "@/components/portal/EventPass";
 import { PageHeading } from "@/components/portal/PageHeading";
+import { attendanceEnabled } from "@/lib/features";
 
-export const metadata: Metadata = { title: "Event pass" };
-
+/** The event pass (rotating QR) is switched off for now: this page sends students back to their dashboard. */
 export default function PassPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (!attendanceEnabled) router.replace("/dashboard");
+  }, [router]);
+  if (!attendanceEnabled) return null;
   return (
     <>
       <PageHeading eyebrow="Event day" title="Your event pass">

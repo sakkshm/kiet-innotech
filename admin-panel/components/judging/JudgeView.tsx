@@ -7,6 +7,7 @@ import type { JudgePanel, JudgeTeam } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { categoryTitle, formatDateTime, plural, roundLabels } from "@/lib/format";
 import { roomLabel, scoringState, slotLabel, slotState, timeLabel } from "@/lib/rooms";
+import { attendanceEnabled } from "@/lib/features";
 import { useNow } from "@/lib/use-now";
 import { yearLabel } from "@/lib/rules";
 import { useQuery } from "@/lib/use-query";
@@ -225,19 +226,23 @@ function RoomSection({ panel, now, onScore, onAttendance, banner }: { panel: Jud
           <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${panel.teams.length ? (done / panel.teams.length) * 100 : 0}%` }} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" onClick={onAttendance} className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-navy-900 transition hover:bg-brand-50">
-            <QrCode aria-hidden="true" className="size-4" />
-            Mark attendance
-          </button>
-          <button
-            type="button"
-            onClick={downloadSheet}
-            disabled={downloading}
-            className="inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-semibold text-white ring-1 ring-inset ring-white/30 transition hover:bg-white/10 disabled:opacity-60"
-          >
-            <FileDown aria-hidden="true" className="size-4" />
-            {downloading ? "Preparing…" : "Attendance sheet"}
-          </button>
+          {attendanceEnabled && (
+            <>
+              <button type="button" onClick={onAttendance} className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-navy-900 transition hover:bg-brand-50">
+                <QrCode aria-hidden="true" className="size-4" />
+                Mark attendance
+              </button>
+              <button
+                type="button"
+                onClick={downloadSheet}
+                disabled={downloading}
+                className="inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-semibold text-white ring-1 ring-inset ring-white/30 transition hover:bg-white/10 disabled:opacity-60"
+              >
+                <FileDown aria-hidden="true" className="size-4" />
+                {downloading ? "Preparing…" : "Attendance sheet"}
+              </button>
+            </>
+          )}
         </div>
         {error && <p role="alert" className="mt-2 text-sm font-medium text-red-200">{error}</p>}
       </header>

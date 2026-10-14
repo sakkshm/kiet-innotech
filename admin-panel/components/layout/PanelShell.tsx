@@ -11,6 +11,7 @@ import { API_MODE } from "@/lib/auth/session";
 import { Button } from "@/components/ui/Button";
 import { Loading, Notice } from "@/components/ui/Notice";
 import { Brand, KietLogo } from "./Brand";
+import { attendanceEnabled } from "@/lib/features";
 import { NotAuthorised } from "./NotAuthorised";
 
 type Role = AdminUser["role"];
@@ -52,6 +53,8 @@ const nav: { title: string; items: NavItem[] }[] = [
 ];
 
 function visible(item: NavItem, admin: AdminUser) {
+  // Attendance by event pass is switched off for now.
+  if (item.href === "/attendance" && !attendanceEnabled) return false;
   // COE KIET teams go straight to the Grand Finale, so their admin has no finalists to nominate.
   if (item.href === "/finalists" && admin.role === "admin" && admin.department === clubDepartment) return false;
   return item.roles.includes(admin.role) || (item.href === "/judge" && admin.judge === true);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, CalendarClock, Clock, Frown, Hourglass, MapPin, PartyPopper, QrCode, Trophy } from "lucide-react";
 import { api } from "@/lib/api";
+import { attendanceEnabled } from "@/lib/features";
 import type { EventPass, ResultCard } from "@/lib/types";
 
 const day = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
@@ -91,7 +92,7 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
                   <p className="font-display text-xl font-bold text-ink">Your room will be allotted soon</p>
                   <p className="mt-1 text-sm text-muted">
                     Your department will allot your room and time slot before the department round. Come back to this page: it appears here
-                    as soon as it is ready, and on your event pass.
+                    as soon as it is ready.
                   </p>
                   {round.plannedStart && round.plannedEnd && (
                     <p className="mt-3 inline-flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-ink">
@@ -114,7 +115,7 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
               )}
             </p>
           )}
-          {showPassLink && (
+          {showPassLink && attendanceEnabled && (
             <Link href="/pass" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-accent-600 hover:underline">
               <QrCode size={16} aria-hidden="true" />
               Open my event pass

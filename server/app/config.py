@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # Testing only: treat registration as open regardless of the dates above.
     force_registration_open: bool = False
 
+    # Attendance by event pass (rotating QR, scanning, marking by hand) is switched off until this is true. While it is
+    # off, students still see their room, but no pass or QR code is issued and no attendance can be recorded.
+    attendance_enabled: bool = False
+
     # Invitation emails: "ses" sends through Amazon SES, "log" only writes them to the log.
     email_backend: Literal["ses", "log"] = "log"
     email_sender: str = "InnoTech26 <no-reply@innotech.kiet.edu>"

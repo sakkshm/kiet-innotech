@@ -9,6 +9,7 @@ import { signOut, useSession } from "@/lib/auth/session";
 import { isPath, isUnder } from "@/lib/paths";
 import { longDate, longDateTime } from "@/lib/format";
 import { event } from "@/lib/content";
+import { attendanceEnabled } from "@/lib/features";
 import { useRegistrationDates, useRegistrationState } from "@/lib/registration";
 import { Button, Notice } from "@/components/ui/form";
 import { MailLink } from "@/components/ui/MailLink";
@@ -17,7 +18,7 @@ import { PortalProvider } from "./PortalProvider";
 const tabs = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Team", href: "/team" },
-  { label: "Event pass", href: "/pass" },
+  ...(attendanceEnabled ? [{ label: "Event pass", href: "/pass" }] : []),
   { label: "Profile", href: "/profile" },
 ];
 

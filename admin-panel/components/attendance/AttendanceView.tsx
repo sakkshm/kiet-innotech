@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { attendanceEnabled } from "@/lib/features";
 import { api } from "@/lib/api";
 import type { JudgingRound } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -17,6 +20,16 @@ import { AttendanceDesk } from "./AttendanceDesk";
 
 /** Organisers' attendance desk: pick a round and a room (or a whole department), scan passes, download sheets. */
 export function AttendanceView() {
+  const router = useRouter();
+  useEffect(() => {
+    // Attendance by event pass is switched off for now: send organisers to the Judging page.
+    if (!attendanceEnabled) router.replace("/judging");
+  }, [router]);
+  if (!attendanceEnabled) return null;
+  return <AttendanceDesks />;
+}
+
+function AttendanceDesks() {
   const admin = useAdmin();
   const isSuper = admin.role === "super_admin";
   const coeAdmin = admin.role === "admin" && admin.department === clubDepartment;

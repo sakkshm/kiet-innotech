@@ -1,5 +1,6 @@
 "use client";
 
+import { attendanceEnabled } from "@/lib/features";
 import { useState } from "react";
 import { X } from "lucide-react";
 import { api, MAX_SEARCH_LENGTH } from "@/lib/api";
@@ -27,7 +28,7 @@ const kinds: { value: ActivityKind; label: string }[] = [
   { value: "finalists", label: "Finalist nominations" },
   { value: "results", label: "Results" },
   { value: "judging", label: "Judging" },
-  { value: "attendance", label: "Attendance" },
+  ...(attendanceEnabled ? [{ value: "attendance" as ActivityKind, label: "Attendance" }] : []),
   { value: "schedule", label: "Schedule" },
   { value: "admin", label: "Admins" },
 ];

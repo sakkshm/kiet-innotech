@@ -5,6 +5,7 @@ import { FileDown, FileSpreadsheet, FileText } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import type { JudgingRound } from "@/lib/admin-types";
 import { Button } from "@/components/ui/Button";
+import { attendanceEnabled } from "@/lib/features";
 
 /** Downloads an attendance sheet (a room, a department or every finale team) as PDF or Word to print, or Excel with who is present. */
 export function AttendanceButtons({ round, panelId, department, label }: { round: JudgingRound; panelId?: string; department?: string; label: string }) {
@@ -37,10 +38,12 @@ export function AttendanceButtons({ round, panelId, department, label }: { round
           {pending !== "docx" && <FileText aria-hidden="true" className="size-3.5" />}
           Word
         </Button>
-        <Button size="sm" variant="secondary" onClick={() => download("xlsx")} pending={pending === "xlsx"} disabled={pending !== null}>
-          {pending !== "xlsx" && <FileSpreadsheet aria-hidden="true" className="size-3.5" />}
-          Excel
-        </Button>
+        {attendanceEnabled && (
+          <Button size="sm" variant="secondary" onClick={() => download("xlsx")} pending={pending === "xlsx"} disabled={pending !== null}>
+            {pending !== "xlsx" && <FileSpreadsheet aria-hidden="true" className="size-3.5" />}
+            Excel
+          </Button>
+        )}
       </div>
       {error && <p role="alert" className="text-xs font-medium text-red-700">{error}</p>}
     </div>

@@ -37,6 +37,15 @@ CODE = re.compile(r"^IT26P:([0-9A-F]{32})\.(\d{1,12})\.([A-Z2-7]{16})$")
 NOT_A_PASS = "This is not an InnoTech26 event pass."
 
 
+# ---------- Switch ----------
+
+
+def require_enabled(settings: Settings) -> None:
+    """Attendance by event pass is off until organisers switch it on (ATTENDANCE_ENABLED)."""
+    if not settings.attendance_enabled:
+        raise ApiError("Attendance is not in use yet.", 404)
+
+
 # ---------- Codes ----------
 
 
@@ -115,7 +124,8 @@ def my_pass(db: Session, user: User, settings: Settings) -> PassOut:
                 present_at=marks[round_].marked_at if round_ in marks else None,
             )
         )
-    seed = base64.urlsafe_b64encode(pass_seed(settings, user.id, day)).decode().rstrip("=")
+    # With attendance switched off the student still sees where to go, but no QR seed is issued.
+    seed = base64.urlsafe_b64encode(pass_seed(settings, user.id, day)).decode().rstrip("=") if settings.attendance_enabled else None
     return PassOut(seed=seed, day=day, period_seconds=rules.PASS_PERIOD_SECONDS, server_time=now, user_id=user.id, rounds=out)
 
 
@@ -220,16 +230,19 @@ def _mark(db: Session, staff: Staff, user_id: uuid.UUID, round_: str, method: st
 
 
 def scan(db: Session, staff: Staff, settings: Settings, data: ScanInput) -> ScanOut:
+    require_enabled(settings)
     limits.hit(f"scan:{staff.email}", 240, timedelta(minutes=1), "Too many scans in a minute. Wait a moment and scan again.")
     user_id = read_code(settings, data.code)
     return _mark(db, staff, user_id, data.round, "qr", "", data.panel_id)
 
 
-def mark_by_hand(db: Session, staff: Staff, data: ManualAttendanceInput) -> ScanOut:
+def mark_by_hand(db: Session, staff: Staff, settings: Settings, data: ManualAttendanceInput) -> ScanOut:
+    require_enabled(settings)
     return _mark(db, staff, data.user_id, data.round, "manual", data.note, None)
 
 
-def unmark(db: Session, staff: Staff, data: ManualAttendanceInput) -> None:
+def unmark(db: Session, staff: Staff, settings: Settings, data: ManualAttendanceInput) -> None:
+    require_enabled(settings)
     _, profile, _, team = _student(db, staff, data.user_id, data.round)
     mark = db.get(Attendance, (data.user_id, data.round), with_for_update=True)
     if mark is None:

@@ -355,13 +355,13 @@ def scan_pass(data: ScanInput, staff: CurrentStaff, db: Db, settings: AppSetting
 
 
 @router.post("/attendance/mark")
-def mark_present(data: ManualAttendanceInput, staff: CurrentStaff, db: Db) -> ScanOut:
-    return attendance.mark_by_hand(db, staff, data)
+def mark_present(data: ManualAttendanceInput, staff: CurrentStaff, db: Db, settings: AppSettings) -> ScanOut:
+    return attendance.mark_by_hand(db, staff, settings, data)
 
 
 @router.post("/attendance/unmark", status_code=status.HTTP_204_NO_CONTENT)
-def unmark_present(data: ManualAttendanceInput, staff: CurrentStaff, db: Db) -> Response:
-    attendance.unmark(db, staff, data)
+def unmark_present(data: ManualAttendanceInput, staff: CurrentStaff, db: Db, settings: AppSettings) -> Response:
+    attendance.unmark(db, staff, settings, data)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

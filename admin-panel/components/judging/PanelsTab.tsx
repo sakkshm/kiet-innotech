@@ -6,6 +6,7 @@ import { CalendarClock, ChevronDown, Crown, MapPin, Pencil, Plus, Trash2, UserCo
 import { api, errorMessage } from "@/lib/api";
 import type { Judging, Juror, Panel, PanelJuror, PanelScore, PanelTeam, TeamSummary, Timetable } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
+import { attendanceEnabled } from "@/lib/features";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { categoryTitle, formatDateTime, plural } from "@/lib/format";
 import { roomLabel, slotLabel, slotState, timeLabel } from "@/lib/rooms";
@@ -256,9 +257,9 @@ function PanelCard({
           <AttendanceButtons round={panel.round} panelId={panel.id} label={label} />
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <dl className={`mt-4 grid grid-cols-2 gap-2.5 ${attendanceEnabled ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
           <Stat label="Teams" value={panel.teams.length} />
-          <Stat label="Students present" value={`${present} / ${students}`} bar={students ? present / students : 0} tone="emerald" />
+          {attendanceEnabled && <Stat label="Students present" value={`${present} / ${students}`} bar={students ? present / students : 0} tone="emerald" />}
           <Stat label="Judges" value={panel.jurors.length} warn={panel.jurors.length === 0 && panel.teams.length > 0} />
           <Stat label="Scores in" value={expected ? `${scored} / ${expected}` : "—"} bar={expected ? scored / expected : 0} tone="brand" />
         </dl>
@@ -316,7 +317,7 @@ function PanelCard({
                 <Th>Project</Th>
                 <Th>Category</Th>
                 <Th>Years</Th>
-                <Th className={numClass}>Present</Th>
+                {attendanceEnabled && <Th className={numClass}>Present</Th>}
                 <Th className={numClass}>Scores</Th>
                 <Th className={numClass}>Average /50</Th>
               </tr>
@@ -395,7 +396,7 @@ function TeamRows({
   onToggle: () => void;
   onChange: () => void;
 }) {
-  const columns = final ? 8 : 7;
+  const columns = (final ? 8 : 7) - (attendanceEnabled ? 0 : 1);
   return (
     <>
       <tr className="hover:bg-surface/70">
@@ -419,11 +420,13 @@ function TeamRows({
         <td className={tdClass}>
           <YearChips years={team.memberYears} type={team.participantType} />
         </td>
-        <td className={`${tdClass} ${numClass}`}>
-          <span className={team.present === team.memberCount ? "font-semibold text-emerald-700" : team.present ? "font-semibold text-accent-600" : "text-muted"}>
-            {team.present} / {team.memberCount}
-          </span>
-        </td>
+        {attendanceEnabled && (
+          <td className={`${tdClass} ${numClass}`}>
+            <span className={team.present === team.memberCount ? "font-semibold text-emerald-700" : team.present ? "font-semibold text-accent-600" : "text-muted"}>
+              {team.present} / {team.memberCount}
+            </span>
+          </td>
+        )}
         <td className={`${tdClass} ${numClass}`}>
           {team.scores} / {judges}
         </td>
@@ -595,7 +598,7 @@ function PanelFormDialog({
             <Input id="panel-to" type="time" value={to} onChange={(e) => setTo(e.target.value)} step={300} />
           </Field>
         </div>
-        <Field label="Directions (optional)" htmlFor="panel-location" hint="Printed on the attendance sheet and shown on students' passes." className="sm:col-span-2">
+        <Field label="Directions (optional)" htmlFor="panel-location" hint="Printed on the room's roster and shown to students with their room." className="sm:col-span-2">
           <Input id="panel-location" value={location} onChange={(e) => setLocation(e.target.value)} maxLength={120} placeholder="2nd floor, next to the lift" />
         </Field>
         {isRoom && !panel && (

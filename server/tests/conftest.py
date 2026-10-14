@@ -21,6 +21,8 @@ os.environ.update(
     # Long past, so publishing is not blocked by the results date unless a test sets one.
     RESULTS_PUBLISH_FROM="2020-01-01T00:00:00+00:00",
     EMAIL_BACKEND="log",
+    # Attendance by event pass is off in production for now; the tests switch it on where they exercise it.
+    ATTENDANCE_ENABLED="true",
     CORS_ORIGINS="http://localhost:3000",
 )
 
