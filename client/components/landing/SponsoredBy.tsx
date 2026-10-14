@@ -6,15 +6,15 @@ const sponsors = [
   { name: "KIET Technology Business Incubator, Ghaziabad", src: "/images/sponsors/kiet-tbi.png", width: 266, height: 240, logo: "h-12 sm:h-[4.5rem]" },
 ];
 
-/** The hero's closing strip: who sponsors InnoTech26. The logos are made for white, so each sits on its own white tile. */
+/** The hero's closing strip: who technically co-sponsors InnoTech26. The logos are made for white, so each sits on its own white tile. */
 export function SponsoredBy({ className = "" }: { className?: string }) {
   return (
     <div className={`animate-fade-up [animation-delay:720ms] ${className}`}>
       <div className="border-t border-white/10 pt-8">
-        <p className="flex items-center justify-center gap-4 text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-          <span className="h-px w-8 bg-white/20 sm:w-14" aria-hidden="true" />
-          Sponsored by
-          <span className="h-px w-8 bg-white/20 sm:w-14" aria-hidden="true" />
+        <p className="flex items-center justify-center gap-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 sm:tracking-[0.25em]">
+          <span className="hidden h-px w-8 bg-white/20 sm:block sm:w-14" aria-hidden="true" />
+          <span className="text-balance text-center">Technically Co-sponsored by</span>
+          <span className="hidden h-px w-8 bg-white/20 sm:block sm:w-14" aria-hidden="true" />
         </p>
         <ul className="mt-5 flex flex-wrap items-stretch justify-center gap-3 sm:gap-4">
           {sponsors.map((sponsor) => (
