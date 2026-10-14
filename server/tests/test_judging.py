@@ -76,12 +76,16 @@ def score(judge, room, team, parts):
 
 
 def test_judges_sign_in_and_see_only_their_page(judging, client):
+    # A judge without a room cannot sign in yet.
+    early = judging["it_prof"].get("/admin/me")
+    assert early.status_code == 403 and "not been put in a judging room" in early.json()["detail"]
+    set_room(judging)
     me = judging["it_prof"].get("/admin/me").json()
     assert (me["role"], me["judge"], me["department"]) == ("judge", True, "IT")
     # A judge is not an organiser: every admin endpoint refuses them.
     assert judging["it_prof"].get("/admin/teams").status_code == 403
     assert judging["it_prof"].get("/admin/stats").status_code == 403
-    assert judging["it_prof"].get("/judge").json()["panels"] == []
+    assert [p["name"] for p in judging["it_prof"].get("/judge").json()["panels"]] == ["304"]
     # Students and strangers are not judges.
     assert Api(client, "a@kiet.edu").get("/judge").status_code == 403
     # A portal token never opens the judge page.
@@ -350,21 +354,28 @@ def test_rankings_use_the_tie_breakers(judging):
     root.post("/admin/judging/department/open")
     a, b, c = (judging["teams"][k] for k in ("cse_a", "cse_b", "cse_c"))
     # Category 1 uses the software rubric: criterion 2 (Innovation & Novelty) breaks ties first.
-    # a and b both total 40; b scores higher on innovation, so b ranks first.
-    score(judging["it_prof"], room, a, [5, 5, 3, 3, 5, 5, 4, 4, 6])
-    score(judging["it_prof"], room, b, [3, 3, 5, 5, 5, 5, 4, 4, 6])
-    # c: same total and innovation as a, lower Query Addressing.
+    # a and b both average 40; b scores higher on innovation, so b ranks first.
+    both = lambda team, parts: [score(judging[j], room, team, parts) for j in ("it_prof", "cse_prof")]  # noqa: E731
+    both(a, [5, 5, 3, 3, 5, 5, 4, 4, 6])
+    both(b, [3, 3, 5, 5, 5, 5, 4, 4, 6])
+    # c: same average and innovation as a, lower Query Addressing; for now only one judge has scored it.
     score(judging["it_prof"], room, c, [5, 5, 3, 3, 5, 5, 5, 5, 4])
-    ranking = root.get("/admin/judging/department/rankings").json()
-    group = ranking["groups"][0]
+    group = root.get("/admin/judging/department/rankings").json()["groups"][0]
     assert group["department"] == "CSE" and group["category"] == 1
-    order = [(t["team"]["name"], t["position"], t["tied"]) for t in group["teams"]]
-    assert order == [("CSE Beta", 1, False), ("CSE Alpha", 2, False), ("CSE Gamma", 3, False)]
-    assert group["teams"][0]["scores"] == 1 and group["teams"][0]["judges"] == 2
+    order = [(t["team"]["name"], t["position"], t["complete"]) for t in group["teams"]]
+    # A team gets a place only once both judges have scored it.
+    assert order == [("CSE Beta", 1, True), ("CSE Alpha", 2, True), ("CSE Gamma", None, False)]
+    assert group["teams"][0]["scores"] == 2 and group["teams"][0]["judges"] == 2 and group["teams"][0]["average"] == 40
+    score(judging["cse_prof"], room, c, [5, 5, 3, 3, 5, 5, 5, 5, 4])
+    group = root.get("/admin/judging/department/rankings").json()["groups"][0]
+    assert [(t["team"]["name"], t["position"]) for t in group["teams"]] == [("CSE Beta", 1), ("CSE Alpha", 2), ("CSE Gamma", 3)]
+    # The average of both judges: different marks from each still rank by the mean.
+    assert group["prizes"] == [{"place": 1, "amount": 2000}]
 
     # A full tie on all three: the chair decides, flagged, still no shared position.
     fix = {"marks": [5, 5, 3, 3, 5, 5, 4, 4, 6], "remarks": "", "reason": "Recounted the sheet"}
-    assert root.put(f"/admin/panels/{room['id']}/teams/{c['id']}/scores/it.prof@kiet.edu", fix).status_code == 200
+    for judge in ("it.prof@kiet.edu", "cse.prof@kiet.edu"):
+        assert root.put(f"/admin/panels/{room['id']}/teams/{c['id']}/scores/{judge}", fix).status_code == 200
     group = root.get("/admin/judging/department/rankings").json()["groups"][0]
     tied = [t for t in group["teams"] if t["team"]["name"] in ("CSE Alpha", "CSE Gamma")]
     assert [t["position"] for t in tied] == [2, 3] and tied[1]["tied"] is True
@@ -506,7 +517,9 @@ def test_marks_only_during_the_slot_and_the_extra_time(judging, monkeypatch):
     monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 13, 20, tzinfo=rules.IST))
     assert score(judging["it_prof"], room, a, FULL).status_code == 200  # in the extra 30 minutes
     monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 13, 31, tzinfo=rules.IST))
-    assert score(judging["it_prof"], room, b, FULL).status_code == 423
+    # Once scoring has closed, the judge's sign-in window has closed too.
+    late = score(judging["it_prof"], room, b, FULL)
+    assert late.status_code == 403 and "judging time has ended" in late.json()["detail"]
     # The super admin can still enter marks afterwards, and moving the room's time reopens it for the judges.
     fix = {"marks": FULL, "remarks": "", "reason": "Judge was delayed, marks from the paper sheet"}
     assert root.put(f"/admin/panels/{room['id']}/teams/{b['id']}/scores/it.prof@kiet.edu", fix).status_code == 200
@@ -530,3 +543,106 @@ def test_scoring_opens_only_when_every_room_has_both_judges(judging):
     assert "needs a judge from another department" in root.post("/admin/judging/department/open").json()["detail"]
     set_room(judging)
     assert root.post("/admin/judging/department/open").status_code == 200
+
+
+# ---------- Judge sign-in window ----------
+
+
+def test_judges_sign_in_only_around_their_slot(judging, monkeypatch, client):
+    set_room(judging)
+    at = lambda *t: monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(*t, tzinfo=rules.IST))  # noqa: E731
+    at(2026, 10, 22, 8, 30)  # the room's slot starts at 10:00; sign-in opens 60 minutes before
+    early = judging["it_prof"].get("/admin/me")
+    assert (
+        early.status_code == 403 and "starts Thu 22 Oct at 10:00 AM" in early.json()["detail"] and "from 9:00 AM" in early.json()["detail"]
+    )
+    assert judging["it_prof"].get("/judge").status_code == 403
+    at(2026, 10, 22, 9, 5)
+    assert judging["it_prof"].get("/admin/me").status_code == 200
+    at(2026, 10, 22, 13, 40)  # slot ends 1:00 PM, extra time until 1:30 PM
+    assert "ended" in judging["it_prof"].get("/judge").json()["detail"]
+    # Judges cannot mark attendance outside it either.
+    assert judging["it_prof"].post("/admin/attendance/scan", {"code": "x", "round": "department"}).status_code == 403
+    # An organiser who also judges is never locked out.
+    judging["root"].post("/admin/jurors", {"email": "cse.admin@kiet.edu", "name": "CSE Admin", "kind": "faculty", "department": "CSE"})
+    assert judging["cse"].get("/admin/me").json()["role"] == "admin"
+    # The super admin can open sign-in earlier with the timetable's lead time.
+    table = judging["root"].get("/admin/judging/timetable").json()
+    assert table["login_lead_minutes"] == 60
+    at(2026, 10, 22, 7, 30)
+    body = {"slots": [], "grace_minutes": 30, "login_lead_minutes": 180}
+    assert judging["root"].put("/admin/judging/timetable", body).json()["login_lead_minutes"] == 180
+    assert judging["it_prof"].get("/admin/me").status_code == 200
+
+
+# ---------- Winners and prizes ----------
+
+
+def scored_room(judging):
+    root, room = judging["root"], judging["room"]
+    set_room(judging)
+    root.post("/admin/judging/department/open")
+    for key, parts in (("cse_a", [5, 5, 5, 5, 5, 5, 5, 5, 10]), ("cse_b", [4, 4, 4, 4, 4, 4, 4, 4, 8])):
+        for judge in ("it_prof", "cse_prof"):
+            assert score(judging[judge], room, judging["teams"][key], parts).status_code == 200
+    return judging["teams"]
+
+
+def test_organisers_declare_and_publish_winners(judging, as_user):
+    teams = scored_room(judging)
+    root, cse, it = judging["root"], judging["cse"], judging["it"]
+    award = lambda who, key, place=1: who.post("/admin/judging/department/awards", {"team_id": teams[key]["id"], "place": place})  # noqa: E731
+    # Only teams both judges scored; only 1st place in the department round; only your own department.
+    assert award(cse, "cse_c").status_code == 409
+    assert award(cse, "cse_a", 2).status_code == 422
+    assert award(it, "cse_a").status_code == 403
+    assert award(cse, "cse_a").status_code == 204
+    taken = award(root, "cse_b")
+    assert taken.status_code == 409 and "CSE Alpha already holds this place" in taken.json()["detail"]
+    group = cse.get("/admin/judging/department/rankings").json()["groups"][0]
+    assert group["teams"][0]["award"]["amount"] == 2000 and group["teams"][0]["team"]["name"] == "CSE Alpha"
+    # Students see nothing until a super admin publishes the winners.
+    leader = as_user("a@kiet.edu")
+    assert [c["status"] for c in leader.get("/me/results").json()["cards"]] == ["awaiting"]
+    assert cse.post("/admin/judging/department/awards/publish").status_code == 403
+    assert root.post("/admin/judging/department/awards/publish").status_code == 204
+    cards = leader.get("/me/results").json()["cards"]
+    assert cards[0]["status"] == "winner" and cards[0]["amount"] == 2000 and "Category 1" in cards[0]["message"]
+    # Published winners are frozen until withdrawn.
+    assert cse.delete(f"/admin/judging/department/awards/{teams['cse_a']['id']}").status_code == 409
+    assert root.post("/admin/judging/department/awards/withdraw").status_code == 204
+    assert cse.delete(f"/admin/judging/department/awards/{teams['cse_a']['id']}").status_code == 204
+    log = root.get("/admin/activity", params={"kind": "judging", "page_size": 100}).json()["items"]
+    assert {"judging.award_declared", "judging.awards_published", "judging.awards_withdrawn", "judging.award_removed"} <= {
+        e["action"] for e in log
+    }
+
+
+def test_students_see_their_results(judging, as_user, settings):
+    teams = scored_room(judging)
+    root = judging["root"]
+    alpha, beta, college = as_user("a@kiet.edu"), as_user("c@kiet.edu"), as_user("r@gmail.com")
+    assert [c["status"] for c in alpha.get("/me/results").json()["cards"]] == ["awaiting"]
+    assert [(c["round"], c["status"]) for c in college.get("/me/results").json()["cards"]] == [("final", "awaiting")]
+    # Finalists published: Alpha is a finalist, Beta is not.
+    root.put("/admin/finalists/CSE", {"nominations": [{"category": 1, "team_ids": [teams["cse_a"]["id"]]}]})
+    assert publish(root, settings).status_code == 200
+    assert [(c["round"], c["status"]) for c in alpha.get("/me/results").json()["cards"]] == [
+        ("final", "awaiting"),
+        ("department", "finalist"),
+    ]
+    beta_card = beta.get("/me/results").json()["cards"]
+    assert [c["status"] for c in beta_card] == ["not_selected"] and "Better luck next time" in beta_card[0]["message"]
+    # Grand Finale winners: 2nd place in a project category wins Rs 5,000; others read "better luck next time".
+    panel = root.post("/admin/panels", {"round": "final", "name": "Panel A"}).json()
+    root.put(f"/admin/panels/{panel['id']}/teams", {"team_ids": [teams["cse_a"]["id"], teams["college"]["id"]]})
+    root.put(f"/admin/panels/{panel['id']}/jurors", {"jurors": [{"email": "expert@kiet.edu", "chair": True}]})
+    assert root.post("/admin/judging/final/open").status_code == 200
+    for key in ("cse_a", "college"):
+        assert score(judging["external"], panel, teams[key], FULL).status_code == 200
+    assert judging["cse"].post("/admin/judging/final/awards", {"team_id": teams["cse_a"]["id"], "place": 2}).status_code == 403
+    assert root.post("/admin/judging/final/awards", {"team_id": teams["cse_a"]["id"], "place": 2}).status_code == 204
+    root.post("/admin/judging/final/awards/publish")
+    final = alpha.get("/me/results").json()["cards"][0]
+    assert (final["status"], final["place"], final["amount"]) == ("winner", 2, 5000)
+    assert college.get("/me/results").json()["cards"][0]["status"] == "participated"

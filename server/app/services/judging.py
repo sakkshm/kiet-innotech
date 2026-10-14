@@ -32,12 +32,29 @@ from .. import rules
 from ..config import Settings
 from ..db import violated_constraint
 from ..errors import ApiError
-from ..models import Admin, AppState, Attendance, FinalTent, Juror, Panel, PanelJuror, PanelTeam, Profile, Score, Team, TeamMember, utcnow
+from ..models import (
+    Admin,
+    AppState,
+    Attendance,
+    Award,
+    FinalTent,
+    Juror,
+    Panel,
+    PanelJuror,
+    PanelTeam,
+    Profile,
+    Score,
+    Team,
+    TeamMember,
+    utcnow,
+)
 from ..schemas import (
     AdminScoreInput,
     AttendanceMember,
     AttendanceSheet,
     AttendanceTeam,
+    AwardInput,
+    AwardOut,
     JudgeMemberOut,
     JudgeOut,
     JudgePanelOut,
@@ -55,6 +72,7 @@ from ..schemas import (
     PanelTeamOut,
     PanelTeamsInput,
     PanelUpdateInput,
+    PrizeOut,
     RankedTeam,
     RankingGroup,
     RankingsOut,
@@ -144,6 +162,7 @@ TIMETABLE_KEY = "judging_timetable"
 class Timetable:
     slots: dict[str, tuple[datetime, datetime]]
     grace: timedelta
+    login_lead: timedelta
     customised: bool
     updated_by: str | None
 
@@ -155,7 +174,7 @@ def timetable(db: Session) -> Timetable:
         for start, end, departments in rules.DEFAULT_TIMETABLE
         for d in departments
     }
-    grace, by = rules.DEFAULT_GRACE_MINUTES, None
+    grace, lead, by = rules.DEFAULT_GRACE_MINUTES, rules.DEFAULT_LOGIN_LEAD_MINUTES, None
     row = db.get(AppState, TIMETABLE_KEY)
     if row is not None and row.value:
         try:
@@ -166,9 +185,12 @@ def timetable(db: Session) -> Timetable:
                 if d in rules.NOMINATING_DEPARTMENTS
             }
             grace, by = int(stored["grace_minutes"]), stored.get("by")
+            lead = int(stored.get("login_lead_minutes", lead))
         except (ValueError, KeyError, TypeError):
             logger.error("Ignoring an unreadable judging timetable row")
-    return Timetable(slots=slots, grace=timedelta(minutes=grace), customised=row is not None, updated_by=by)
+    return Timetable(
+        slots=slots, grace=timedelta(minutes=grace), login_lead=timedelta(minutes=lead), customised=row is not None, updated_by=by
+    )
 
 
 def timetable_out(table: Timetable) -> TimetableOut:
@@ -182,6 +204,7 @@ def timetable_out(table: Timetable) -> TimetableOut:
             for d in rules.NOMINATING_DEPARTMENTS
         ],
         grace_minutes=int(table.grace.total_seconds() // 60),
+        login_lead_minutes=int(table.login_lead.total_seconds() // 60),
         customised=table.customised,
         updated_by=table.updated_by,
     )
@@ -226,11 +249,18 @@ def save_timetable(db: Session, admin: Admin, data: TimetableInput) -> Timetable
                 )
                 room.slot_start, room.slot_end = new
                 moved += 1
-    grace = data.grace_minutes
+    grace, lead = data.grace_minutes, data.login_lead_minutes
     if grace != int(before.grace.total_seconds() // 60):
         changes.append(f"extra scoring minutes: {int(before.grace.total_seconds() // 60)} to {grace}")
+    if lead != int(before.login_lead.total_seconds() // 60):
+        changes.append(f"judge sign-in opens {int(before.login_lead.total_seconds() // 60)} to {lead} minutes before the slot")
     state.value = json.dumps(
-        {"slots": {d: [s.isoformat(), e.isoformat()] for d, (s, e) in after.items()}, "grace_minutes": grace, "by": admin.email}
+        {
+            "slots": {d: [s.isoformat(), e.isoformat()] for d, (s, e) in after.items()},
+            "grace_minutes": grace,
+            "login_lead_minutes": lead,
+            "by": admin.email,
+        }
     )
     state.updated_at = utcnow()
     if changes:
@@ -1028,8 +1058,26 @@ def _natural(label: str) -> tuple:
 # ---------- Rankings ----------
 
 
+def _group_key(round_: str, team: Team) -> str:
+    """The rankings group a team competes in: department and category (department round), or category / school (finale)."""
+    if round_ == "department":
+        return f"{team.department}-{team.category}"
+    return "school-0" if team.participant_type == "school" else f"category-{team.category}"
+
+
+def _awards_key(round_: str) -> str:
+    return f"awards_published:{round_}"
+
+
+def _can_award(admin: Admin, round_: str) -> bool:
+    return admin.role == "super_admin" or (round_ == "department" and _manages_rooms(admin))
+
+
 def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> RankingsOut:
-    """Average of the panel judges' totals; ties broken by innovation, then Query Addressing, then the chair."""
+    """
+    The average of both judges' totals, ranked with the tie-breakers (innovation, then Query Addressing, then the
+    chair). A team gets a place only once every judge of its room has scored it.
+    """
     _check_round(round_)
     if admin.role in ("outside_admin", "startup_admin"):
         raise ApiError("Rankings are for super admins and department admins.", 403)
@@ -1065,6 +1113,7 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
         else {}
     )
     marks: dict[uuid.UUID, list[list[int]]] = defaultdict(list)
+    awards: dict[uuid.UUID, Award] = {}
     if teams:
         for team_id, team_marks in db.execute(
             select(Score.team_id, Score.marks)
@@ -1073,37 +1122,40 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
             .where(Score.round == round_, Score.team_id.in_([t.id for t in teams]))
         ).tuples():
             marks[team_id].append(team_marks)
+        awards = {a.team_id: a for a in db.scalars(select(Award).where(Award.round == round_, Award.team_id.in_([t.id for t in teams])))}
 
-    groups: dict[tuple, list[Team]] = defaultdict(list)
+    groups: dict[str, list[Team]] = defaultdict(list)
     for team in teams:
-        if round_ == "department":
-            groups[(team.department, team.category)].append(team)
-        elif team.participant_type == "school":
-            groups[("school", 0)].append(team)
-        else:
-            groups[("category", team.category)].append(team)
+        groups[_group_key(round_, team)].append(team)
 
     def ranked(group: list[Team]) -> list[RankedTeam]:
         entries = []
         for team in group:
             scores = marks[team.id]
+            needed = judges.get(panel_of[team.id].id, 0)
             entries.append(
                 (
                     team,
+                    needed > 0 and len(scores) >= needed,
                     round(mean(sum(m) for m in scores), 2) if scores else None,
                     round(mean(rules.innovation_marks(team.category, m) for m in scores), 2) if scores else None,
                     round(mean(rules.query_marks(m) for m in scores), 2) if scores else None,
                 )
             )
-        entries.sort(key=lambda e: (e[1] is None, -(e[1] or 0), -(e[2] or 0), -(e[3] or 0), e[0].number))
+        # Complete teams first, in order; teams still waiting for a judge after them, without a place.
+        entries.sort(key=lambda e: (not e[1], e[2] is None, -(e[2] or 0), -(e[3] or 0), -(e[4] or 0), e[0].number))
         out: list[RankedTeam] = []
         previous = None
-        for index, (team, average, innovation, query) in enumerate(entries):
+        place = 0
+        for team, complete, average, innovation, query in entries:
             key = (average, innovation, query)
             panel = panel_of[team.id]
+            if complete:
+                place += 1
+            award = awards.get(team.id)
             out.append(
                 RankedTeam(
-                    position=index + 1 if average is not None else None,
+                    position=place if complete else None,
                     team=summaries[team.id],
                     panel=room_label(panel),
                     scores=len(marks[team.id]),
@@ -1111,22 +1163,157 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
                     average=average,
                     innovation=innovation,
                     query=query,
-                    tied=average is not None and key == previous,
+                    tied=complete and key == previous,
+                    complete=complete,
+                    award=AwardOut(place=award.place, amount=award.amount, declared_by=award.declared_by, declared_at=award.declared_at)
+                    if award
+                    else None,
                 )
             )
-            previous = key
+            previous = key if complete else previous
         return out
 
+    def order(key: str) -> tuple:
+        first, second = key.rsplit("-", 1)
+        return (first == "school", first, int(second))
+
     result = []
-    for (first, second), group in sorted(groups.items(), key=lambda item: (str(item[0][0]) == "school", str(item[0][0]), item[0][1])):
+    for key in sorted(groups, key=order):
+        first, second = key.rsplit("-", 1)
+        number = int(second)
+        school = first == "school"
         if round_ == "department":
-            label, dep, category = f"{first} · Category {second}: {rules.CATEGORIES[second].title}", first, second
-        elif first == "school":
+            label, dep, category = f"{first} · Category {number}: {rules.CATEGORIES[number].title}", first, number
+        elif school:
             label, dep, category = "Best School Project", None, None
         else:
-            label, dep, category = f"Category {second}: {rules.CATEGORIES[second].title}", None, second
-        result.append(RankingGroup(key=f"{first}-{second}", label=label, department=dep, category=category, teams=ranked(group)))
-    return RankingsOut(round=round_, groups=result)
+            label, dep, category = f"Category {number}: {rules.CATEGORIES[number].title}", None, number
+        prizes = [PrizeOut(place=p, amount=a) for p in (1, 2) if (a := rules.prize(round_, school, number, p))]
+        result.append(RankingGroup(key=key, label=label, department=dep, category=category, teams=ranked(groups[key]), prizes=prizes))
+    return RankingsOut(
+        round=round_,
+        groups=result,
+        awards_published=db.get(AppState, _awards_key(round_)) is not None,
+        can_award=_can_award(admin, round_),
+        can_publish_awards=admin.role == "super_admin",
+    )
+
+
+def declare_award(db: Session, admin: Admin, round_: str, data: AwardInput) -> None:
+    """Gives a team a prize place from the rankings. The team must have been scored by all its judges."""
+    _check_round(round_)
+    if not _can_award(admin, round_):
+        raise ApiError(
+            "Only a super admin declares Grand Finale winners." if round_ == "final" else "Only organisers declare winners.", 403
+        )
+    admin_service._lock_state(db, f"awards_lock:{round_}")
+    if db.get(AppState, _awards_key(round_)) is not None:
+        raise ApiError("The winners are already published to students. A super admin must withdraw them before changing winners.", 409)
+    team = db.get(Team, data.team_id)
+    link = db.scalar(select(PanelTeam).where(PanelTeam.team_id == data.team_id, PanelTeam.round == round_))
+    if team is None or link is None:
+        raise ApiError("This team was not judged in this round.", 404)
+    if admin.role == "admin" and not (team.participant_type == "kiet" and team.department == admin.department):
+        raise ApiError(f"You can declare winners for {admin.department} only.", 403)
+    if team.status != "submitted":
+        raise ApiError(f"This team has been {team.status}, so it cannot win.", 409)
+    needed = db.scalar(select(func.count()).select_from(PanelJuror).where(PanelJuror.panel_id == link.panel_id)) or 0
+    scored = db.scalar(
+        select(func.count())
+        .select_from(Score)
+        .join(PanelJuror, (PanelJuror.panel_id == link.panel_id) & (PanelJuror.juror_email == Score.juror_email))
+        .where(Score.round == round_, Score.team_id == team.id)
+    )
+    if needed == 0 or (scored or 0) < needed:
+        raise ApiError("Both judges must score this team before it can be declared a winner.", 409)
+    school = team.participant_type == "school"
+    amount = rules.prize(round_, school, team.category, data.place)
+    if amount is None:
+        raise ApiError(
+            "The department round has one prize per category: 1st place."
+            if round_ == "department"
+            else "There is no prize for this place.",
+            422,
+        )
+    key = _group_key(round_, team)
+    holder = db.scalar(
+        select(Award).where(Award.round == round_, Award.group_key == key, Award.place == data.place, Award.team_id != team.id)
+    )
+    if holder is not None:
+        other = db.get(Team, holder.team_id)
+        raise ApiError(f"{other.name if other else 'Another team'} already holds this place. Remove it there first.", 409)
+    db.execute(delete(Award).where(Award.round == round_, Award.team_id == team.id))
+    db.add(Award(round=round_, team_id=team.id, group_key=key, place=data.place, amount=amount, declared_by=admin.email))
+    place = "1st" if data.place == 1 else "2nd"
+    audit.record(db, admin.email, "judging.award_declared", team, f"{place} place, Rs {amount}, {ROUND_LABELS[round_]}")
+    db.commit()
+
+
+def remove_award(db: Session, admin: Admin, round_: str, team_id: uuid.UUID) -> None:
+    _check_round(round_)
+    if not _can_award(admin, round_):
+        raise ApiError("Only organisers change winners.", 403)
+    admin_service._lock_state(db, f"awards_lock:{round_}")
+    if db.get(AppState, _awards_key(round_)) is not None:
+        raise ApiError("The winners are already published to students. A super admin must withdraw them before changing winners.", 409)
+    award = db.scalar(select(Award).where(Award.round == round_, Award.team_id == team_id))
+    team = db.get(Team, team_id)
+    if award is None or team is None:
+        raise ApiError("This team has no prize in this round.", 404)
+    if admin.role == "admin" and team.department != admin.department:
+        raise ApiError(f"You can change winners for {admin.department} only.", 403)
+    db.delete(award)
+    audit.record(db, admin.email, "judging.award_removed", team, f"{'1st' if award.place == 1 else '2nd'} place, {ROUND_LABELS[round_]}")
+    db.commit()
+
+
+def publish_awards(db: Session, admin: Admin, round_: str, publish: bool) -> None:
+    """Super admin: shows (or hides) the round's winners and prize money to students."""
+    _require_super(admin)
+    _check_round(round_)
+    admin_service._lock_state(db, f"awards_lock:{round_}")
+    state = db.get(AppState, _awards_key(round_))
+    if publish:
+        if state is not None:
+            raise ApiError("The winners are already published.", 409)
+        if not db.scalar(select(func.count()).select_from(Award).where(Award.round == round_)):
+            raise ApiError("Declare at least one winner first.", 409)
+        db.add(AppState(key=_awards_key(round_), value=admin.email, updated_at=utcnow()))
+        audit.record(db, admin.email, "judging.awards_published", detail=f"Winners of the {ROUND_LABELS[round_]} shown to students")
+    else:
+        if state is None:
+            raise ApiError("The winners are not published.", 409)
+        db.delete(state)
+        audit.record(db, admin.email, "judging.awards_withdrawn", detail=f"Winners of the {ROUND_LABELS[round_]} hidden from students")
+    db.commit()
+
+
+def judge_access(db: Session, juror: Juror, now: datetime | None = None) -> str | None:
+    """
+    Why a judge (who is not an organiser) cannot sign in now, or None. They can from a while before their room's
+    slot (the timetable's sign-in lead) until scoring for the room closes.
+    """
+    now = now or utcnow()
+    panels = list(db.scalars(select(Panel).join(PanelJuror, PanelJuror.panel_id == Panel.id).where(PanelJuror.juror_email == juror.email)))
+    if not panels:
+        return "You have not been put in a judging room yet. Your department admin will let you know when you have."
+    table = timetable(db)
+    upcoming = []
+    for panel in panels:
+        opens, closes = scoring_window(panel, table.grace)
+        if opens is None or closes is None:
+            return None
+        if opens - table.login_lead <= now <= closes:
+            return None
+        if now < opens:
+            upcoming.append(opens)
+    if upcoming:
+        first = min(upcoming)
+        local = (first - table.login_lead).astimezone(rules.IST)
+        return (
+            f"Your judging starts {first.astimezone(rules.IST):%a %d %b at %I:%M %p}. You can sign in from {local:%I:%M %p} that day."
+        ).replace(" 0", " ")
+    return "Your judging time has ended. Thank you! If marks still need to be entered, please contact the organisers."
 
 
 # ---------- Judges' own view ----------

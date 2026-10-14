@@ -792,6 +792,7 @@ class TimetableSlot(Input):
 class TimetableInput(Input):
     slots: list[TimetableSlot] = Field(max_length=40)
     grace_minutes: int = Field(ge=0, le=rules.MAX_GRACE_MINUTES)
+    login_lead_minutes: int = Field(default=rules.DEFAULT_LOGIN_LEAD_MINUTES, ge=0, le=rules.MAX_LOGIN_LEAD_MINUTES)
     # Also move the department's rooms that still sit at the old time.
     move_rooms: bool = True
 
@@ -799,6 +800,7 @@ class TimetableInput(Input):
 class TimetableOut(BaseModel):
     slots: list[TimetableSlot]
     grace_minutes: int
+    login_lead_minutes: int
     customised: bool
     updated_by: str | None = None
 
@@ -1014,6 +1016,13 @@ class PassOut(BaseModel):
     rounds: list[PassRound]
 
 
+class AwardOut(BaseModel):
+    place: int
+    amount: int
+    declared_by: str
+    declared_at: datetime
+
+
 class RankedTeam(BaseModel):
     position: int | None
     team: TeamSummaryOut
@@ -1025,6 +1034,14 @@ class RankedTeam(BaseModel):
     query: float | None
     # Level with the team ranked just above on total, innovation and query addressing: the panel chair decides.
     tied: bool
+    # Every judge of the team's room has scored it; only complete teams get a place.
+    complete: bool = True
+    award: AwardOut | None = None
+
+
+class PrizeOut(BaseModel):
+    place: int
+    amount: int
 
 
 class RankingGroup(BaseModel):
@@ -1033,11 +1050,37 @@ class RankingGroup(BaseModel):
     department: str | None
     category: int | None
     teams: list[RankedTeam]
+    # The places with a cash prize in this group, e.g. 1st only (department round) or 1st and 2nd (finale).
+    prizes: list[PrizeOut] = []
 
 
 class RankingsOut(BaseModel):
     round: str
     groups: list[RankingGroup]
+    # Students see the round's winners only once a super admin publishes them.
+    awards_published: bool = False
+    can_award: bool = False
+    can_publish_awards: bool = False
+
+
+class AwardInput(Input):
+    team_id: uuid.UUID
+    place: int = Field(ge=1, le=2)
+
+
+class ResultCard(BaseModel):
+    round: str
+    # awaiting: not announced yet; finalist / not_selected: department round outcome; winner: a cash prize;
+    # participated: took part in the finale without a prize.
+    status: Literal["awaiting", "finalist", "not_selected", "winner", "participated"]
+    title: str
+    message: str
+    place: int | None = None
+    amount: int | None = None
+
+
+class ResultsOut(BaseModel):
+    cards: list[ResultCard]
 
 
 class ScoreInput(Input):

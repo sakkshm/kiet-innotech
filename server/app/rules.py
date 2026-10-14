@@ -253,6 +253,23 @@ DEFAULT_TIMETABLE: list[tuple[str, str, list[str]]] = [
 # Judges submit marks during their room's slot and this many minutes after it.
 DEFAULT_GRACE_MINUTES = 30
 MAX_GRACE_MINUTES = 240
+# Judges (who are not organisers) can sign in from this many minutes before their room's slot until scoring closes.
+DEFAULT_LOGIN_LEAD_MINUTES = 60
+MAX_LOGIN_LEAD_MINUTES = 1440
+
+# Cash prizes (event document). Department round: 1st place in each category in every department. Grand Finale: 1st and
+# 2nd in each category, and the Best School Project.
+POSTER_CATEGORIES = {5, 7}
+
+
+def prize(round_: str, school: bool, category: int, place: int) -> int | None:
+    """The cash prize for a place, or None when that place has no prize."""
+    if round_ == "department":
+        return (1000 if category in POSTER_CATEGORIES else 2000) if place == 1 else None
+    table = {1: 5000, 2: 3000} if school else {1: 4000, 2: 3000} if category in POSTER_CATEGORIES else {1: 8000, 2: 5000}
+    return table.get(place)
+
+
 # Event passes: the QR code changes every minute and is accepted for two minutes after (one before, for clock drift).
 PASS_PERIOD_SECONDS = 60
 PASS_PAST_PERIODS = 2

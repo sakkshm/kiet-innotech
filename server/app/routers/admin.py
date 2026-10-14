@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
-from ..auth import CurrentAdmin, CurrentStaff, Identity, SuperAdmin, find_admin, get_admin_identity
+from ..auth import CurrentAdmin, CurrentStaff, Identity, SuperAdmin, check_judge_window, find_admin, get_admin_identity
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..errors import ApiError
@@ -23,6 +23,7 @@ from ..schemas import (
     AttendanceSheet,
     AuditOut,
     AuditPage,
+    AwardInput,
     FinalistBoardOut,
     FinalistSummaryOut,
     JudgingOut,
@@ -75,6 +76,7 @@ def me(identity: Annotated[Identity, Depends(get_admin_identity)], db: Db, setti
     if admin is not None:
         return service.admin_out(admin).model_copy(update={"judge": juror is not None})
     if juror is not None:
+        check_judge_window(db, juror)
         return AdminOut(email=juror.email, name=juror.name, role="judge", department=juror.department, judge=True)
     raise ApiError("This account is not an InnoTech26 organiser or judge.", 403)
 
@@ -311,6 +313,30 @@ def judging_rankings(
     round_: JudgingRound, admin: CurrentAdmin, db: Db, department: Annotated[str | None, Query(max_length=20)] = None
 ) -> RankingsOut:
     return judging.rankings(db, admin, round_, department)
+
+
+@router.post("/judging/{round_}/awards", status_code=status.HTTP_204_NO_CONTENT)
+def declare_award(round_: JudgingRound, data: AwardInput, admin: CurrentAdmin, db: Db) -> Response:
+    judging.declare_award(db, admin, round_, data)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/judging/{round_}/awards/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_award(round_: JudgingRound, team_id: uuid.UUID, admin: CurrentAdmin, db: Db) -> Response:
+    judging.remove_award(db, admin, round_, team_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/judging/{round_}/awards/publish", status_code=status.HTTP_204_NO_CONTENT)
+def publish_awards(round_: JudgingRound, admin: CurrentAdmin, db: Db) -> Response:
+    judging.publish_awards(db, admin, round_, True)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/judging/{round_}/awards/withdraw", status_code=status.HTTP_204_NO_CONTENT)
+def withdraw_awards(round_: JudgingRound, admin: CurrentAdmin, db: Db) -> Response:
+    judging.publish_awards(db, admin, round_, False)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/judging/{round_}/attendance")

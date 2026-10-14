@@ -373,3 +373,26 @@ class Attendance(Base):
     marked_by: Mapped[str] = mapped_column(String(320))
     method: Mapped[str] = mapped_column(String(10))
     note: Mapped[str] = mapped_column(Text, default="")
+
+
+class Award(Base):
+    """A prize place (1st or 2nd) declared by the organisers from the rankings. Students see it once the round's awards are published."""
+
+    __tablename__ = "awards"
+    __table_args__ = (
+        CheckConstraint("round IN ('department', 'final')", name="round"),
+        CheckConstraint("place IN (1, 2)", name="place"),
+        # A team wins once per round, and each place of a group (department + category, or finale category) once.
+        Index("uq_awards_round_team", "round", "team_id", unique=True),
+        Index("uq_awards_round_group_place", "round", "group_key", "place", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    round: Mapped[str] = mapped_column(String(10))
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    # The rankings group, e.g. "CSE-1" (department round) or "category-3" / "school-0" (finale).
+    group_key: Mapped[str] = mapped_column(String(40))
+    place: Mapped[int] = mapped_column(Integer)
+    amount: Mapped[int] = mapped_column(Integer)
+    declared_by: Mapped[str] = mapped_column(String(320))
+    declared_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)

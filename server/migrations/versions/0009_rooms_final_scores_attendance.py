@@ -1,4 +1,4 @@
-"""judging rooms get a building and a time slot, submitted scores record who edited them, attendance by event pass
+"""judging rooms get a building and a time slot, submitted scores record who edited them, attendance by event pass, awards
 
 Additive except for one index: a room's name no longer has to be unique in a round (the same room can host
 different departments at different times); the clash check moved to the code, which compares building, room and slot.
@@ -42,9 +42,27 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("user_id", "round", name=op.f("pk_attendance")),
     )
     op.create_index(op.f("ix_attendance_team_id"), "attendance", ["team_id"], unique=False)
+    op.create_table(
+        "awards",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("round", sa.String(length=10), nullable=False),
+        sa.Column("team_id", sa.Uuid(), nullable=False),
+        sa.Column("group_key", sa.String(length=40), nullable=False),
+        sa.Column("place", sa.Integer(), nullable=False),
+        sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("declared_by", sa.String(length=320), nullable=False),
+        sa.Column("declared_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("round IN ('department', 'final')", name=op.f("ck_awards_round")),
+        sa.CheckConstraint("place IN (1, 2)", name=op.f("ck_awards_place")),
+        sa.ForeignKeyConstraint(["team_id"], ["teams.id"], name=op.f("fk_awards_team_id_teams"), ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_awards")),
+    )
+    op.create_index("uq_awards_round_team", "awards", ["round", "team_id"], unique=True)
+    op.create_index("uq_awards_round_group_place", "awards", ["round", "group_key", "place"], unique=True)
 
 
 def downgrade() -> None:
+    op.drop_table("awards")
     op.drop_index(op.f("ix_attendance_team_id"), table_name="attendance")
     op.drop_table("attendance")
     op.drop_column("scores", "edited_by")
