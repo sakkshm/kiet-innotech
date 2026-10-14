@@ -22,6 +22,8 @@ const tones: Partial<Record<string, PillTone>> = {
   "judging.scored": "cyan",
   "student.banned": "red",
   "student.unbanned": "cyan",
+  "student.deleted": "red",
+  "team.leader_changed": "orange",
   "student.created": "green",
   "team.reopened": "orange",
   "team.dissolved": "red",

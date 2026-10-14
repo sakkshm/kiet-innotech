@@ -132,6 +132,8 @@ export const auditLabels: Record<AuditAction, string> = {
   "student.created": "Student registered",
   "student.banned": "Student banned",
   "student.unbanned": "Ban lifted",
+  "student.deleted": "Student profile deleted",
+  "team.leader_changed": "Team leader changed",
   "team.reopened": "Team sent back to draft",
   "team.dissolved": "Team dissolved",
   "team.approved": "Entry accepted for the Grand Finale",

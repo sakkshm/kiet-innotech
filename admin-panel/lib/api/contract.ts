@@ -68,6 +68,8 @@ export interface AdminApi {
   /** Super admin: the student can no longer use the portal or be put in a team. */
   banStudent(userId: string, reason: string): Promise<AdminStudent>;
   unbanStudent(userId: string, reason: string): Promise<AdminStudent>;
+  /** Super admin: deletes the student's profile. A leader hands over to a random team mate; a lone leader's team is deleted too. Returns a message. */
+  deleteStudent(userId: string, reason: string): Promise<string>;
   /** Super admin: disqualifies the team and, optionally, bans all its members. */
   banTeam(teamId: string, reason: string, banMembers: boolean): Promise<AdminTeam>;
 

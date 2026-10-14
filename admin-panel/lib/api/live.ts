@@ -135,6 +135,7 @@
  *          published finalist or a team in judging.
  *   POST   /admin/students    body ProfileInput + { email } → AdminStudent (201). Scoped like the student list.
  *   POST   /admin/students/{user_id}/ban | /unban   (super_admin) body { reason } → AdminStudent
+ *   POST   /admin/students/{user_id}/delete   (super_admin) body { reason } → { message }
  *   POST   /admin/teams/{id}/ban   (super_admin) body { reason, ban_members } → AdminTeam (disqualified)
  *
  *   POST   /admin/results/unpublish   (super_admin) body { confirm: "UNPUBLISH", reason } → 204
@@ -338,6 +339,7 @@ export const liveApi: AdminApi = {
   createStudent: (input) => request<AdminStudent>("POST", "/admin/students", input),
   banStudent: (userId, reason) => request<AdminStudent>("POST", `/admin/students/${id(userId)}/ban`, { reason }),
   unbanStudent: (userId, reason) => request<AdminStudent>("POST", `/admin/students/${id(userId)}/unban`, { reason }),
+  deleteStudent: async (userId, reason) => (await request<{ message: string }>("POST", `/admin/students/${id(userId)}/delete`, { reason })).message,
   banTeam: (teamId, reason, banMembers) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/ban`, { reason, banMembers }),
 
   getSchedule: () => request<Schedule>("GET", "/admin/schedule"),

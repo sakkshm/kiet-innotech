@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Download, ShieldCheck, ShieldX, UserPlus, X } from "lucide-react";
+import { Download, ShieldCheck, ShieldX, Trash2, UserPlus, X } from "lucide-react";
 import { api, errorMessage, MAX_SEARCH_LENGTH } from "@/lib/api";
 import type { AdminStudent, StudentQuery, StudentSort } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -53,6 +53,7 @@ export function StudentsView() {
   const inTeam = params.get("team");
   const bannedParam = params.get("banned");
   const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState<AdminStudent | null>(null);
   const [banning, setBanning] = useState<{ student: AdminStudent; lift: boolean } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const query: StudentQuery = {
@@ -349,6 +350,10 @@ export function StudentsView() {
                               Ban<span className="sr-only"> {s.fullName}</span>
                             </Button>
                           )}
+                          <Button size="sm" variant="ghost" className="text-red-700" onClick={() => setDeleting(s)}>
+                            <Trash2 aria-hidden="true" className="size-3.5" />
+                            Delete<span className="sr-only"> {s.fullName}&apos;s profile</span>
+                          </Button>
                         </td>
                       )}
                     </tr>
@@ -398,6 +403,33 @@ export function StudentsView() {
             const updated = banning.lift ? await api.unbanStudent(banning.student.userId, reason) : await api.banStudent(banning.student.userId, reason);
             setBanning(null);
             setMessage(banning.lift ? `${updated.fullName} can use the portal again.` : `${updated.fullName} is banned.`);
+            reload();
+          }}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete ${deleting.fullName}'s profile?`}
+          description={
+            <>
+              <strong className="text-navy-900">{deleting.email}</strong> loses their profile and can register again from scratch.
+              {deleting.team
+                ? deleting.team.role === "leader"
+                  ? ` They lead team ${deleting.team.code}: a random team mate becomes leader, or the team is deleted if they are its only member.`
+                  : ` They are removed from team ${deleting.team.code}.`
+                : ""}{" "}
+              This cannot be undone.
+            </>
+          }
+          confirmLabel="Delete profile"
+          tone="danger"
+          reasonLabel="Reason"
+          onClose={() => setDeleting(null)}
+          onConfirm={async (reason) => {
+            const result = await api.deleteStudent(deleting.userId, reason);
+            setDeleting(null);
+            setMessage(result);
             reload();
           }}
         />

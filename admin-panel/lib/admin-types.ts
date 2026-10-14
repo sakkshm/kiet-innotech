@@ -77,6 +77,8 @@ export type AuditAction =
   | "student.created"
   | "student.banned"
   | "student.unbanned"
+  | "student.deleted"
+  | "team.leader_changed"
   | "team.reopened"
   | "team.dissolved"
   | "team.approved"

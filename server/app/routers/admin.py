@@ -163,6 +163,12 @@ def unban_student(user_id: uuid.UUID, data: ReasonInput, admin: CurrentAdmin, db
     return service.unban_student(db, admin, user_id, data.reason)
 
 
+@router.post("/students/{user_id}/delete")
+def delete_student(user_id: uuid.UUID, data: ReasonInput, admin: CurrentAdmin, db: Db) -> dict[str, str]:
+    """Super admin: deletes a student's profile; a team leader hands over to a random team mate, a lone leader's team goes too."""
+    return {"message": service.delete_student(db, admin, user_id, data.reason)}
+
+
 @router.post("/teams/{team_id}/ban")
 def ban_team(team_id: uuid.UUID, data: TeamBanInput, admin: CurrentAdmin, db: Db) -> AdminTeamOut:
     return service.ban_team(db, admin, team_id, data.reason, data.ban_members)

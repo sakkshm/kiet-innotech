@@ -6,6 +6,7 @@ students from other colleges and schools; a startup admin only startups; a super
 
 import json
 import logging
+import random
 import uuid
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
@@ -25,6 +26,7 @@ from ..errors import ApiError
 from ..models import (
     Admin,
     AppState,
+    Attendance,
     AuditEntry,
     FinalistNomination,
     FinalTent,
@@ -740,6 +742,66 @@ def ban_student(db: Session, admin: Admin, user_id: uuid.UUID, reason: str) -> A
     )
     db.commit()
     return _one_student(db, admin, user_id)
+
+
+def delete_student(db: Session, admin: Admin, user_id: uuid.UUID, reason: str) -> str:
+    """
+    Deletes a student's profile so they can register afresh (their sign-in and any ban stay). In a team, a leader
+    hands over to a random team mate; a leader with no team mates takes the team with them. Returns what happened.
+    """
+    from .students import _decline_pending_invitations, submission_problem
+
+    _require_super(admin, "delete student profiles")
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+    profile = db.get(Profile, user_id)
+    if user is None or profile is None:
+        raise ApiError("Student not found.", 404)
+
+    note = ""
+    membership = db.scalar(select(TeamMember).where(TeamMember.user_id == user.id))
+    if membership is not None:
+        team = db.scalar(select(Team).where(Team.id == membership.team_id).with_for_update())
+        assert team is not None
+        mates = db.scalars(select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.user_id != user.id)).all()
+        if team.leader_id == user.id and not mates:
+            if team.result == "finalist":
+                raise ApiError("This student's team is a published finalist, so it cannot be deleted. Disqualify it.", 409)
+            if blocked := _judging_blocker(db, team):
+                raise ApiError(blocked, 409)
+            audit.record(db, admin.email, "team.dissolved", team, f"{team.name} deleted with its only member {user.email}. {reason}")
+            db.delete(team)
+            note = f" Their team {team.code} was deleted too."
+        else:
+            if team.leader_id == user.id:
+                heir = random.choice(mates)  # noqa: S311 (a fair pick, not a secret)
+                team.leader_id, heir.role = heir.user_id, "leader"
+                heir_email = db.scalar(select(User.email).where(User.id == heir.user_id))
+                audit.record(db, admin.email, "team.leader_changed", team, f"{user.email} deleted; {heir_email} is the new leader")
+                note = f" {heir_email} is now leader of team {team.code}."
+            else:
+                note = f" Removed from team {team.code}."
+            db.delete(membership)
+            db.flush()
+            if team.status == "submitted" and (problem := submission_problem(db, team)):
+                db.rollback()
+                raise ApiError(
+                    f"Team {team.code} is submitted and could not stay valid without this student ({problem}). "
+                    "Reopen the team first, or dissolve it.",
+                    409,
+                )
+    db.execute(delete(Attendance).where(Attendance.user_id == user.id))
+    _decline_pending_invitations(db, user.email)
+    db.delete(profile)
+    audit.record(
+        db,
+        admin.email,
+        "student.deleted",
+        detail=f"{user.email} ({profile.full_name}, roll {profile.roll_number or 'none'}): profile deleted. Reason: {reason}.{note}",
+        department=profile.department,
+        participant_type=profile.participant_type,
+    )
+    db.commit()
+    return f"{profile.full_name}'s profile is deleted.{note}"
 
 
 def unban_student(db: Session, admin: Admin, user_id: uuid.UUID, reason: str) -> AdminStudentOut:

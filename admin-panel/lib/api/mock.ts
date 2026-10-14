@@ -1097,6 +1097,37 @@ export const mockApi: AdminApi = {
     return clone(studentRow(db, student));
   },
 
+  async deleteStudent(userId, reason) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    requireSuper(admin, "delete student profiles");
+    const student = db.students.find((s) => s.userId === userId);
+    if (!student) throw new ApiError(404, "Student not found.");
+    const text = requireReason(reason);
+    let note = "";
+    const team = db.teams.find((t) => t.id === student.teamId);
+    if (team) {
+      const mates = team.members.filter((m) => m.userId !== userId);
+      if (team.leaderId === userId && mates.length === 0) {
+        if (team.result === "finalist") throw new ApiError(409, "This student's team is a published finalist, so it cannot be deleted.");
+        db.teams = db.teams.filter((t) => t.id !== team.id);
+        note = ` Their team ${team.code} was deleted too.`;
+      } else {
+        if (team.leaderId === userId) {
+          const heir = mates[Math.floor(Math.random() * mates.length)];
+          team.leaderId = heir.userId;
+          note = ` ${heir.email} is now leader of team ${team.code}.`;
+        }
+        team.members = mates;
+      }
+    }
+    db.students = db.students.filter((s) => s.userId !== userId);
+    log(db, { actorEmail: admin.email, action: "student.deleted", department: student.department, detail: `${student.email}: profile deleted. Reason: ${text}.${note}` });
+    save(db);
+    return `${student.fullName}'s profile is deleted.${note}`;
+  },
+
   async unbanStudent(userId, reason) {
     await delay();
     const db = load();
