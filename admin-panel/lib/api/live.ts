@@ -80,7 +80,7 @@
  *          Every admin can read it.
  *
  *   PUT    /admin/schedule        (super_admin only)
- *          body { registration_opens, registration_closes, registration_extended_closes? (colleges, schools, startups, COE KIET; null = none),
+ *          body { registration_opens, registration_closes, registration_extended_closes? (other colleges and schools; null = none),
  *          nominations_deadline | null }, each ISO 8601 WITH an offset.
  *          422 if closes <= opens, a window over a year, a date outside 2020-2100, or a date without an offset.
  *          Applies on the very next request of every student; audited ("schedule.updated"). → Schedule
@@ -329,6 +329,7 @@ export const liveApi: AdminApi = {
   withdrawTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/withdraw`, { reason }),
   disqualifyTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/disqualify`, { reason }),
   restoreTeam: (teamId, reason, unbanMembers = false) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/restore`, { reason, unbanMembers }),
+  submitTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/submit`, { reason }),
   reopenTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/reopen`, { reason }),
   dissolveTeam: (teamId, reason) => request<void>("POST", `/admin/teams/${id(teamId)}/dissolve`, { reason }),
   approveTeam: (teamId) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/approve`),

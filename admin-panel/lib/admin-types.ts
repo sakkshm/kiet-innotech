@@ -7,9 +7,9 @@ import type { ParticipantType, Profile, Team, TeamMember, TeamResult, TeamRoute,
 
 /**
  * Organiser roles. A department admin sees one KIET department (COE KIET is one of them); an outside admin other
- * colleges and schools; a startup admin only startups.
+ * colleges and schools; a college admin other colleges only; a school admin schools only; a startup admin only startups.
  */
-export type AdminRole = "super_admin" | "admin" | "outside_admin" | "startup_admin";
+export type AdminRole = "super_admin" | "admin" | "outside_admin" | "college_admin" | "school_admin" | "startup_admin";
 
 export type AdminUser = {
   email: string;
@@ -233,7 +233,7 @@ export type RegistrationWindow = {
 /** The event schedule an organiser can change: registration window and the finalist nominations deadline. */
 export type Schedule = {
   registration: RegistrationWindow;
-  /** Other colleges, schools, startups and COE KIET (technical clubs) can register until this, later than the KIET departments. Null = no extension. */
+  /** Other colleges and schools can register until this, later than KIET (COE KIET included) and startups. Null = no extension. */
   extendedCloses: string | null;
   nominationsDeadline: string | null;
   /** False once the deadline has passed (department admins are then locked out of nominations). */
@@ -259,7 +259,7 @@ export type Schedule = {
 export type ScheduleInput = {
   registrationOpens: string;
   registrationCloses: string;
-  /** Left out: unchanged; null removes the later deadline for colleges, schools, startups and COE KIET. */
+  /** Left out: unchanged; null removes the later deadline for other colleges and schools. */
   registrationExtendedCloses?: string | null;
   nominationsDeadline: string | null;
   /** Left out: unchanged. */

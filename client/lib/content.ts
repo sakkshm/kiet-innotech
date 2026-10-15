@@ -44,16 +44,16 @@ export const navLinks = [
 export const registrationDisplay = {
   opens: "2026-10-03T00:00:00+05:30",
   closes: "2026-10-15T23:59:59+05:30",
-  /** Startups and COE KIET (technical clubs) register until this, later than everyone else. */
+  /** Other colleges and schools register until this, later than KIET and startups. */
   extendedCloses: "2026-10-21T23:59:59+05:30",
 };
 
 /** One sentence for everywhere visitors read the closing date: everyone but the KIET departments has longer. */
-export const extendedNote = "Other colleges, schools, startups and COE KIET clubs can register until 21 October 2026.";
+export const extendedNote = "Students of other colleges and schools can register until 21 October 2026.";
 
 export const liveUpdates = [
   "Registrations are open until 15 October 2026",
-  "Other colleges, schools, startups and COE KIET clubs can register until 21 October 2026",
+  "Students of other colleges and schools can register until 21 October 2026",
   "No registration fee for any participant",
   "Grand Finale on 30 October 2026 at KIET",
 ];
@@ -314,11 +314,11 @@ export type Milestone = {
 
 /** Shown beside "Registrations Close" in the date lists (not in the five-stage timeline graphic). */
 export const extendedMilestone: Milestone = {
-  title: "Registrations Close: Colleges, Schools, Startups & COE KIET",
+  title: "Registrations Close: Other Colleges & Schools",
   dateLabel: "21 Oct 2026",
   start: "2026-10-21",
   end: "2026-10-21",
-  description: "Other colleges, schools, startup entries and COE KIET (technical club) teams can register and submit until this date.",
+  description: "Teams from other colleges and schools can register and submit until this date.",
 };
 
 export const timeline: Milestone[] = [
@@ -334,7 +334,7 @@ export const timeline: Milestone[] = [
     dateLabel: "15 Oct 2026",
     start: "2026-10-15",
     end: "2026-10-15",
-    description: "Last day for KIET departments to register and submit. Teams are locked after submission. Other colleges, schools, startups and COE KIET: 21 Oct.",
+    description: "Last day for KIET students (COE KIET included) and startups to register and submit. Teams are locked after submission. Other colleges and schools: 21 Oct.",
   },
   {
     title: "Department Level",
@@ -554,7 +554,7 @@ export const faqs = [
   {
     question: "Who can still register after 15 October?",
     answer:
-      "Students of other colleges and schools, startups and COE KIET (technical club) entries can register and submit until 21 October 2026, 11:59 PM. Registration for KIET departments closes on 15 October 2026.",
+      "Students of other colleges and schools can register and submit until 21 October 2026, 11:59 PM. Registration for KIET students (COE KIET included) and startups closes on 15 October 2026.",
   },
   {
     question: "How do I join my friend's team?",

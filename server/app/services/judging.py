@@ -268,7 +268,7 @@ def _check_view(admin: Admin, round_: str) -> None:
             raise ApiError("COE KIET teams skip the department round and are judged at the Grand Finale.", 403)
     elif admin.role == "admin" and round_ != "department":
         raise ApiError("Department admins can see the department round only.", 403)
-    if admin.role in ("outside_admin", "startup_admin") and round_ != "final":
+    if admin_service.is_type_admin(admin) and round_ != "final":
         raise ApiError("The department round is for KIET teams only.", 403)
 
 
@@ -1067,7 +1067,7 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
     chair). A team gets a place only once every judge of its room has scored it.
     """
     _check_round(round_)
-    if admin.role in ("outside_admin", "startup_admin"):
+    if admin_service.is_type_admin(admin):
         raise ApiError("Rankings are for super admins and department admins.", 403)
     _check_view(admin, round_)
     if admin.role == "admin":

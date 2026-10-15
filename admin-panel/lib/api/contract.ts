@@ -54,6 +54,8 @@ export interface AdminApi {
   restoreTeam(id: string, reason: string, unbanMembers?: boolean): Promise<AdminTeam>;
   /** Super admin: sends a submitted team back to draft (registration must be open; not once judging has started). */
   reopenTeam(id: string, reason: string): Promise<AdminTeam>;
+  /** Super admin: submits a draft team for its students, whether or not registration is open (late entries). */
+  submitTeam(id: string, reason: string): Promise<AdminTeam>;
   /** Super admin: deletes a team and frees its members. The history stays in the audit log. */
   dissolveTeam(id: string, reason: string): Promise<void>;
   /** Accepts a submitted startup or COE KIET entry as a legal entry for the Grand Finale. */

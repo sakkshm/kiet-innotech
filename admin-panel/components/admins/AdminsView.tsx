@@ -81,6 +81,8 @@ function AddAdminForm({ onAdded }: { onAdded: (admin: AdminUser) => void }) {
         <Field label="Role" htmlFor="role-input">
           <Select id="role-input" value={role} onChange={(e) => setRole(e.target.value as AdminRole)}>
             <option value="admin">{roleLabels.admin}</option>
+            <option value="college_admin">{roleLabels.college_admin} (other colleges only)</option>
+            <option value="school_admin">{roleLabels.school_admin} (schools only)</option>
             <option value="outside_admin">{roleLabels.outside_admin} (other colleges and schools)</option>
             <option value="startup_admin">{roleLabels.startup_admin} (startups only)</option>
             <option value="super_admin">{roleLabels.super_admin}</option>
@@ -95,9 +97,13 @@ function AddAdminForm({ onAdded }: { onAdded: (admin: AdminUser) => void }) {
               ? "Super admins see every department."
               : role === "outside_admin"
                 ? "Sees only teams and students from other colleges and schools."
-                : role === "startup_admin"
-                  ? "Sees only startups."
-                  : "Required for department admins. Choose COE KIET / Technical Club KIET for the technical clubs' admin."
+                : role === "college_admin"
+                  ? "Sees only teams and students from other colleges."
+                  : role === "school_admin"
+                    ? "Sees only teams and students from schools."
+                    : role === "startup_admin"
+                      ? "Sees only startups."
+                      : "Required for department admins. Choose COE KIET / Technical Club KIET for the technical clubs' admin."
           }
         >
           <Select
@@ -109,7 +115,7 @@ function AddAdminForm({ onAdded }: { onAdded: (admin: AdminUser) => void }) {
             aria-invalid={errors.department ? true : undefined}
             aria-describedby={describe("department", true)}
           >
-            <option value="">{role === "super_admin" ? "All departments" : role === "outside_admin" || role === "startup_admin" ? "No department" : "Choose a department"}</option>
+            <option value="">{role === "super_admin" ? "All departments" : role !== "admin" ? "No department" : "Choose a department"}</option>
             {departments.map((d) => (
               <option key={d} value={d}>{departmentLabel(d)}</option>
             ))}
@@ -198,7 +204,7 @@ export function AdminsView() {
                     </td>
                     <td className={`${tdClass} break-all`}>{admin.email}</td>
                     <td className={tdClass}>
-                      <Pill tone={admin.role === "super_admin" ? "navy" : admin.role === "outside_admin" ? "orange" : admin.role === "startup_admin" ? "violet" : "cyan"}>{roleLabels[admin.role]}</Pill>
+                      <Pill tone={admin.role === "super_admin" ? "navy" : admin.role === "outside_admin" || admin.role === "college_admin" || admin.role === "school_admin" ? "orange" : admin.role === "startup_admin" ? "violet" : "cyan"}>{roleLabels[admin.role]}</Pill>
                     </td>
                     <td className={tdClass}>{admin.department ? departmentLabel(admin.department) : <span className="text-muted">{admin.role === "outside_admin" ? "Other colleges & schools" : admin.role === "startup_admin" ? "Startups" : "All"}</span>}</td>
                     <td className={`${tdClass} whitespace-nowrap text-muted`}>{configured ? "Server configuration" : formatDate(admin.addedAt)}</td>

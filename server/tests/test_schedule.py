@@ -7,7 +7,7 @@ import pytest
 
 from app.db import get_sessionmaker
 from app.models import AppState
-from conftest import college_profile, kiet_profile, team_input
+from conftest import college_profile, kiet_profile, school_profile, team_input
 from test_concurrency import parallel
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -411,29 +411,35 @@ def test_only_a_super_admin_can_publish_even_with_the_phrase(dept_admin, real_wi
     assert dept_admin.post("/admin/results/publish", {"confirm": "PUBLISH"}).status_code == 403
 
 
-# ---------- Everyone but KIET departments: a later deadline ----------
+# ---------- Other colleges and schools: a later deadline (not KIET, COE KIET or startups) ----------
 
 
 def extended(opens: timedelta, closes: timedelta, extra: timedelta, **more) -> dict:
     return {**window(opens, closes), "registration_extended_closes": iso(datetime.now(UTC) + extra), **more}
 
 
-def test_everyone_but_kiet_departments_registers_after_the_general_deadline(root, as_user, real_window):
+def test_colleges_and_schools_register_after_the_general_deadline(root, as_user, real_window):
     from test_startups_clubs import club_profile, startup_profile
 
     assert root.put("/admin/schedule", extended(timedelta(days=-9), timedelta(days=-1), timedelta(days=2))).status_code == 200
     # KIET departments are closed out, with a message that says who can still register.
     late = as_user("late@kiet.edu").put("/me/profile", kiet_profile())
     assert late.status_code == 403 and "can register until" in late.json()["detail"]
-    # Other colleges, schools, startups and COE KIET are not.
+    # Other colleges and schools are not.
     outsider = as_user("someone@gmail.com")
     assert outsider.put("/me/profile", college_profile()).status_code == 200
     mine = outsider.get("/me").json()["registration"]
     assert (mine["state"], mine["extended"]) == ("open", True)
-    assert as_user("founder@gmail.com").put("/me/profile", startup_profile()).status_code == 200
-    assert as_user("club@kiet.edu").put("/me/profile", club_profile()).status_code == 200
-    # A KIET department student who has no profile yet may turn out to be a COE club member, so the later window shows.
-    assert as_user("regular@kiet.edu").get("/me").json()["registration"]["extended"] is True
+    assert as_user("school.kid@gmail.com").put("/me/profile", school_profile()).status_code == 200
+    # Startups close with KIET.
+    startup = as_user("founder@gmail.com").put("/me/profile", startup_profile())
+    assert startup.status_code == 403 and "can register until" in startup.json()["detail"]
+    # COE KIET (technical clubs) closes with the KIET departments.
+    club = as_user("club@kiet.edu").put("/me/profile", club_profile())
+    assert club.status_code == 403 and "can register until" in club.json()["detail"]
+    # Someone without a profile: a non-KIET account may still be a college or school student; a KIET account cannot.
+    assert as_user("newcomer@gmail.com").get("/me").json()["registration"]["state"] == "open"
+    assert as_user("regular@kiet.edu").get("/me").json()["registration"]["state"] == "closed"
     assert root.get("/admin/schedule").json()["extended_closes"]
 
 
@@ -452,11 +458,13 @@ def test_before_the_general_deadline_nothing_differs_for_kiet_departments(root, 
     assert regular.put("/me/profile", kiet_profile()).status_code == 200
 
 
-def test_a_kiet_department_profile_cannot_turn_into_coe_to_beat_the_deadline(root, as_user, real_window):
-    student = as_user("regular@kiet.edu")
-    assert student.put("/me/profile", kiet_profile()).status_code == 200
+def test_a_startup_profile_cannot_turn_into_a_college_one_to_beat_the_deadline(root, as_user, real_window):
+    from test_startups_clubs import startup_profile
+
+    founder = as_user("founder@gmail.com")
+    assert founder.put("/me/profile", startup_profile()).status_code == 200
     root.put("/admin/schedule", extended(timedelta(days=-9), timedelta(days=-1), timedelta(days=2)))
-    assert student.put("/me/profile", kiet_profile(department="COE", club="Robotics Club")).status_code == 403
+    assert founder.put("/me/profile", college_profile()).status_code == 403
 
 
 def test_the_extended_deadline_is_validated_kept_and_removable(root, real_window):
@@ -495,3 +503,33 @@ def test_a_college_team_builds_and_submits_after_the_general_deadline(root, as_u
     invitation = mate.get("/me/invitations").json()[0]
     assert mate.post(f"/invitations/{invitation['id']}/accept").status_code == 204
     assert lead.post(f"/teams/{entry.json()['id']}/submit").status_code == 200
+
+
+# ---------- Late submission by an organiser ----------
+
+
+def test_a_super_admin_submits_a_draft_team_after_the_deadline(root, as_user, student, team_of, real_window):
+    lead, mate = student("lead@kiet.edu"), student("mate@kiet.edu")
+    team = team_of(lead, [mate])
+    pending = student("late@kiet.edu")
+    assert lead.post(f"/teams/{team['id']}/invitations", {"email": "late@kiet.edu"}).status_code == 201
+    root.put("/admin/schedule", window(timedelta(days=-9), timedelta(days=-1)))
+    assert lead.post(f"/teams/{team['id']}/submit").status_code == 403
+    # Department admins cannot; a reason is needed.
+    root.post("/admin/admins", {"email": "cse.admin@kiet.edu", "name": "CSE Admin", "role": "admin", "department": "CSE"})
+    assert as_user("cse.admin@kiet.edu").post(f"/admin/teams/{team['id']}/submit", {"reason": "Asked by email"}).status_code == 403
+    assert root.post(f"/admin/teams/{team['id']}/submit", {"reason": "x"}).status_code == 422
+    done = root.post(f"/admin/teams/{team['id']}/submit", {"reason": "Leader wrote in on 16 Oct"})
+    assert done.status_code == 200, done.json()
+    assert done.json()["status"] == "submitted" and done.json()["submitted_at"]
+    assert pending.get("/me/invitations").json() == []
+    assert root.post(f"/admin/teams/{team['id']}/submit", {"reason": "Leader wrote in on 16 Oct"}).status_code == 409
+
+
+def test_a_team_that_breaks_the_rules_is_not_submitted(root, student, team_of, real_window):
+    lead = student("solo@kiet.edu")
+    team = team_of(lead)
+    root.put("/admin/schedule", window(timedelta(days=-9), timedelta(days=-1)))
+    refused = root.post(f"/admin/teams/{team['id']}/submit", {"reason": "Asked by email"})
+    assert refused.status_code == 422 and "2 to 5 members" in refused.json()["detail"]
+    assert root.get(f"/admin/teams/{team['id']}").json()["status"] == "draft"

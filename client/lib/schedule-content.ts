@@ -9,7 +9,7 @@ export function useTimeline(): Milestone[] {
   return timeline;
 }
 
-/** The date lists (not the timeline graphic): the timeline with the startups and COE KIET deadline after the general one. */
+/** The date lists (not the timeline graphic): the timeline with the other colleges and schools deadline after the general one. */
 export function useDateRows(): Milestone[] {
   const index = timeline.findIndex((item) => item.title === "Registrations Close");
   return [...timeline.slice(0, index + 1), extendedMilestone, ...timeline.slice(index + 1)];

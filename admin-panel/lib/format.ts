@@ -72,6 +72,8 @@ export const roleLabels: Record<AdminRole | "judge", string> = {
   super_admin: "Super admin",
   admin: "Department admin",
   outside_admin: "Outside teams admin",
+  college_admin: "College admin",
+  school_admin: "School admin",
   startup_admin: "Startup admin",
   judge: "Judge",
 };

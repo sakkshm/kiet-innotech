@@ -10,6 +10,7 @@ import { useDateRows } from "@/lib/schedule-content";
 import { TEAM_MIN_SIZE, directFinaleKind, participantTypeLabels, yearLabel } from "@/lib/rules";
 import type { Invitation, Team } from "@/lib/types";
 import { Button, Notice, buttonStyles } from "@/components/ui/form";
+import { ArchivedNotice } from "@/components/portal/ArchivedNotice";
 import { CreateOrJoin } from "@/components/portal/CreateOrJoin";
 import { FinaleNote } from "@/components/portal/FinaleNote";
 import { JudgingStatus } from "@/components/portal/JudgingStatus";
@@ -53,6 +54,7 @@ export default function DashboardPage() {
         {completed === steps.length ? "Your registration is complete." : `Your registration is ${completed} of ${steps.length} steps done.`}
       </PageHeading>
 
+      <ArchivedNotice className="mb-6" />
       {team && (
         <div className="mb-6 empty:hidden">
           <TeamStatusNotice team={team} />

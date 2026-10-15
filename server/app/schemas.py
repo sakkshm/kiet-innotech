@@ -136,7 +136,7 @@ class RegistrationOut(BaseModel):
     state: rules.RegistrationState
     opens: datetime
     closes: datetime
-    # True when `closes` is the later deadline (colleges, schools, startups, COE KIET) rather than the KIET departments' one.
+    # True when `closes` is the later deadline (other colleges and schools) rather than the KIET departments' one.
     extended: bool = False
 
 
@@ -180,7 +180,7 @@ class ScheduleInput(Input):
     registration_opens: AwareDatetime
     registration_closes: AwareDatetime
     nominations_deadline: AwareDatetime | None = None
-    # Leave it out to keep the current later deadline (colleges, schools, startups, COE KIET); null removes it.
+    # Leave it out to keep the current later deadline (other colleges and schools); null removes it.
     registration_extended_closes: AwareDatetime | None = None
     # Leave it out to keep the current results date; null removes the restriction.
     results_publish_from: AwareDatetime | None = None
@@ -326,7 +326,7 @@ class ReasonInput(Input):
     reason: str = Field(min_length=5, max_length=500)
 
 
-AdminRole = Literal["super_admin", "admin", "outside_admin", "startup_admin"]
+AdminRole = Literal["super_admin", "admin", "outside_admin", "startup_admin", "college_admin", "school_admin"]
 
 
 class AdminInput(Input):
@@ -392,7 +392,7 @@ class NominationsInput(Input):
 class AdminOut(BaseModel):
     email: str
     name: str
-    # super_admin | admin | outside_admin | startup_admin, or "judge" for a juror who is not an organiser.
+    # super_admin | admin | outside_admin | college_admin | school_admin | startup_admin, or "judge" for a juror who is not an organiser.
     role: str
     department: str | None
     added_at: datetime | None = None

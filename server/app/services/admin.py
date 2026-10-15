@@ -84,21 +84,31 @@ def _is_super(admin: Admin) -> bool:
     return admin.role == "super_admin"
 
 
-def _is_outside(admin: Admin) -> bool:
-    return admin.role == "outside_admin"
-
-
 OUTSIDE = ("college", "school")
 STARTUPS = ("startup",)
+# Admins limited to participant types rather than a KIET department, and the types each one sees.
+ROLE_TYPES: dict[str, tuple[str, ...]] = {
+    "outside_admin": OUTSIDE,
+    "college_admin": ("college",),
+    "school_admin": ("school",),
+    "startup_admin": STARTUPS,
+}
+ROLE_SCOPE_LABELS = {
+    "outside_admin": "other colleges and schools",
+    "college_admin": "other colleges",
+    "school_admin": "schools",
+    "startup_admin": "startups",
+}
+
+
+def _is_outside(admin: Admin) -> bool:
+    """Admins for other colleges and/or schools."""
+    return admin.role in ("outside_admin", "college_admin", "school_admin")
 
 
 def type_scope(admin: Admin) -> tuple[str, ...] | None:
-    """The participant types an outside or startup admin is limited to; None for super and department admins."""
-    if admin.role == "outside_admin":
-        return OUTSIDE
-    if admin.role == "startup_admin":
-        return STARTUPS
-    return None
+    """The participant types an outside, college, school or startup admin is limited to; None for super and department admins."""
+    return ROLE_TYPES.get(admin.role)
 
 
 def is_type_admin(admin: Admin) -> bool:
@@ -106,9 +116,7 @@ def is_type_admin(admin: Admin) -> bool:
 
 
 def scope_label(admin: Admin) -> str:
-    if admin.role == "startup_admin":
-        return "startups"
-    return "other colleges and schools" if _is_outside(admin) else str(admin.department)
+    return ROLE_SCOPE_LABELS.get(admin.role, str(admin.department))
 
 
 def _escape_like(text: str) -> str:
@@ -518,7 +526,7 @@ def create_team(db: Session, admin: Admin, data: AdminTeamInput, settings: Setti
     if not can_see_profile(admin, leader):
         raise ApiError(
             f"You can only create teams led by {scope_label(admin)} students."
-            if is_type_admin(admin) and admin.role == "outside_admin"
+            if _is_outside(admin)
             else "You can only create startup entries."
             if admin.role == "startup_admin"
             else f"You can only create teams led by {admin.department} students.",
@@ -677,6 +685,35 @@ def reopen_team(db: Session, admin: Admin, settings: Settings, team_id: uuid.UUI
     # A draft cannot be nominated; this frees the place for another team.
     db.execute(delete(FinalistNomination).where(FinalistNomination.team_id == team.id))
     audit.record(db, admin.email, "team.reopened", team, f"Sent back to draft. Reason: {reason}")
+    db.commit()
+    return admin_teams(db, [team])[0]
+
+
+def submit_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> AdminTeamOut:
+    """
+    Submits a draft team for its students, e.g. after the deadline when they reach out to the organisers. Super admins
+    only. The registration window does not apply, but the team rules do; pending invitations are cancelled.
+    """
+    from .students import submission_problem
+
+    _require_super(admin, "submit teams")
+    team = _visible_team(db, admin, team_id, lock=True)
+    if team.status != "draft":
+        raise ApiError(f"Only a draft team can be submitted; this team is {team.status}.", 409)
+    if team.route == "department" and _results_published(db) is not None:
+        raise ApiError("Department results have been published, so a KIET team can no longer join the department round.", 409)
+    cancelled = db.execute(
+        update(Invitation)
+        .where(Invitation.team_id == team.id, Invitation.status == "pending")
+        .values(status="cancelled", responded_at=utcnow())
+    ).rowcount
+    db.flush()
+    if problem := submission_problem(db, team):
+        db.rollback()
+        raise ApiError(f"This team cannot be submitted: {problem}.", 422)
+    team.status, team.submitted_at = "submitted", utcnow()
+    note = f" {cancelled} pending invitation(s) cancelled." if cancelled else ""
+    audit.record(db, admin.email, "team.submitted", team, f"Submitted by an organiser. Reason: {reason}.{note}")
     db.commit()
     return admin_teams(db, [team])[0]
 
@@ -861,8 +898,8 @@ def create_student(db: Session, admin: Admin, data: AdminStudentInput) -> AdminS
             else "KIET students are registered with their official @kiet.edu email.",
             422,
         )
-    if admin.role == "outside_admin" and data.participant_type not in OUTSIDE:
-        raise ApiError("You can only register students from other colleges and schools.", 403)
+    if _is_outside(admin) and data.participant_type not in ROLE_TYPES[admin.role]:
+        raise ApiError(f"You can only register students from {scope_label(admin)}.", 403)
     if admin.role == "startup_admin" and data.participant_type != "startup":
         raise ApiError("You can only register startups.", 403)
     if admin.role == "admin" and (data.participant_type != "kiet" or data.department != admin.department):
@@ -1117,7 +1154,7 @@ def stats(db: Session, admin: Admin, settings: Settings) -> StatsOut:
                 teams=sum(1 for t in teams if t.participant_type == kind),
                 submitted=sum(1 for t in teams if t.participant_type == kind and t.status == "submitted"),
             )
-            for kind in (("kiet", "college", "school", "startup") if is_super else OUTSIDE)
+            for kind in (("kiet", "college", "school", "startup") if is_super else ROLE_TYPES[admin.role])
         ]
         if sees_outside
         else None,

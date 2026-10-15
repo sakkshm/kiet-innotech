@@ -2,7 +2,7 @@
 The event schedule an organiser can change while the event runs: when registration opens and closes, the
 deadline for department admins' finalist nominations, and the earliest moment results can be published.
 
-Other colleges, schools, startups and COE KIET (technical club) entries may be given a later registration deadline than KIET departments
+Other colleges and schools may be given a later registration deadline than KIET teams (COE KIET included) and startups
 (`extended_closes`); until the general deadline passes, nothing differs for anyone.
 
 The planned dates come from the settings (REGISTRATION_OPENS, REGISTRATION_CLOSES, REGISTRATION_EXTENDED_CLOSES,
@@ -40,7 +40,7 @@ LATEST = datetime(2100, 1, 1, tzinfo=UTC)
 class Schedule:
     opens: datetime
     closes: datetime
-    # Other colleges, schools, startups and COE KIET can register until this; None = the same deadline as everyone.
+    # Other colleges and schools can register until this; None = the same deadline as everyone.
     extended_closes: datetime | None
     nominations_deadline: datetime | None
     # Results cannot be published before this (the event document declares finalists on 26 October).
@@ -308,14 +308,15 @@ def is_extended(subject) -> bool:
     return subject is not None and rules.has_extended_deadline(subject.participant_type, subject.department)
 
 
-def registration_for(window: Schedule, subject=None, now: datetime | None = None) -> RegistrationOut:
+def registration_for(window: Schedule, subject=None, now: datetime | None = None, *, email: str = "") -> RegistrationOut:
     """
-    The registration window as one student sees it. Everyone but KIET departments gets the later deadline. Someone who
-    has not given their profile yet may turn out to be one of them, so once the general deadline has passed they are shown the
-    later window; saving a profile of another kind is still refused.
+    The registration window as one student sees it. Other colleges and schools get the later deadline. Someone without a
+    profile who signed in with a non-KIET email may turn out to be one of them, so once the general deadline has passed
+    they are shown the later window; saving a profile of another kind is still refused.
     """
     general = window.registration_state(now)
-    extended = is_extended(subject) or (subject is None and general == "closed")
+    may_be_outside = subject is None and not rules.is_kiet_email(email)
+    extended = is_extended(subject) or (may_be_outside and general == "closed")
     extended = extended and window.extended_closes is not None and window.extended_closes > window.closes
     return RegistrationOut(
         state=window.registration_state(now, extended),

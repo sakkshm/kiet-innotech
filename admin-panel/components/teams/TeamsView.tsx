@@ -26,7 +26,7 @@ import { lastPage, PageSizeSelect, Pagination } from "@/components/ui/Pagination
 import { SelectionBar } from "@/components/ui/SelectionBar";
 import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
 import { yearLabel } from "@/lib/rules";
-import { scopeName } from "@/lib/scope";
+import { isOutsideAdmin, scopedTypes, scopeName } from "@/lib/scope";
 import { CreateTeamDialog } from "./CreateTeamDialog";
 import { YearChips } from "./YearChips";
 import { SearchBox } from "@/components/ui/SearchBox";
@@ -44,13 +44,14 @@ const teamKey = (team: AdminTeam) => team.id;
 export function TeamsView() {
   const admin = useAdmin();
   const isSuper = admin.role === "super_admin";
-  const outside = admin.role === "outside_admin";
+  const outside = isOutsideAdmin(admin);
   // A startup has no year of study, so a startup admin sees no year filters or columns.
   const startupOnly = admin.role === "startup_admin";
   // Startup and COE KIET entries wait for an admin to accept them; only their admins (and super admins) see those.
   const seesApprovals = isSuper || startupOnly || (admin.role === "admin" && admin.department === clubDepartment);
   // Super admins filter by every type; outside admins between colleges and schools; startup admins see one type only.
-  const typeChoices = isSuper ? types : outside ? types.filter((t) => t === "college" || t === "school") : [];
+  const scoped = scopedTypes(admin) ?? [];
+  const typeChoices = isSuper ? types : scoped.length > 1 ? types.filter((t) => scoped.includes(t)) : [];
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const { params, update, reset } = useUrlParams();
@@ -79,8 +80,11 @@ export function TeamsView() {
   const { data, error, loading } = useQuery(key, () => api.listTeams(query));
   const filtered = Boolean(query.department || query.category || query.status || query.type || query.route || query.approval || query.year || query.leaderYear || query.q);
   const yearChoices = [
-    ...(query.type === "school" ? [] : [1, 2, 3, 4].map((y) => ({ value: y, label: yearLabel(y) }))),
-    ...(typeChoices.includes("school") && query.type !== "college" ? [6, 7, 8, 9, 10, 11, 12].map((y) => ({ value: y, label: yearLabel(y, "school") })) : []),
+    // A school admin sees school classes only; a college admin college years only.
+    ...(query.type === "school" || admin.role === "school_admin" ? [] : [1, 2, 3, 4].map((y) => ({ value: y, label: yearLabel(y) }))),
+    ...((typeChoices.includes("school") || admin.role === "school_admin") && query.type !== "college"
+      ? [6, 7, 8, 9, 10, 11, 12].map((y) => ({ value: y, label: yearLabel(y, "school") }))
+      : []),
   ];
 
   function onSort(sort: TeamSort) {
@@ -126,7 +130,7 @@ export function TeamsView() {
           isSuper
             ? "Every team from KIET departments, other colleges, schools and startups."
             : outside
-              ? "Teams from other colleges and schools. They go straight to the Grand Finale."
+              ? `Teams from ${scopeName(admin).toLowerCase()}. They go straight to the Grand Finale.`
               : admin.role === "startup_admin"
                 ? "Startup entries, one per startup. They go straight to the Grand Finale."
                 : `Teams whose leader is a ${admin.department} student. Members may come from other branches.`

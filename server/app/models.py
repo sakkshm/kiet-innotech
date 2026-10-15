@@ -180,12 +180,13 @@ class Invitation(Base):
 class Admin(Base):
     """
     Organisers. Super admins see everything; admins are scoped to one KIET department (COE KIET is one of them);
-    outside admins see only teams and students from other colleges and schools; startup admins only startups.
+    outside admins see only teams and students from other colleges and schools; college admins only other colleges;
+    school admins only schools; startup admins only startups.
     """
 
     __tablename__ = "admins"
     __table_args__ = (
-        CheckConstraint("role IN ('super_admin', 'admin', 'outside_admin', 'startup_admin')", name="role"),
+        CheckConstraint("role IN ('super_admin', 'admin', 'outside_admin', 'startup_admin', 'college_admin', 'school_admin')", name="role"),
         CheckConstraint("role <> 'admin' OR department IS NOT NULL", name="department"),
     )
 

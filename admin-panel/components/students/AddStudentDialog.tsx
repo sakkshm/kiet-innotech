@@ -5,6 +5,7 @@ import { api, errorMessage } from "@/lib/api";
 import type { AdminStudent, AdminUser } from "@/lib/admin-types";
 import { clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { collegeCourses, collegeYears, isKietEmail, kietCourses, schoolClasses, yearLabel } from "@/lib/rules";
+import { isOutsideAdmin, scopeName } from "@/lib/scope";
 import type { ParticipantType } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
@@ -21,7 +22,7 @@ export function AddStudentDialog({ admin, onClose, onCreated }: { admin: AdminUs
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
-  const [chosenType, setChosenType] = useState<ParticipantType>("college");
+  const [chosenType, setChosenType] = useState<ParticipantType>(admin.role === "school_admin" ? "school" : "college");
   const [institution, setInstitution] = useState("");
   const [city, setCity] = useState("");
   const [department, setDepartment] = useState(admin.role === "admin" ? (admin.department ?? "") : "");
@@ -44,8 +45,8 @@ export function AddStudentDialog({ admin, onClose, onCreated }: { admin: AdminUs
   const scopeProblem =
     email.trim() && admin.role === "admin" && !kiet
       ? `As the ${admin.department} admin you can register KIET students only (a @kiet.edu email).`
-      : email.trim() && admin.role === "outside_admin" && kiet
-        ? "You register students from other colleges and schools; KIET students use their @kiet.edu email."
+      : email.trim() && isOutsideAdmin(admin) && kiet
+        ? `You register students from ${scopeName(admin).toLowerCase()}; KIET students use their @kiet.edu email.`
         : null;
 
   async function save() {
@@ -164,8 +165,8 @@ export function AddStudentDialog({ admin, onClose, onCreated }: { admin: AdminUs
                 setCourse("");
               }}
             >
-              <option value="college">Other college</option>
-              <option value="school">School</option>
+              {admin.role !== "school_admin" && <option value="college">Other college</option>}
+              {admin.role !== "college_admin" && <option value="school">School</option>}
             </Select>
           </Field>
         )}

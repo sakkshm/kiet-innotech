@@ -77,13 +77,13 @@ export function useRegistrationDates(): { opens: string; closes: string } {
   return extended ? extendedDisplay : registrationDisplay;
 }
 
-/** Whether this signed-in student's own deadline is the later one (startups and COE KIET). */
+/** Whether this signed-in student's own deadline is the later one (other colleges and schools). */
 export function useIsExtended(): boolean {
   return useSyncExternalStore(subscribe, extendedSnapshot, () => false);
 }
 
 /**
- * "Other colleges, schools, startups and COE KIET clubs can register until 21 October 2026." for everyone who does NOT already see that date
+ * "Students of other colleges and schools can register until 21 October 2026." for everyone who does NOT already see that date
  * as their own, until it has passed. Empty on the server, so the prerendered page never differs.
  */
 export function useExtendedNote(): string {

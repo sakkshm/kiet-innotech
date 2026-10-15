@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { ArrowLeft, Ban, BadgeCheck, RotateCcw, ShieldX, Trash2, Undo2, UserMinus } from "lucide-react";
+import { ArrowLeft, Ban, BadgeCheck, RotateCcw, Send, ShieldX, Trash2, Undo2, UserMinus } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { AdminTeam } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -21,7 +21,7 @@ import { SectionTitle } from "@/components/ui/PageHeader";
 import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
 import { TableFrame, tdClass, Th } from "@/components/ui/Table";
 
-type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove";
+type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove" | "submit";
 
 const actionCopy: Record<Action, { title: string; confirm: string; tone: "primary" | "danger"; description: (team: AdminTeam) => ReactNode }> = {
   withdraw: {
@@ -41,6 +41,17 @@ const actionCopy: Record<Action, { title: string; confirm: string; tone: "primar
     description: (team) => (
       <>
         <strong className="text-navy-900">{team.name}</strong> ({team.code}) will be disqualified from InnoTech26. Only the super admin can restore it.
+      </>
+    ),
+  },
+  submit: {
+    title: "Submit this team",
+    confirm: "Submit team",
+    tone: "primary",
+    description: (team) => (
+      <>
+        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is submitted for its students, even though registration is closed for
+        them. The team rules still apply (members, category). Pending invitations are cancelled. Students are not told this is possible.
       </>
     ),
   },
@@ -194,6 +205,8 @@ function TeamView({ id }: { id: string }) {
   const canBan = isSuper;
   const bannedCount = t.members.filter((m) => m.banned).length;
   const canReopen = isSuper && t.status === "submitted";
+  // Late entries: a super admin can submit a draft team for its students, e.g. after the deadline.
+  const canSubmit = isSuper && t.status === "draft";
   const canDissolve = isSuper;
   // Startup and COE KIET entries qualify for the Grand Finale only once their admin has accepted them.
   const isApprover = isSuper || admin.role === "startup_admin" || (admin.role === "admin" && admin.department === clubDepartment);
@@ -222,6 +235,8 @@ function TeamView({ id }: { id: string }) {
           ? await api.disqualifyTeam(t.id, reason)
           : kind === "reopen"
             ? await api.reopenTeam(t.id, reason)
+            : kind === "submit"
+            ? await api.submitTeam(t.id, reason)
             : kind === "ban"
             ? await api.banTeam(t.id, reason, banMembers)
             : await api.restoreTeam(t.id, reason, unbanMembers);
@@ -231,6 +246,8 @@ function TeamView({ id }: { id: string }) {
     setDone(
       kind === "reopen"
         ? `${updated.code} is a draft again. Its leader can now change it and submit it once more.`
+        : kind === "submit"
+        ? `${updated.code} is submitted.`
         : kind === "ban"
         ? `${updated.code} is banned (disqualified)${banMembers ? " and its members can no longer use the portal" : ""}.`
         : `${updated.code} is now ${statusLabels[updated.status].toLowerCase()}.`,
@@ -256,7 +273,7 @@ function TeamView({ id }: { id: string }) {
               {t.approvalRequired && <Pill tone={t.approvedAt ? "green" : "orange"}>{t.approvedAt ? "Accepted" : "Awaiting approval"}</Pill>}
             </div>
           </div>
-          {(canApprove || canUnapprove || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
+          {(canApprove || canUnapprove || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
             <div className="flex flex-wrap gap-2">
               {canApprove && (
                 <Button onClick={() => setAction("approve")}>
@@ -268,6 +285,12 @@ function TeamView({ id }: { id: string }) {
                 <Button variant="secondary" onClick={() => setAction("unapprove")}>
                   <BadgeCheck aria-hidden="true" className="size-4" />
                   Withdraw acceptance
+                </Button>
+              )}
+              {canSubmit && (
+                <Button onClick={() => setAction("submit")}>
+                  <Send aria-hidden="true" className="size-4" />
+                  Submit team
                 </Button>
               )}
               {canWithdraw && (

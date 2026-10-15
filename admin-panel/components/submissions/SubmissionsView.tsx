@@ -11,7 +11,7 @@ import { categoryTitle, dayHeading, formatTime, istDayKey, plural, typeShortLabe
 import { teamHref } from "@/lib/routes";
 import { yearLabel } from "@/lib/rules";
 import type { ParticipantType } from "@/lib/types";
-import { scopeName } from "@/lib/scope";
+import { scopeName, scopedTypes } from "@/lib/scope";
 import { useQuery } from "@/lib/use-query";
 import { intParam, pageSizeParam, pickParam, useUrlParams } from "@/lib/use-url-params";
 import { Button } from "@/components/ui/Button";
@@ -28,8 +28,8 @@ import { YearChips } from "@/components/teams/YearChips";
 export function SubmissionsView() {
   const admin = useAdmin();
   const isSuper = admin.role === "super_admin";
-  const outside = admin.role === "outside_admin";
-  const types: ParticipantType[] = isSuper ? ["kiet", "college", "school", "startup"] : outside ? ["college", "school"] : [];
+  const scoped = scopedTypes(admin) ?? [];
+  const types: ParticipantType[] = isSuper ? ["kiet", "college", "school", "startup"] : scoped.length > 1 ? scoped : [];
   const { params, update, reset } = useUrlParams();
   const [searchKey, setSearchKey] = useState(0);
 

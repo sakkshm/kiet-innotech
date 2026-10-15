@@ -239,3 +239,21 @@ def test_year_filters_and_breakdown(as_user, student, team_of):
     assert as_user("s@gmail.com").post(f"/teams/{school['id']}/submit").status_code == 200
     direct = root.get("/admin/finalists/summary").json()["direct_teams"]
     assert [(t["leader_year"], t["member_years"]) for t in direct] == [(11, [11, 12])]
+
+
+def test_college_and_school_admins_see_only_their_own_type(world, as_user):  # noqa: F811
+    root = world["root"]
+    for email, role in (("college.desk@kiet.edu", "college_admin"), ("school.desk@kiet.edu", "school_admin")):
+        made = root.post("/admin/admins", {"email": email, "name": "Desk", "role": role, "department": "CSE"})
+        assert made.status_code == 201 and made.json()["department"] is None
+    college, school = Api(root.client, "college.desk@kiet.edu"), Api(root.client, "school.desk@kiet.edu")
+    assert {t["participant_type"] for t in college.get("/admin/teams").json()["items"]} == {"college"}
+    assert {t["participant_type"] for t in school.get("/admin/teams").json()["items"]} == {"school"}
+    assert {s["participant_type"] for s in school.get("/admin/students", params={"page_size": 100}).json()["items"]} == {"school"}
+    assert college.get(f"/admin/teams/{world['teams']['school']['id']}").status_code == 403
+    assert school.get(f"/admin/teams/{world['teams']['college']['id']}").status_code == 403
+    assert school.get(f"/admin/teams/{world['teams']['cse_a']['id']}").status_code == 403
+    assert [t["type"] for t in school.get("/admin/stats").json()["by_type"]] == ["school"]
+    body = {**college_profile(), "email": "new.college@gmail.com"}
+    assert school.post("/admin/students", body).status_code == 403
+    assert college.post("/admin/students", body).status_code == 201

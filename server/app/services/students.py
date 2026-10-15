@@ -25,7 +25,7 @@ from . import audit, limits, schedule
 
 
 def window_subject(db: Session, user: User, profile: Profile | None = None):
-    """Whose registration window applies to this student: their team's (all but KIET departments close later), else their profile's."""
+    """Whose registration window applies to this student: their team's (colleges and schools close later), else their profile's."""
     membership = db.scalar(select(TeamMember).where(TeamMember.user_id == user.id))
     if membership is not None:
         return db.get(Team, membership.team_id)
@@ -49,7 +49,7 @@ def require_open(db: Session, settings: Settings, user: User | None = None, *, s
         if current.extended_closes and current.extended_closes > current.closes and not extended:
             raise ApiError(
                 f"Registration closed on {schedule.day(current.closes)}. Teams can no longer be changed. "
-                f"Other colleges, schools, startups and COE KIET can register until {schedule.day(current.extended_closes)}.",
+                f"Other colleges and schools can register until {schedule.day(current.extended_closes)}.",
                 403,
             )
         raise ApiError(f"Registration closed on {closed_on}. Teams can no longer be changed.", 403)
@@ -177,7 +177,7 @@ def save_profile(db: Session, user: User, data: ProfileInput, settings: Settings
         db.add(profile)
     else:
         if schedule.is_extended(data) and not schedule.is_extended(profile):
-            # Turning a KIET department profile into a COE KIET (or any other) one must not be a way round the earlier deadline.
+            # Changing to a participant type with a later deadline must not be a way round the earlier one.
             require_open(db, settings, subject=profile)
         if _membership(db, user.id) is not None:
             locked_changed = (

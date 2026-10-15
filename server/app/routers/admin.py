@@ -108,6 +108,12 @@ def reopen_team(team_id: uuid.UUID, data: ReasonInput, admin: CurrentAdmin, db: 
     return service.reopen_team(db, admin, settings, team_id, data.reason)
 
 
+@router.post("/teams/{team_id}/submit")
+def submit_team(team_id: uuid.UUID, data: ReasonInput, admin: CurrentAdmin, db: Db) -> AdminTeamOut:
+    """Super admin: submits a draft team for its students, whether or not registration is open."""
+    return service.submit_team(db, admin, team_id, data.reason)
+
+
 @router.post("/teams/{team_id}/approve")
 def approve_team(team_id: uuid.UUID, admin: CurrentAdmin, db: Db) -> AdminTeamOut:
     """Super admin, startups admin or COE KIET admin: accepts a submitted startup or COE KIET entry for the Grand Finale."""

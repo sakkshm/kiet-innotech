@@ -100,7 +100,7 @@ export type RegistrationWindow = {
   state: RegistrationState;
   opens: string;
   closes: string;
-  /** True when `closes` is the later deadline of startups and COE KIET clubs rather than the general one. */
+  /** True when `closes` is the later deadline of other colleges and schools rather than the general one. */
   extended?: boolean;
 };
 

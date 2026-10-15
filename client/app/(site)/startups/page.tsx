@@ -51,7 +51,6 @@ export default function StartupsPage() {
           <h1 className="max-w-3xl font-display text-4xl font-bold tracking-tight text-white sm:text-5xl">Bring your startup to InnoTech26</h1>
           <p className="mt-4 max-w-2xl text-base text-slate-300 sm:text-lg">
             Register your startup as a single entry. There is no team to build: tell us who you are and add your project.
-            Startup registrations are open until 21 October 2026.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <StartupCta className="group inline-flex items-center justify-center gap-2 rounded-full bg-accent-500 px-7 py-3.5 font-semibold text-white shadow-xl shadow-accent-500/30 transition hover:-translate-y-0.5 hover:bg-accent-600" />
@@ -100,7 +99,7 @@ export default function StartupsPage() {
         </Block>
 
         <Block title="Important dates">
-          <ImportantDates exclude={["Department Level", "Finalists Declared", "Registrations Close"]} />
+          <ImportantDates exclude={["Department Level", "Finalists Declared", "Registrations Close: Other Colleges & Schools"]} />
         </Block>
 
         <section aria-labelledby="startup-cta" className="relative overflow-hidden rounded-3xl bg-navy-900 px-6 py-10 text-center sm:px-10">

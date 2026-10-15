@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { directFinaleKind } from "@/lib/rules";
 import { Notice } from "@/components/ui/form";
+import { ArchivedNotice } from "@/components/portal/ArchivedNotice";
 import { CreateOrJoin } from "@/components/portal/CreateOrJoin";
 import { FinaleNote } from "@/components/portal/FinaleNote";
 import { PageHeading } from "@/components/portal/PageHeading";
@@ -34,6 +35,7 @@ export default function TeamPage() {
             </>
           )}
         </PageHeading>
+        <ArchivedNotice className="mb-6" />
         <CreateOrJoin hasInvitations={invitations.length > 0} />
       </div>
     );
@@ -50,6 +52,7 @@ export default function TeamPage() {
         <Suspense>
           <CreatedNotice />
         </Suspense>
+        <ArchivedNotice />
         <TeamStatusNotice team={team} />
         {direct && <FinaleNote kind={direct} team={team} />}
       </div>

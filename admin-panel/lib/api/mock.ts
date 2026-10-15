@@ -3,6 +3,7 @@
  * It enforces the same role scoping and rules the FastAPI backend will: a department admin
  * asking for another department's data gets an ApiError, exactly as the real API would respond.
  */
+import { isOutsideAdmin, isTypeAdmin, scopedTypes, scopeName } from "../scope";
 import {
   CONFIGURED_BY_SERVER,
   type AdminInput,
@@ -122,8 +123,8 @@ function requireSuper(admin: AdminUser, what: string) {
 /** Same scoping as the backend: department admins see one KIET department, outside admins other colleges and schools. */
 function inScope(admin: AdminUser, record: { participantType: ParticipantType; department: string | null }) {
   if (admin.role === "super_admin") return true;
-  if (admin.role === "outside_admin") return record.participantType === "college" || record.participantType === "school";
-  if (admin.role === "startup_admin") return record.participantType === "startup";
+  const types = scopedTypes(admin);
+  if (types) return types.includes(record.participantType);
   return record.participantType === "kiet" && record.department === admin.department;
 }
 
@@ -132,7 +133,7 @@ const canSeeStudent = (admin: AdminUser, student: StudentRecord) => inScope(admi
 
 function checkDepartmentFilter(admin: AdminUser, department: string | undefined) {
   if (admin.role !== "super_admin" && department && department !== admin.department) {
-    throw new ApiError(403, admin.role === "outside_admin" ? "You can only view other colleges and schools." : admin.role === "startup_admin" ? "You can only view startups." : `You can only view ${admin.department} data.`);
+    throw new ApiError(403, isTypeAdmin(admin) ? `You can only view ${scopeName(admin).toLowerCase()}.` : `You can only view ${admin.department} data.`);
   }
 }
 
@@ -140,7 +141,7 @@ function findTeam(db: MockDb, admin: AdminUser, id: string) {
   const team = db.teams.find((t) => t.id === id);
   if (!team) throw new ApiError(404, "No team with this ID exists.");
   if (!canSeeTeam(admin, team)) {
-    throw new ApiError(403, admin.role === "outside_admin" ? "This is a KIET team." : admin.role === "startup_admin" ? "This team is not a startup." : `This team belongs to another department. You can only view ${admin.department} teams.`);
+    throw new ApiError(403, isTypeAdmin(admin) ? `This team is not one of the ${scopeName(admin).toLowerCase()}.` : `This team belongs to another department. You can only view ${admin.department} teams.`);
   }
   return team;
 }
@@ -510,7 +511,7 @@ const NOT_IN_DEMO = "Judging works with the real backend only; the demo data has
 
 function auditVisible(db: MockDb, admin: AdminUser, entry: AuditEntry) {
   if (admin.role === "super_admin") return true;
-  if (admin.role === "outside_admin" || admin.role === "startup_admin") {
+  if (isTypeAdmin(admin)) {
     const team = entry.teamId ? db.teams.find((t) => t.id === entry.teamId) : undefined;
     return !!team && inScope(admin, team);
   }
@@ -532,8 +533,8 @@ export const mockApi: AdminApi = {
     const teams = db.teams.filter((t) => canSeeTeam(admin, t));
     const students = db.students.filter((s) => canSeeStudent(admin, s));
     const isSuper = admin.role === "super_admin";
-    const seesOutside = isSuper || admin.role === "outside_admin";
-    const types: ParticipantType[] = isSuper ? ["kiet", "college", "school", "startup"] : ["college", "school"];
+    const seesOutside = isSuper || isOutsideAdmin(admin);
+    const types: ParticipantType[] = isSuper ? ["kiet", "college", "school", "startup"] : (scopedTypes(admin) ?? []);
     const active = teams.filter((t) => t.status === "draft" || t.status === "submitted");
     const yearKeys = new Set([
       ...students.map((s) => `${s.participantType}|${s.year}`),
@@ -660,6 +661,24 @@ export const mockApi: AdminApi = {
     return setStatus(db, admin, team, status, "team.restored", `Restored to ${status}. Reason: ${text}`);
   },
 
+  async submitTeam(id, reason) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    requireSuper(admin, "submit teams");
+    const team = findTeam(db, admin, id);
+    const text = requireReason(reason);
+    if (team.status !== "draft") throw new ApiError(409, `Only a draft team can be submitted; this team is ${team.status}.`);
+    const [low, high] = team.participantType === "startup" ? [1, 1] : [2, 5];
+    if (team.members.length < low || team.members.length > high) throw new ApiError(422, `This team cannot be submitted: a team needs ${low} to ${high} members.`);
+    team.invitations = [];
+    team.status = "submitted";
+    team.submittedAt = now(db);
+    log(db, { actorEmail: admin.email, action: "team.submitted", teamId: team.id, teamCode: team.code, department: team.department, detail: `Submitted by an organiser. Reason: ${text}` });
+    save(db);
+    return clone(team);
+  },
+
   async reopenTeam(id, reason) {
     await delay();
     const db = load();
@@ -684,7 +703,7 @@ export const mockApi: AdminApi = {
     const db = load();
     const admin = actor(db);
     if (admin.role === "admin" && admin.department !== "COE") throw new ApiError(403, "Only a super admin, the startups admin or the COE KIET admin can accept entries.");
-    if (admin.role === "outside_admin") throw new ApiError(403, "Only a super admin, the startups admin or the COE KIET admin can accept entries.");
+    if (isOutsideAdmin(admin)) throw new ApiError(403, "Only a super admin, the startups admin or the COE KIET admin can accept entries.");
     const team = findTeam(db, admin, id);
     if (!team.approvalRequired) throw new ApiError(409, "This team does not need approval.");
     if (team.status !== "submitted") throw new ApiError(409, "Only a submitted entry can be accepted.");
@@ -895,7 +914,7 @@ export const mockApi: AdminApi = {
     const name = input.name.trim();
     if (!EMAIL_PATTERN.test(email)) throw new ApiError(422, "Enter a valid email address.");
     if (name.length < 2) throw new ApiError(422, "Enter the admin's name.");
-    if (!["admin", "super_admin", "outside_admin", "startup_admin"].includes(input.role)) throw new ApiError(422, "Choose a role.");
+    if (!["admin", "super_admin", "outside_admin", "college_admin", "school_admin", "startup_admin"].includes(input.role)) throw new ApiError(422, "Choose a role.");
     if (input.role === "admin" && (!input.department || !departments.includes(input.department))) {
       throw new ApiError(422, "Choose the department this admin manages.");
     }
@@ -915,7 +934,7 @@ export const mockApi: AdminApi = {
       actorEmail: admin.email,
       action: "admin.added",
       department: created.department,
-      detail: `Added ${name} (${email}) as ${created.role === "super_admin" ? "super admin" : created.role === "outside_admin" ? "admin for other colleges and schools" : `admin for ${created.department}`}.`,
+      detail: `Added ${name} (${email}) as ${created.role === "super_admin" ? "super admin" : isTypeAdmin(created) ? `admin for ${scopeName(created).toLowerCase()}` : `admin for ${created.department}`}.`,
     });
     save(db);
     return clone(created);

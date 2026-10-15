@@ -127,7 +127,7 @@ function ScheduleBody({
               </div>
               {schedule.extendedCloses && (
                 <div>
-                  <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Colleges, schools, startups and COE KIET close</dt>
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Other colleges and schools close</dt>
                   <dd className="font-medium text-navy-900">{formatIst(schedule.extendedCloses)}</dd>
                 </div>
               )}
@@ -343,14 +343,14 @@ function DatesForm({ schedule, isSuper, loadedAt, onSaved }: { schedule: Schedul
         <Field label="Registration opens" htmlFor={ids.opens} error={problems.opens}>
           <Input id={ids.opens} type="datetime-local" value={form.opens} disabled={!isSuper} onChange={(e) => setForm({ ...form, opens: e.target.value })} aria-invalid={problems.opens ? true : undefined} />
         </Field>
-        <Field label="KIET departments: registration closes" htmlFor={ids.closes} error={problems.closes}>
+        <Field label="Registration closes (KIET, COE KIET and startups)" htmlFor={ids.closes} error={problems.closes}>
           <Input id={ids.closes} type="datetime-local" value={form.closes} disabled={!isSuper} onChange={(e) => setForm({ ...form, closes: e.target.value })} aria-invalid={problems.closes ? true : undefined} />
         </Field>
         <Field
-          label="Colleges, schools, startups and COE KIET close"
+          label="Other colleges and schools close"
           htmlFor={ids.extended}
           error={problems.extended}
-          hint="Other colleges, schools, startup entries and COE KIET (technical club) teams can register until this, later than the KIET departments (“Registration closes” above). Until that date nothing changes for anyone."
+          hint="Students of other colleges and schools can register until this. KIET (COE KIET included) and startups close at “Registration closes” above. Until that date nothing changes for anyone."
         >
           <Input
             id={ids.extended}

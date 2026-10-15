@@ -17,7 +17,7 @@ import { NotAuthorised } from "./NotAuthorised";
 type Role = AdminUser["role"];
 type NavItem = { href: string; label: string; Icon: LucideIcon; roles: Role[] };
 
-const ORGANISERS: Role[] = ["super_admin", "admin", "outside_admin", "startup_admin"];
+const ORGANISERS: Role[] = ["super_admin", "admin", "outside_admin", "college_admin", "school_admin", "startup_admin"];
 
 /** Sections of the sidebar. Items show only for the listed roles; "My judging" also for organisers who judge. */
 const nav: { title: string; items: NavItem[] }[] = [
@@ -72,6 +72,10 @@ function scopeLabel(admin: AdminUser) {
       return "Super admin · all participants";
     case "outside_admin":
       return "Admin · other colleges & schools";
+    case "college_admin":
+      return "Admin · other colleges";
+    case "school_admin":
+      return "Admin · schools";
     case "startup_admin":
       return "Admin · startups";
     case "judge":

@@ -10,7 +10,7 @@ import { clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { downloadStudents, downloadStudentsExcel } from "@/lib/export";
 import { formatDate, plural, typeShortLabels, typeTones } from "@/lib/format";
 import { collegeYears, schoolClasses, yearLabel } from "@/lib/rules";
-import { isTypeAdmin, scopeName } from "@/lib/scope";
+import { isOutsideAdmin, isTypeAdmin, scopedTypes, scopeName } from "@/lib/scope";
 import type { ParticipantType } from "@/lib/types";
 import { useQuery } from "@/lib/use-query";
 import { intParam, pageSizeParam, pickParam, useUrlParams } from "@/lib/use-url-params";
@@ -38,8 +38,9 @@ const studentKey = (student: AdminStudent) => student.userId;
 export function StudentsView() {
   const admin = useAdmin();
   const isSuper = admin.role === "super_admin";
-  const outside = admin.role === "outside_admin";
-  const typeChoices = isSuper ? types : outside ? types.filter((t) => t === "college" || t === "school") : [];
+  const outside = isOutsideAdmin(admin);
+  const scoped = scopedTypes(admin) ?? [];
+  const typeChoices = isSuper ? types : scoped.length > 1 ? types.filter((t) => scoped.includes(t)) : [];
   const typeLimited = isTypeAdmin(admin);
   // A startup has no year of study or roll number, so a startup admin sees neither.
   const startupOnly = admin.role === "startup_admin";
@@ -104,8 +105,8 @@ export function StudentsView() {
   }
 
   const sortProps = { sort: query.sort ?? "name", order: query.order ?? "asc", onSort } as const;
-  const showClasses = typeChoices.includes("school") && query.type !== "kiet" && query.type !== "college";
-  const showYears = query.type !== "school";
+  const showClasses = (typeChoices.includes("school") || admin.role === "school_admin") && query.type !== "kiet" && query.type !== "college";
+  const showYears = query.type !== "school" && admin.role !== "school_admin";
 
   return (
     <div className="space-y-6">
@@ -116,7 +117,7 @@ export function StudentsView() {
           isSuper
             ? "Everyone who has registered, whether or not they have joined a team."
             : outside
-              ? "Students from other colleges and schools, whether or not they have joined a team."
+              ? `Students from ${scopeName(admin).toLowerCase()}, whether or not they have joined a team.`
               : admin.role === "startup_admin"
                 ? "Startups that have registered, with the person to contact for each."
                 : `KIET students registered in ${admin.department}, including those in teams led by other departments.`

@@ -62,8 +62,8 @@ def needs_approval(participant_type: str, department: str | None) -> bool:
 
 
 def has_extended_deadline(participant_type: str, department: str | None) -> bool:
-    """Only KIET departments close on the general date; other colleges, schools, startups and COE KIET get the later one."""
-    return participant_type != "kiet" or department == CLUB_DEPARTMENT
+    """Only other colleges and schools get the later deadline; KIET (COE KIET included) and startups close on the general one."""
+    return participant_type in ("college", "school")
 
 
 def route_for(participant_type: str, department: str | None) -> str:
