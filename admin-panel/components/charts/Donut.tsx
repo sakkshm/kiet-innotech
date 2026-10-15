@@ -46,7 +46,7 @@ export function Donut({ slices, centerLabel }: { slices: Slice[]; centerLabel: s
   return (
     <div ref={box} className="relative flex flex-col items-center gap-4 @lg:flex-row @lg:gap-6" onPointerLeave={leave}>
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="size-40 shrink-0" role="img" aria-label={`${centerLabel}: ${slices.map((s) => `${s.label} ${s.value}`).join(", ")}`}>
-        <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="#eef2f7" strokeWidth={STROKE} />
+        <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="#efeff3" strokeWidth={STROKE} />
         {arcs.map(({ slice, path }) =>
           path ? (
             <path
@@ -69,7 +69,7 @@ export function Donut({ slices, centerLabel }: { slices: Slice[]; centerLabel: s
         <text x="50%" y="47%" textAnchor="middle" className="fill-navy-900 font-display text-[26px] font-bold">
           {formatNumber(total)}
         </text>
-        <text x="50%" y="60%" textAnchor="middle" className="fill-[#5a6784] text-[10px]">
+        <text x="50%" y="60%" textAnchor="middle" className="fill-[#5f6275] text-[10px]">
           {centerLabel}
         </text>
       </svg>

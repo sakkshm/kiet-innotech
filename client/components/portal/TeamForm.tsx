@@ -115,7 +115,7 @@ export function TeamForm({ initial = empty, participantType, memberYears, submit
                       <span className="font-semibold text-ink">
                         {category.number}. {category.title}
                       </span>
-                      <Pill tone={category.isPoster ? "orange" : "blue"}>{category.isPoster ? "Poster" : "Project"}</Pill>
+                      <Pill tone={category.isPoster ? "orange" : "charcoal"}>{category.isPoster ? "Poster" : "Project"}</Pill>
                     </span>
                     <span className="mt-1 block text-sm text-muted">{category.summary}</span>
                     {!eligibility.allowed && <span className="mt-1 block text-sm font-medium text-navy-800">{eligibility.reason}</span>}

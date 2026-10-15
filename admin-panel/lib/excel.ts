@@ -27,7 +27,7 @@ export function sheet<T>(name: string, columns: ExcelColumn<T>[], rows: T[]): Ex
   };
 }
 
-const HEADER = { fontWeight: "bold", textColor: "#FFFFFF", backgroundColor: "#0B1633", alignVertical: "center" } as const;
+const HEADER = { fontWeight: "bold", textColor: "#FFFFFF", backgroundColor: "#292B38", alignVertical: "center" } as const;
 
 export async function downloadWorkbook(name: string, sheets: ExcelSheet[]) {
   const { default: writeExcelFile } = await import("write-excel-file/universal");

@@ -54,21 +54,21 @@ export function Attractions() {
         <div className="absolute -left-24 top-40 h-72 w-72 rounded-full bg-accent-100/50 blur-3xl" />
         <div className="absolute -bottom-40 left-1/3 h-80 w-[40rem] rounded-full bg-brand-100/50 blur-3xl" />
         <div className="absolute -bottom-32 -right-20 h-80 w-80 rounded-full bg-accent-100/60 blur-3xl" />
-        <div className="absolute right-[6%] top-12 hidden h-28 w-44 bg-[radial-gradient(#c7d0de_1.5px,transparent_1.5px)] bg-[length:22px_22px] lg:block" />
+        <div className="absolute right-[6%] top-12 hidden h-28 w-44 bg-[radial-gradient(#c9cad3_1.5px,transparent_1.5px)] bg-[length:22px_22px] lg:block" />
       </div>
 
       <div className="relative">
         <Reveal className="mx-auto mb-12 max-w-3xl text-center">
-          <p className="mb-3 inline-flex items-center gap-4 text-xs font-bold uppercase tracking-[0.3em] text-accent-500 sm:text-sm">
+          <p className="mb-3 inline-flex items-center gap-4 text-xs font-bold uppercase tracking-[0.3em] text-accent-600 sm:text-sm">
             <span className="h-px w-12 bg-current" />
             Special attractions
             <span className="h-px w-12 bg-current" />
           </p>
           <h2 className="relative inline-block font-display text-4xl font-black tracking-tight text-ink sm:text-5xl lg:text-6xl">
             More than a{" "}
-            <span className="relative inline-block bg-gradient-to-r from-accent-500 via-pink-500 to-fuchsia-600 bg-clip-text pb-1 text-transparent">
+            <span className="relative inline-block bg-gradient-to-r from-brand-500 via-brand-600 to-navy-900 bg-clip-text pb-1 text-transparent">
               competition
-              <svg viewBox="0 0 200 12" className="absolute -bottom-1 left-[18%] h-2.5 w-[58%] text-pink-500" preserveAspectRatio="none" aria-hidden="true">
+              <svg viewBox="0 0 200 12" className="absolute -bottom-1 left-[18%] h-2.5 w-[58%] text-brand-500" preserveAspectRatio="none" aria-hidden="true">
                 <path d="M2 9 C 60 3, 140 3, 198 6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
               </svg>
             </span>
@@ -128,7 +128,7 @@ export function Attractions() {
 function CentreCard({ style, unit, flow = false }: { style?: CSSProperties; unit: Unit; flow?: boolean }) {
   return (
     <div
-      className={`${flow ? "relative" : "absolute"} flex flex-col items-center rounded-[2rem] bg-gradient-to-b from-orange-50 via-white to-orange-50/70 text-center shadow-[0_30px_60px_-30px_rgb(242_107_33/0.45)] ring-1 ring-orange-100`}
+      className={`${flow ? "relative" : "absolute"} flex flex-col items-center rounded-[2rem] bg-gradient-to-b from-orange-50 via-white to-orange-50/70 text-center shadow-[0_30px_60px_-30px_rgb(232_85_36/0.45)] ring-1 ring-orange-100`}
       style={{ ...style, paddingInline: unit(20), paddingBottom: unit(28), paddingTop: unit(198) }}
     >
       {/* Soft glow behind the trophy */}
@@ -141,7 +141,7 @@ function CentreCard({ style, unit, flow = false }: { style?: CSSProperties; unit
       <Celebrate glow={false} className="absolute left-1/2 -translate-x-1/2" style={{ top: unit(-40), width: unit(230), height: unit(220) }}>
         <Trophy id={flow ? "stacked" : "diagram"} className="animate-bob h-full w-full" />
       </Celebrate>
-      <p className="relative font-bold uppercase tracking-[0.3em] text-accent-500" style={{ fontSize: unit(15) }}>
+      <p className="relative font-bold uppercase tracking-[0.3em] text-accent-600" style={{ fontSize: unit(15) }}>
         Finale day
       </p>
       <h3 className="relative font-display font-black leading-[1.05] tracking-tight text-navy-900" style={{ fontSize: unit(42), marginTop: unit(10) }}>
@@ -167,7 +167,7 @@ function AttractionCard({ item, number, unit, style, flow = false }: AttractionC
   if (flow) return <FlowAttractionCard item={item} number={number} unit={unit} />;
   return (
     <div
-      className={`absolute flex items-center overflow-hidden rounded-[1.75rem] bg-gradient-to-r ${tone.wash} to-white shadow-[0_20px_45px_-28px_rgb(11_22_51/0.35)] ring-1 ring-line/70`}
+      className={`absolute flex items-center overflow-hidden rounded-[1.75rem] bg-gradient-to-r ${tone.wash} to-white shadow-[0_20px_45px_-28px_rgb(41_43_56/0.35)] ring-1 ring-line/70`}
       style={{ ...style, padding: `${unit(24)} ${unit(84)} ${unit(24)} ${unit(24)}`, columnGap: unit(26) }}
     >
       <span className={`flex shrink-0 items-center justify-center rounded-[22%] ${tone.badge}`} style={{ width: unit(96), height: unit(96) }}>
@@ -224,7 +224,7 @@ function FlowAttractionCard({ item, number, unit }: { item: (typeof attractions)
   } as CSSProperties;
   return (
     <div
-      className={`relative flex h-full w-full flex-col items-start gap-4 overflow-hidden rounded-[1.75rem] bg-gradient-to-r p-5 ${tone.wash} to-white shadow-[0_20px_45px_-28px_rgb(11_22_51/0.35)] ring-1 ring-line/70 md:flex-row md:items-center md:gap-0 md:[column-gap:var(--gap)] md:[padding:var(--pad)]`}
+      className={`relative flex h-full w-full flex-col items-start gap-4 overflow-hidden rounded-[1.75rem] bg-gradient-to-r p-5 ${tone.wash} to-white shadow-[0_20px_45px_-28px_rgb(41_43_56/0.35)] ring-1 ring-line/70 md:flex-row md:items-center md:gap-0 md:[column-gap:var(--gap)] md:[padding:var(--pad)]`}
       style={sizes}
     >
       <span
@@ -255,7 +255,7 @@ function FlowAttractionCard({ item, number, unit }: { item: (typeof attractions)
 function Sparks({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 40 40" className={className} aria-hidden="true">
-      <g stroke="#f26b21" strokeWidth="3.5" strokeLinecap="round">
+      <g stroke="#e85524" strokeWidth="3.5" strokeLinecap="round">
         <path d="M10 18 L16 4" />
         <path d="M18 24 L33 14" />
         <path d="M20 33 L36 34" />
@@ -281,14 +281,14 @@ function Trophy({ id, className, style }: { id: string; className?: string; styl
           <stop offset="1" stopColor="#e07b00" />
         </linearGradient>
         <linearGradient id={base} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#343d5c" />
-          <stop offset="1" stopColor="#141a2e" />
+          <stop offset="0" stopColor="#41445a" />
+          <stop offset="1" stopColor="#1c1d26" />
         </linearGradient>
       </defs>
       {/* Orbit ring behind the cup */}
-      <ellipse cx="100" cy="118" rx="86" ry="17" fill="none" stroke="#fdba74" strokeWidth="3" opacity="0.7" />
+      <ellipse cx="100" cy="118" rx="86" ry="17" fill="none" stroke="#f7a07a" strokeWidth="3" opacity="0.7" />
       {/* Spark lines, mirrored on both sides */}
-      <g stroke="#f26b21" strokeWidth="3.5" strokeLinecap="round">
+      <g stroke="#e85524" strokeWidth="3.5" strokeLinecap="round">
         <path d="M40 22 L50 36" />
         <path d="M58 10 L60 26" />
         <path d="M26 42 L42 46" />
@@ -304,12 +304,12 @@ function Trophy({ id, className, style }: { id: string; className?: string; styl
       <rect x="50" y="24" width="100" height="11" rx="5.5" fill="#ffe7a3" />
       <path d="M100 52 L106.5 65 L121 67 L110.5 77 L113 91.5 L100 84.5 L87 91.5 L89.5 77 L79 67 L93.5 65 Z" fill="#fff4cf" />
       {/* Front of the orbit ring */}
-      <path d="M14 118 C 30 132, 170 132, 186 118" fill="none" stroke="#fb923c" strokeWidth="3" opacity="0.8" />
+      <path d="M14 118 C 30 132, 170 132, 186 118" fill="none" stroke="#f07a48" strokeWidth="3" opacity="0.8" />
       {/* Stem and base */}
       <rect x="91" y="125" width="18" height="18" fill={`url(#${gold})`} />
       <rect x="72" y="140" width="56" height="10" rx="4" fill="#e89a1c" />
       <path d="M62 150 H138 L146 182 H54 Z" fill={`url(#${base})`} />
-      <rect x="84" y="160" width="32" height="10" rx="2.5" fill="#e8ecf4" />
+      <rect x="84" y="160" width="32" height="10" rx="2.5" fill="#e7e8ee" />
     </svg>
   );
 }

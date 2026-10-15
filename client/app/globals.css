@@ -1,26 +1,27 @@
 @import "tailwindcss";
 
-/* Brand tokens: navy and cyan from the InnoTech logo, orange from the KIET logo. */
+/* Brand tokens from the InnoTech'26 logo: its orange and charcoal. The names are older than the logo: "navy" is
+ * the charcoal, and "brand" and "accent" are both the orange (600 and 700 are the shades for small text on white). */
 @theme {
-  --color-ink: #0b1633;
-  --color-navy-950: #070f24;
-  --color-navy-900: #0b1633;
-  --color-navy-800: #13244d;
-  --color-navy-700: #1c3468;
-  --color-brand-50: #ecf9fe;
-  --color-brand-100: #d3f1fc;
-  --color-brand-300: #7fd6f5;
-  --color-brand-400: #3fc2ee;
-  --color-brand-500: #16a9dd;
-  --color-brand-600: #0a88b8;
-  --color-brand-700: #0b6c93;
-  --color-accent-50: #fff3eb;
-  --color-accent-100: #ffe2cf;
-  --color-accent-500: #f26b21;
-  --color-accent-600: #d95a14;
-  --color-surface: #f5f8fc;
-  --color-line: #e3e9f2;
-  --color-muted: #5a6784;
+  --color-ink: #292b38;
+  --color-navy-950: #1c1d26;
+  --color-navy-900: #292b38;
+  --color-navy-800: #363948;
+  --color-navy-700: #4a4e61;
+  --color-brand-50: #fff4ee;
+  --color-brand-100: #ffe3d4;
+  --color-brand-300: #f7a07a;
+  --color-brand-400: #f07a48;
+  --color-brand-500: #e85524;
+  --color-brand-600: #cc4419;
+  --color-brand-700: #a83715;
+  --color-accent-50: #fff4ee;
+  --color-accent-100: #ffe3d4;
+  --color-accent-500: #e85524;
+  --color-accent-600: #cc4419;
+  --color-surface: #f6f6f9;
+  --color-line: #e7e8ee;
+  --color-muted: #5f6275;
 
   --font-sans: var(--font-body);
   --font-display: var(--font-heading);
@@ -51,8 +52,8 @@
 }
 
 @keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgb(22 169 221 / 0.45); }
-  100% { box-shadow: 0 0 0 14px rgb(22 169 221 / 0); }
+  0% { box-shadow: 0 0 0 0 rgb(232 85 36 / 0.45); }
+  100% { box-shadow: 0 0 0 14px rgb(232 85 36 / 0); }
 }
 
 @keyframes fade-up {
@@ -67,8 +68,8 @@
 }
 
 @keyframes ring-glow {
-  0%, 100% { box-shadow: 0 12px 30px -12px rgb(11 22 51 / 0.35), 0 0 0 0 rgb(22 169 221 / 0); }
-  50% { box-shadow: 0 12px 30px -12px rgb(11 22 51 / 0.35), 0 0 0 12px rgb(22 169 221 / 0.18); }
+  0%, 100% { box-shadow: 0 12px 30px -12px rgb(41 43 56 / 0.35), 0 0 0 0 rgb(232 85 36 / 0); }
+  50% { box-shadow: 0 12px 30px -12px rgb(41 43 56 / 0.35), 0 0 0 12px rgb(232 85 36 / 0.18); }
 }
 
 @keyframes bob {
@@ -160,8 +161,8 @@ body {
 
 .bg-grid-light {
   background-image:
-    linear-gradient(rgb(11 22 51 / 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(11 22 51 / 0.05) 1px, transparent 1px);
+    linear-gradient(rgb(41 43 56 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(41 43 56 / 0.05) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 

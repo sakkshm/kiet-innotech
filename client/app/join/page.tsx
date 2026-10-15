@@ -35,7 +35,7 @@ function OpenInvite() {
 
   if (code) return <Opening />;
   return (
-    <div className="max-w-md rounded-3xl bg-white p-8 text-center shadow-[0_20px_50px_-20px_rgb(11_22_51/0.25)] ring-1 ring-line">
+    <div className="max-w-md rounded-3xl bg-white p-8 text-center shadow-[0_20px_50px_-20px_rgb(41_43_56/0.25)] ring-1 ring-line">
       <h1 className="font-display text-2xl font-bold text-ink">This invite link is incomplete</h1>
       <p className="mt-3 text-muted">
         Ask your team leader to send it again, or sign in and enter the 8-character team code they shared, e.g. K7PQ-3XM9.

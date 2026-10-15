@@ -23,8 +23,8 @@ export const typeColors: Record<ParticipantType, string> = { kiet: "#2a78d6", co
 /** Categorical slots in their validated order, for charts whose series are just different things. */
 export const categorical = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 
-/** One-series charts use slot 1; its lighter step is the meter track. */
-export const accent = "#2a78d6";
-export const accentTrack = "#cde2fb";
+/** One-series charts use the brand orange (the InnoTech'26 logo's); its lighter step is the meter track. */
+export const accent = "#e85524";
+export const accentTrack = "#ffe3d4";
 
-export const chrome = { grid: "#e3e9f2", axis: "#c3cad6", ink: "#0b1633", muted: "#5a6784" };
+export const chrome = { grid: "#e7e8ee", axis: "#cbccd4", ink: "#292b38", muted: "#5f6275" };

@@ -5,7 +5,7 @@ export function PageHeading({ eyebrow, title, children, actions }: { eyebrow: st
   return (
     <div className="mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <p className="mb-3 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-accent-500">
+        <p className="mb-3 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-accent-600">
           <span className="h-px w-6 bg-current" />
           {eyebrow}
         </p>

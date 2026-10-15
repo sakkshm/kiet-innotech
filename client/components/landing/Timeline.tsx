@@ -47,13 +47,16 @@ function getTodayInIndia() {
 
 const noSubscription = () => () => {};
 
-/** One colour and icon per milestone, in timeline order. Full class strings so Tailwind can find them. */
+/**
+ * One colour and icon per milestone, in timeline order: orange fading into charcoal, like the line under the logo's
+ * wordmark. Full class strings so Tailwind can find them.
+ */
 const stages: { icon: ComponentType<LucideProps>; text: string; bg: string; border: string }[] = [
-  { icon: ClipboardPen, text: "text-orange-500", bg: "bg-orange-500", border: "border-orange-500" },
-  { icon: Lock, text: "text-amber-500", bg: "bg-amber-500", border: "border-amber-500" },
-  { icon: ClipboardCheck, text: "text-green-500", bg: "bg-green-500", border: "border-green-500" },
-  { icon: Megaphone, text: "text-cyan-500", bg: "bg-cyan-500", border: "border-cyan-500" },
-  { icon: Trophy, text: "text-violet-600", bg: "bg-violet-600", border: "border-violet-600" },
+  { icon: ClipboardPen, text: "text-brand-500", bg: "bg-brand-500", border: "border-brand-500" },
+  { icon: Lock, text: "text-brand-600", bg: "bg-brand-600", border: "border-brand-600" },
+  { icon: ClipboardCheck, text: "text-brand-700", bg: "bg-brand-700", border: "border-brand-700" },
+  { icon: Megaphone, text: "text-navy-700", bg: "bg-navy-700", border: "border-navy-700" },
+  { icon: Trophy, text: "text-navy-900", bg: "bg-navy-900", border: "border-navy-900" },
 ];
 
 const number = (index: number) => String(index + 1).padStart(2, "0");
@@ -159,7 +162,7 @@ function IconStem({ index, above = false, focus = false }: { index: number; abov
   const finale = index === stages.length - 1;
   const ring = (
     <span
-      className={`flex h-32 w-32 shrink-0 items-center justify-center rounded-full border-[16px] bg-white shadow-[0_12px_30px_-12px_rgb(11_22_51/0.35)] ${stage.border} ${
+      className={`flex h-32 w-32 shrink-0 items-center justify-center rounded-full border-[16px] bg-white shadow-[0_12px_30px_-12px_rgb(41_43_56/0.35)] ${stage.border} ${
         focus ? "animate-ring-glow" : ""
       }`}
     >

@@ -6,7 +6,7 @@ export function Stats() {
   return (
     <section aria-label="Event in numbers" className="relative z-10 -mt-10 px-4 sm:px-6 lg:px-8">
       {/* gap-px over a line-coloured background draws the dividers between cells */}
-      <Reveal className="mx-auto grid max-w-6xl grid-cols-2 gap-px overflow-hidden rounded-3xl border border-line bg-line shadow-[0_20px_60px_-20px_rgb(11_22_51/0.25)] sm:grid-cols-3 lg:grid-cols-5">
+      <Reveal className="mx-auto grid max-w-6xl grid-cols-2 gap-px overflow-hidden rounded-3xl border border-line bg-line shadow-[0_20px_60px_-20px_rgb(41_43_56/0.25)] sm:grid-cols-3 lg:grid-cols-5">
         {stats.map((stat, index) => (
           <div
             key={stat.label}

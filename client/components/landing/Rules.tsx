@@ -17,7 +17,7 @@ export function Rules() {
         {registrationSteps.map((step, index) => (
           <Reveal as="li" key={step.title} delay={index * 100}>
             <div className="relative h-full rounded-3xl bg-white p-6 ring-1 ring-line">
-              <span className="font-display text-sm font-bold text-accent-500">Step {index + 1}</span>
+              <span className="font-display text-sm font-bold text-accent-600">Step {index + 1}</span>
               <h3 className="mt-2 font-display text-lg font-bold text-ink">{step.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">{step.text}</p>
             </div>

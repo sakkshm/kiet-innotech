@@ -54,7 +54,7 @@ function QrSvg({ text }: { text: string }) {
   return (
     <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Your event pass QR code" className="aspect-square w-full" shapeRendering="crispEdges">
       <rect width={size} height={size} fill="#fff" />
-      <path d={path} fill="#0b1633" />
+      <path d={path} fill="#292b38" />
     </svg>
   );
 }

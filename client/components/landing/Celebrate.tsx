@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-/** Colours of the confetti: the brand's orange and cyan, with violet (the finale's colour), gold and green. */
-const COLORS = ["#f26b21", "#16a9dd", "#7c3aed", "#fbbf24", "#22c55e"];
+/** Colours of the confetti: the logo's orange and charcoal, with gold, a light orange and a soft grey. */
+const COLORS = ["#e85524", "#292b38", "#fbbf24", "#f7a07a", "#a3a6b8"];
 
 // Fixed, not random, so server and browser render the same thing: 18 pieces fanned out around the trophy.
 const PIECES = Array.from({ length: 18 }, (_, i) => {
@@ -75,7 +75,7 @@ export function Celebrate({
       onPointerEnter={() => setBurst((n) => (n ? n + 1 : 0))}
     >
       {glow && (
-        <span className="animate-glow pointer-events-none absolute -z-10 inset-[-18%] rounded-full bg-[radial-gradient(circle,rgb(251_191_36/0.45),rgb(124_58_237/0.18)_55%,transparent_72%)]" aria-hidden="true" />
+        <span className="animate-glow pointer-events-none absolute -z-10 inset-[-18%] rounded-full bg-[radial-gradient(circle,rgb(251_191_36/0.45),rgb(232_85_36/0.16)_55%,transparent_72%)]" aria-hidden="true" />
       )}
       {children}
       <span className="pointer-events-none absolute inset-0" aria-hidden="true">

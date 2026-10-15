@@ -124,12 +124,12 @@ export function Notice({ tone = "info", title, children, className = "" }: { ton
 }
 
 /** A small rounded label, e.g. a team status. */
-export function Pill({ tone = "slate", children }: { tone?: "slate" | "green" | "orange" | "blue" | "red" | "navy"; children: ReactNode }) {
+export function Pill({ tone = "slate", children }: { tone?: "slate" | "green" | "orange" | "charcoal" | "red" | "navy"; children: ReactNode }) {
   const tones = {
     slate: "bg-slate-100 text-slate-700",
     green: "bg-emerald-50 text-emerald-700",
     orange: "bg-accent-50 text-accent-600",
-    blue: "bg-brand-50 text-brand-700",
+    charcoal: "bg-navy-900/[0.07] text-navy-800",
     red: "bg-red-50 text-red-700",
     navy: "bg-navy-900 text-white",
   };

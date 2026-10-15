@@ -70,38 +70,38 @@ export const about = {
 
 /** The "at a glance" cards under the About text, so the event is understood without reading the paragraphs. */
 export const aboutHighlights: { icon: IconName; title: string; text: string; tone: Tone }[] = [
-  { icon: "cpu", title: "Eight categories", text: "AI, software, hardware, start-ups, Gen Z ideas, posters and CyberShield.", tone: "blue" },
-  { icon: "sprout", title: "Built for society", text: "Projects map to the SDGs and the vision of Viksit Bharat @2047.", tone: "green" },
-  { icon: "users", title: "Open to everyone", text: "KIET students, other colleges and school students.", tone: "orange" },
-  { icon: "award", title: "Judged by experts", text: "Faculty and external industry judges score every project.", tone: "purple" },
+  { icon: "cpu", title: "Eight categories", text: "AI, software, hardware, start-ups, Gen Z ideas, posters and CyberShield.", tone: "charcoal" },
+  { icon: "sprout", title: "Built for society", text: "Projects map to the SDGs and the vision of Viksit Bharat @2047.", tone: "flame" },
+  { icon: "users", title: "Open to everyone", text: "KIET students, other colleges and school students.", tone: "flame" },
+  { icon: "award", title: "Judged by experts", text: "Faculty and external industry judges score every project.", tone: "charcoal" },
 ];
 
 /** Colour families shared by the landing diagrams (see components/landing/tones.ts). */
-export type Tone = "orange" | "blue" | "green" | "red" | "purple" | "sky" | "amber" | "indigo" | "emerald" | "rose";
+export type Tone = "flame" | "charcoal" | "gold" | "stone";
 
 /** Participation benefits, in the order they sit around the title card. */
 export const benefits: { icon: IconName; title: string; text: string; tone: Tone }[] = [
-  { icon: "briefcase", title: "Career & Entrepreneurship", text: "Discuss funding and start-up registration with the KIET Technology Business Incubator.", tone: "orange" },
-  { icon: "flag", title: "InnoTech Motto", text: "Think Big, Build Smart, Act Sustainable, for a Viksit Bharat @2047.", tone: "blue" },
-  { icon: "lightbulb", title: "Problem-Solving", text: "Turn ideas into working solutions for real problems faced by society and industry.", tone: "green" },
-  { icon: "rupee", title: "Prize Pool", text: "Prizes worth ₹5 lakh+, including cash prizes of ₹3.4 lakh+.", tone: "emerald" },
-  { icon: "share", title: "Networking", text: "Connect with faculty, industry experts, registered start-ups and fellow innovators.", tone: "sky" },
-  { icon: "star", title: "Recognition", text: "Trophies and certificates for winners, and e-certificates for every participant.", tone: "rose" },
-  { icon: "users", title: "Confidence", text: "Build confidence, leadership and teamwork by presenting your work.", tone: "purple" },
+  { icon: "briefcase", title: "Career & Entrepreneurship", text: "Discuss funding and start-up registration with the KIET Technology Business Incubator.", tone: "flame" },
+  { icon: "flag", title: "InnoTech Motto", text: "Think Big, Build Smart, Act Sustainable, for a Viksit Bharat @2047.", tone: "charcoal" },
+  { icon: "lightbulb", title: "Problem-Solving", text: "Turn ideas into working solutions for real problems faced by society and industry.", tone: "flame" },
+  { icon: "rupee", title: "Prize Pool", text: "Prizes worth ₹5 lakh+, including cash prizes of ₹3.4 lakh+.", tone: "gold" },
+  { icon: "share", title: "Networking", text: "Connect with faculty, industry experts, registered start-ups and fellow innovators.", tone: "charcoal" },
+  { icon: "star", title: "Recognition", text: "Trophies and certificates for winners, and e-certificates for every participant.", tone: "flame" },
+  { icon: "users", title: "Confidence", text: "Build confidence, leadership and teamwork by presenting your work.", tone: "stone" },
 ];
 
 /** Focus domains shown on the landing diagram, in the order they sit around the centre card. */
 export const focusDomains: { icon: IconName; title: string; text: string; tone: Tone }[] = [
-  { icon: "cpu", title: "Artificial Intelligence & Machine Learning", text: "Build intelligent solutions that learn, adapt and solve real-world problems.", tone: "blue" },
-  { icon: "bot", title: "Agentic AI & Generative AI", text: "Create with generative models and autonomous AI agents.", tone: "orange" },
-  { icon: "shieldOutline", title: "Cyber Security, Privacy & Trustworthy AI", text: "Design secure, resilient systems for a safer digital world.", tone: "indigo" },
-  { icon: "boxes", title: "Blockchain & Digital Transformation", text: "Build transparent, decentralised and next-gen digital systems.", tone: "green" },
-  { icon: "heart", title: "Healthcare, Biomedical Devices & Biotechnology", text: "Leverage technology for better, accessible and affordable healthcare.", tone: "red" },
-  { icon: "cog", title: "IoT, Robotics & Automation", text: "Connect, automate and build the physical-digital world.", tone: "emerald" },
-  { icon: "city", title: "Smart Cities, Infrastructure & Green Mobility", text: "Build smarter, more liveable and sustainable communities.", tone: "amber" },
-  { icon: "glasses", title: "AR/VR, Digital Twins & Industry 4.0", text: "Create immersive experiences and next-gen industrial solutions.", tone: "purple" },
-  { icon: "cloud", title: "Big Data, Cloud, 5G/6G & Quantum Technologies", text: "Work with large-scale data, cloud infrastructure and emerging quantum tech.", tone: "sky" },
-  { icon: "leaf", title: "Disaster Management & Environmental Solutions", text: "Build resilient solutions for a safer and more sustainable planet.", tone: "rose" },
+  { icon: "cpu", title: "Artificial Intelligence & Machine Learning", text: "Build intelligent solutions that learn, adapt and solve real-world problems.", tone: "flame" },
+  { icon: "bot", title: "Agentic AI & Generative AI", text: "Create with generative models and autonomous AI agents.", tone: "charcoal" },
+  { icon: "shieldOutline", title: "Cyber Security, Privacy & Trustworthy AI", text: "Design secure, resilient systems for a safer digital world.", tone: "gold" },
+  { icon: "boxes", title: "Blockchain & Digital Transformation", text: "Build transparent, decentralised and next-gen digital systems.", tone: "stone" },
+  { icon: "heart", title: "Healthcare, Biomedical Devices & Biotechnology", text: "Leverage technology for better, accessible and affordable healthcare.", tone: "flame" },
+  { icon: "cog", title: "IoT, Robotics & Automation", text: "Connect, automate and build the physical-digital world.", tone: "charcoal" },
+  { icon: "city", title: "Smart Cities, Infrastructure & Green Mobility", text: "Build smarter, more liveable and sustainable communities.", tone: "flame" },
+  { icon: "glasses", title: "AR/VR, Digital Twins & Industry 4.0", text: "Create immersive experiences and next-gen industrial solutions.", tone: "gold" },
+  { icon: "cloud", title: "Big Data, Cloud, 5G/6G & Quantum Technologies", text: "Work with large-scale data, cloud infrastructure and emerging quantum tech.", tone: "charcoal" },
+  { icon: "leaf", title: "Disaster Management & Environmental Solutions", text: "Build resilient solutions for a safer and more sustainable planet.", tone: "stone" },
 ];
 
 export const domains = [
@@ -511,12 +511,12 @@ export const registrationSteps = [
 
 /** Finale-day attractions: the first three sit left of the centre card, the rest on the right. */
 export const attractions: { icon: IconName; title: string; text: string; tone: Tone }[] = [
-  { icon: "sprout", title: "TBI Support", text: "Funding discussions and start-up registration guidance.", tone: "blue" },
-  { icon: "code", title: "Technical Clubs", text: "Live projects from the technical clubs of the institute.", tone: "orange" },
-  { icon: "rocket", title: "Registered Start-ups", text: "Start-ups from KIET TBI showcase and promote their products.", tone: "emerald" },
-  { icon: "lightbulb", title: "Centres of Excellence", text: "Projects and ideas from KIET's Centres of Excellence.", tone: "purple" },
-  { icon: "shield", title: "CyberShield Zone", text: "Live security demos, a cyber-awareness corner and a mini CTF challenge.", tone: "rose" },
-  { icon: "users", title: "People's Choice Award", text: "Visitors vote for their favourite project by scanning a QR code.", tone: "sky" },
+  { icon: "sprout", title: "TBI Support", text: "Funding discussions and start-up registration guidance.", tone: "flame" },
+  { icon: "code", title: "Technical Clubs", text: "Live projects from the technical clubs of the institute.", tone: "charcoal" },
+  { icon: "rocket", title: "Registered Start-ups", text: "Start-ups from KIET TBI showcase and promote their products.", tone: "gold" },
+  { icon: "lightbulb", title: "Centres of Excellence", text: "Projects and ideas from KIET's Centres of Excellence.", tone: "charcoal" },
+  { icon: "shield", title: "CyberShield Zone", text: "Live security demos, a cyber-awareness corner and a mini CTF challenge.", tone: "flame" },
+  { icon: "users", title: "People's Choice Award", text: "Visitors vote for their favourite project by scanning a QR code.", tone: "gold" },
 ];
 
 export const gallery = [

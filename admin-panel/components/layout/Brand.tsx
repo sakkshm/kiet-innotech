@@ -4,7 +4,15 @@ import Image from "next/image";
 export function Brand({ tone = "dark", subtitle = "Admin panel" }: { tone?: "dark" | "light"; subtitle?: string }) {
   return (
     <div className="flex items-center gap-2.5">
-      <Image src="/images/brand/innotech-emblem.png" alt="" width={476} height={476} priority className="size-9 shrink-0" />
+      <Image
+        src="/images/brand/innotech-emblem.png"
+        alt=""
+        width={219}
+        height={219}
+        priority
+        // The emblem's charcoal half disappears on the dark sidebar without a light disc behind it.
+        className={`size-9 shrink-0 ${tone === "dark" ? "rounded-full bg-white p-0.5" : ""}`}
+      />
       <div className="leading-tight">
         <p className={`font-display text-base font-bold ${tone === "dark" ? "text-white" : "text-navy-900"}`}>
           InnoTech<span className="text-brand-500">26</span>

@@ -45,7 +45,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
             <Image src="/images/brand/kiet-logo.png" alt="KIET Deemed to be University" width={624} height={269} priority className="h-8 w-auto sm:h-9" />
             <span className="h-8 w-px bg-line" aria-hidden="true" />
             <span className="flex items-center gap-2">
-              <Image src="/images/brand/innotech-emblem.png" alt="" width={160} height={160} priority className="h-8 w-8 sm:h-9 sm:w-9" />
+              <Image src="/images/brand/innotech-emblem.png" alt="" width={219} height={219} priority className="h-8 w-8 sm:h-9 sm:w-9" />
               <span className="hidden font-display text-lg font-bold leading-none text-navy-900 min-[400px]:inline">
                 InnoTech<span className="text-brand-500">26</span>
               </span>

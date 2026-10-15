@@ -58,7 +58,7 @@ export function Benefits() {
         </svg>
 
         <div
-          className="absolute flex flex-col items-center justify-center rounded-3xl bg-white text-center shadow-[0_20px_50px_-20px_rgb(11_22_51/0.25)] ring-1 ring-line"
+          className="absolute flex flex-col items-center justify-center rounded-3xl bg-white text-center shadow-[0_20px_50px_-20px_rgb(41_43_56/0.25)] ring-1 ring-line"
           style={{ ...place(TITLE.x, TITLE.y, TITLE.w, TITLE.h), paddingInline: u(44) }}
         >
           <h2 className="font-display font-bold leading-[1.05] tracking-tight text-ink" style={{ fontSize: u(46) }}>
@@ -75,7 +75,7 @@ export function Benefits() {
 
       {/* Phones and tablets: title, then the cards in a grid */}
       <div className="xl:hidden">
-        <Reveal className="mx-auto max-w-2xl rounded-3xl bg-white px-6 py-8 text-center shadow-[0_20px_50px_-20px_rgb(11_22_51/0.25)] ring-1 ring-line sm:px-10">
+        <Reveal className="mx-auto max-w-2xl rounded-3xl bg-white px-6 py-8 text-center shadow-[0_20px_50px_-20px_rgb(41_43_56/0.25)] ring-1 ring-line sm:px-10">
           <h2 className="font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">Participation Benefits</h2>
           <Words size="0.8rem" gap="0.75rem" className="mt-4 justify-center" />
         </Reveal>
@@ -126,7 +126,7 @@ function BenefitCard({ benefit, unit, style, flow = false }: BenefitCardProps) {
   const tone = tones[benefit.tone];
   return (
     <div
-      className={`${flow ? "relative h-full w-full" : "absolute"} rounded-3xl ${tone.card} shadow-[0_18px_40px_-24px_rgb(11_22_51/0.35)]`}
+      className={`${flow ? "relative h-full w-full" : "absolute"} rounded-3xl ${tone.card} shadow-[0_18px_40px_-24px_rgb(41_43_56/0.35)]`}
       style={{ ...style, padding: `${unit(42)} ${unit(24)} ${unit(20)}` }}
     >
       <span

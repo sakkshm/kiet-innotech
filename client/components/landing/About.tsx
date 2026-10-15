@@ -28,7 +28,7 @@ export function About() {
                 return (
                   <li
                     key={item.title}
-                    className="group flex gap-3.5 rounded-2xl border border-line bg-white p-4 transition duration-300 hover:-translate-y-0.5 hover:border-transparent hover:shadow-[0_18px_40px_-22px_rgb(11_22_51/0.35)]"
+                    className="group flex gap-3.5 rounded-2xl border border-line bg-white p-4 transition duration-300 hover:-translate-y-0.5 hover:border-transparent hover:shadow-[0_18px_40px_-22px_rgb(41_43_56/0.35)]"
                   >
                     <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl transition duration-300 group-hover:scale-110 group-hover:-rotate-6 ${tone.badge}`}>
                       <Icon name={item.icon} className="size-5" />
@@ -57,7 +57,7 @@ export function About() {
         {/* Photo collage: last year's fest */}
         <Reveal delay={150} className="relative">
           <div className="grid grid-cols-2 gap-3 sm:gap-4">
-            <figure className="relative col-span-2 aspect-[16/10] overflow-hidden rounded-3xl shadow-[0_24px_50px_-28px_rgb(11_22_51/0.45)]">
+            <figure className="relative col-span-2 aspect-[16/10] overflow-hidden rounded-3xl shadow-[0_24px_50px_-28px_rgb(41_43_56/0.45)]">
               <Image
                 src="/images/innotech25/crew.webp"
                 alt="The InnoTech'25 volunteers and organisers on stage"
@@ -66,7 +66,7 @@ export function About() {
                 className="object-cover transition-transform duration-700 hover:scale-105"
               />
             </figure>
-            <figure className="relative aspect-[4/3] overflow-hidden rounded-3xl shadow-[0_20px_40px_-26px_rgb(11_22_51/0.4)]">
+            <figure className="relative aspect-[4/3] overflow-hidden rounded-3xl shadow-[0_20px_40px_-26px_rgb(41_43_56/0.4)]">
               <Image
                 src="/images/innotech25/winners.webp"
                 alt="A winning team at InnoTech'25 with their prize cheque"
@@ -75,7 +75,7 @@ export function About() {
                 className="object-cover object-[50%_70%] transition-transform duration-700 hover:scale-105"
               />
             </figure>
-            <figure className="relative aspect-[4/3] overflow-hidden rounded-3xl shadow-[0_20px_40px_-26px_rgb(11_22_51/0.4)]">
+            <figure className="relative aspect-[4/3] overflow-hidden rounded-3xl shadow-[0_20px_40px_-26px_rgb(41_43_56/0.4)]">
               <Image
                 src="/images/innotech25/innogeeks.webp"
                 alt="The Innogeeks team at their stall at InnoTech'25"

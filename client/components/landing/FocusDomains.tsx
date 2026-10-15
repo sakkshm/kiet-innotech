@@ -56,13 +56,13 @@ export function FocusDomains() {
         <div className="absolute -left-32 top-40 h-80 w-80 rounded-full bg-accent-100/60 blur-3xl" />
         <div className="absolute -bottom-24 -left-24 h-96 w-96 rounded-full bg-brand-100/70 blur-3xl" />
         <div className="absolute -right-24 top-10 h-96 w-96 rounded-full bg-brand-50 blur-2xl" />
-        <div className="absolute left-[12%] top-16 hidden h-24 w-40 bg-[radial-gradient(#b8c4d6_1.5px,transparent_1.5px)] bg-[length:18px_18px] lg:block" />
-        <div className="absolute bottom-24 right-[6%] hidden h-24 w-24 bg-[radial-gradient(#b8c4d6_1.5px,transparent_1.5px)] bg-[length:18px_18px] lg:block" />
+        <div className="absolute left-[12%] top-16 hidden h-24 w-40 bg-[radial-gradient(#c9cad3_1.5px,transparent_1.5px)] bg-[length:18px_18px] lg:block" />
+        <div className="absolute bottom-24 right-[6%] hidden h-24 w-24 bg-[radial-gradient(#c9cad3_1.5px,transparent_1.5px)] bg-[length:18px_18px] lg:block" />
       </div>
 
       <div className="relative">
         <Reveal className="mx-auto mb-12 max-w-3xl text-center">
-          <p className="mb-3 inline-flex items-center gap-3 text-xs font-bold uppercase tracking-[0.2em] text-accent-500">
+          <p className="mb-3 inline-flex items-center gap-3 text-xs font-bold uppercase tracking-[0.2em] text-accent-600">
             <span className="h-px w-8 bg-current" />
             Focus domains
             <span className="h-px w-8 bg-current" />
@@ -133,17 +133,17 @@ type Unit = (n: number) => string;
 function CentreCard({ style, unit, flow = false }: { style?: CSSProperties; unit: Unit; flow?: boolean }) {
   return (
     <div
-      className={`${flow ? "relative" : "absolute"} flex flex-col items-center justify-center rounded-3xl bg-white text-center shadow-[0_24px_60px_-24px_rgb(11_22_51/0.3)] ring-1 ring-line`}
+      className={`${flow ? "relative" : "absolute"} flex flex-col items-center justify-center rounded-3xl bg-white text-center shadow-[0_24px_60px_-24px_rgb(41_43_56/0.3)] ring-1 ring-line`}
       style={{ ...style, padding: unit(22) }}
     >
-      <p className="font-bold uppercase tracking-[0.18em] text-accent-500" style={{ fontSize: unit(13) }}>
+      <p className="font-bold uppercase tracking-[0.18em] text-accent-600" style={{ fontSize: unit(13) }}>
         {event.name}
       </p>
       <p className="font-display font-black uppercase leading-none tracking-tight text-navy-900" style={{ fontSize: unit(46), marginTop: unit(10) }}>
         Focus
       </p>
       <p
-        className="bg-gradient-to-r from-brand-500 to-indigo-600 bg-clip-text font-display font-black uppercase leading-none tracking-tight text-transparent"
+        className="bg-gradient-to-r from-brand-500 to-navy-900 bg-clip-text font-display font-black uppercase leading-none tracking-tight text-transparent"
         style={{ fontSize: unit(46), marginTop: unit(4) }}
       >
         Domains
@@ -159,7 +159,7 @@ function DomainCard({ domain, style, unit, flow = false }: { domain: (typeof foc
   const tone = tones[domain.tone];
   return (
     <div
-      className={`${flow ? "relative h-full w-full" : "absolute"} flex items-center rounded-2xl border ${tone.card} shadow-[0_14px_30px_-22px_rgb(11_22_51/0.4)]`}
+      className={`${flow ? "relative h-full w-full" : "absolute"} flex items-center rounded-2xl border ${tone.card} shadow-[0_14px_30px_-22px_rgb(41_43_56/0.4)]`}
       style={{ ...style, padding: unit(16), columnGap: unit(16) }}
     >
       <span

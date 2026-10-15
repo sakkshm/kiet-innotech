@@ -37,7 +37,7 @@ export function SectionHeading({
     <Reveal className={`max-w-3xl ${isCenter ? "mx-auto mb-12 text-center" : "mb-8"}`}>
       <p
         className={`mb-3 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] ${
-          isDark ? "text-brand-300" : "text-accent-500"
+          isDark ? "text-brand-300" : "text-accent-600"
         }`}
       >
         <span className="h-px w-6 bg-current" />

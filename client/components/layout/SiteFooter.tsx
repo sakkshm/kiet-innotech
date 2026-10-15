@@ -33,11 +33,11 @@ export function SiteFooter({ linkBase = "" }: { linkBase?: string }) {
       <div className="relative mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 md:grid-cols-2 lg:grid-cols-[1.3fr_1fr_1.4fr] lg:px-8">
         <div>
           <Image
-            src="/images/brand/innotech-logo.png"
+            src="/images/brand/innotech-wordmark-light.png"
             alt="InnoTech26"
-            width={1152}
-            height={357}
-            className="h-14 w-auto"
+            width={529}
+            height={144}
+            className="h-16 w-auto"
           />
           <p className="mt-5 max-w-sm text-sm leading-relaxed">
             {event.theme}. Organised by the {event.organiser}, KIET Deemed to be University.

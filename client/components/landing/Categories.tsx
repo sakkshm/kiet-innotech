@@ -66,7 +66,7 @@ export function Categories() {
 
 function CategoryCard({ category }: { category: Category }) {
   return (
-    <article className="group relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-line bg-white p-6 transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_48px_-24px_rgb(11_22_51/0.35)]">
+    <article className="group relative flex h-full w-full flex-col overflow-hidden rounded-3xl border border-line bg-white p-6 transition duration-300 hover:-translate-y-1 hover:shadow-[0_24px_48px_-24px_rgb(41_43_56/0.35)]">
       {/* Accent bar that grows on hover */}
       <span
         className={`absolute inset-x-0 top-0 h-1 origin-left scale-x-0 transition-transform duration-500 group-hover:scale-x-100 ${

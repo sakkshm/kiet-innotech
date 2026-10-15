@@ -27,7 +27,7 @@ export function Columns({
   const max = Math.max(1, ...columns.map((c) => c.value));
   return (
     <div ref={box} className="relative" onPointerLeave={hide}>
-      <ol className="flex items-end justify-around gap-2 border-b border-[#c3cad6] px-2" style={{ height: height + 22 }}>
+      <ol className="flex items-end justify-around gap-2 border-b border-[#cbccd4] px-2" style={{ height: height + 22 }}>
         {columns.map((column) => {
           const readout = [{ color, label: unit, value: formatNumber(column.value) }];
           return (

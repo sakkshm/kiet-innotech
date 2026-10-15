@@ -80,10 +80,10 @@ export function AuthScreen({ mode }: { mode: "login" | "register" }) {
           </Link>
 
           <div className="my-8 lg:my-auto">
-            <Image src="/images/brand/innotech-logo.png" alt="InnoTech26" width={1152} height={357} priority className="w-full max-w-xs drop-shadow-[0_10px_40px_rgb(22_169_221/0.35)] sm:max-w-sm" />
+            <Image src="/images/brand/innotech-lockup-light.png" alt="InnoTech26" width={529} height={202} priority className="w-full max-w-xs drop-shadow-[0_10px_40px_rgb(232_85_36/0.25)] sm:max-w-sm" />
             <p className="mt-6 max-w-md font-display text-xl font-bold leading-snug sm:text-2xl">
               Building an <span className="text-brand-400">Innovative</span>, <span className="text-brand-400">Secure</span> and{" "}
-              <span className="text-accent-500">Sustainable</span> Viksit Bharat @2047
+              <span className="text-brand-400">Sustainable</span> Viksit Bharat @2047
             </p>
             <ul className="mt-8 hidden space-y-3 sm:block">
               {[{ icon: CalendarDays, label: registrationSentence }, ...facts].map(({ icon: FactIcon, label }) => (

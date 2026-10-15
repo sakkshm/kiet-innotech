@@ -105,8 +105,8 @@ export async function downloadAttendancePdf(sheet: AttendanceSheet) {
     startY: 32,
     margin: { left: 12, right: 12, bottom: 16 },
     theme: "grid",
-    styles: { fontSize: 8, cellPadding: 1.8, valign: "middle", lineColor: [190, 198, 212], lineWidth: 0.2, textColor: [11, 22, 51] },
-    headStyles: { fillColor: [11, 22, 51], textColor: 255, fontStyle: "bold" },
+    styles: { fontSize: 8, cellPadding: 1.8, valign: "middle", lineColor: [200, 201, 210], lineWidth: 0.2, textColor: [41, 43, 56] },
+    headStyles: { fillColor: [41, 43, 56], textColor: 255, fontStyle: "bold" },
     columnStyles: showTent(sheet)
       ? { 0: { cellWidth: 8 }, 1: { cellWidth: 14 }, 2: { cellWidth: 52 }, 7: { cellWidth: 22 }, 8: { cellWidth: 36 } }
       : { 0: { cellWidth: 8 }, 1: { cellWidth: 56 }, 6: { cellWidth: 22 }, 7: { cellWidth: 38 } },
@@ -117,7 +117,7 @@ export async function downloadAttendancePdf(sheet: AttendanceSheet) {
       doc.setTextColor(90, 103, 132);
       doc.text(`${subtitle} · page ${page}`, 12, doc.internal.pageSize.getHeight() - 8);
       doc.text("Coordinator signature: ____________________", doc.internal.pageSize.getWidth() - 12, doc.internal.pageSize.getHeight() - 8, { align: "right" });
-      doc.setTextColor(11, 22, 51);
+      doc.setTextColor(41, 43, 56);
     },
   });
   save(doc.output("blob"), filename(sheet, "pdf"));
@@ -137,7 +137,7 @@ export async function downloadAttendanceDocx(sheet: AttendanceSheet) {
       borders,
       verticalMerge: options.merge,
       width: options.width ? { size: options.width, type: WidthType.DXA } : undefined,
-      shading: options.header ? { type: ShadingType.CLEAR, color: "auto", fill: "0B1633" } : undefined,
+      shading: options.header ? { type: ShadingType.CLEAR, color: "auto", fill: "292B38" } : undefined,
       margins: { top: 60, bottom: 60, left: 80, right: 80 },
     });
 

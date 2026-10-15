@@ -9,7 +9,8 @@ const tones: Record<PillTone, string> = {
   green: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   red: "bg-red-50 text-red-700 ring-red-200",
   orange: "bg-accent-50 text-accent-600 ring-accent-100",
-  cyan: "bg-brand-50 text-brand-700 ring-brand-100",
+  // An information blue, kept apart from the brand orange so it still contrasts with "orange" pills.
+  cyan: "bg-sky-50 text-sky-800 ring-sky-200",
   navy: "bg-navy-900 text-white ring-navy-900",
   violet: "bg-violet-50 text-violet-700 ring-violet-200",
 };

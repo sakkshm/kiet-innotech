@@ -72,7 +72,7 @@ export function SiteHeader({ linkBase = "" }: { linkBase?: string }) {
   return (
     <header
       className={`sticky top-0 z-50 border-b bg-white/90 backdrop-blur-md transition-shadow duration-300 ${
-        scrolled ? "border-line shadow-[0_8px_30px_-12px_rgb(11_22_51/0.18)]" : "border-transparent"
+        scrolled ? "border-line shadow-[0_8px_30px_-12px_rgb(41_43_56/0.18)]" : "border-transparent"
       }`}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:h-20 sm:px-6 lg:px-8">
@@ -90,8 +90,8 @@ export function SiteHeader({ linkBase = "" }: { linkBase?: string }) {
             <Image
               src="/images/brand/innotech-emblem.png"
               alt=""
-              width={160}
-              height={160}
+              width={219}
+              height={219}
               priority
               className="h-9 w-9 sm:h-11 sm:w-11"
             />

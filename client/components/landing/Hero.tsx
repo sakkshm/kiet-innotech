@@ -28,23 +28,23 @@ export function Hero() {
         <div>
           <p className="mb-6 inline-flex animate-fade-up items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-brand-300 backdrop-blur-sm">
             <span className="h-1.5 w-1.5 rounded-full bg-accent-500" />
-            KIET Annual Technical Fest
+            KIET Deemed to be University
           </p>
 
           <Image
-            src="/images/brand/innotech-logo.png"
+            src="/images/brand/innotech-lockup-light.png"
             alt=""
-            width={1152}
-            height={357}
+            width={529}
+            height={202}
             priority
-            className="mb-8 w-full max-w-xl animate-fade-up [animation-delay:120ms] drop-shadow-[0_10px_40px_rgb(22_169_221/0.35)]"
+            className="mb-8 w-full max-w-lg animate-fade-up [animation-delay:120ms] drop-shadow-[0_10px_40px_rgb(232_85_36/0.25)]"
           />
 
           <h1 className="animate-fade-up font-display [animation-delay:240ms] text-2xl font-bold leading-tight text-white sm:text-3xl lg:text-4xl">
             <span className="sr-only">{event.name}: </span>
             Building an <span className="text-brand-400">Innovative</span>,{" "}
             <span className="text-brand-400">Secure</span> and{" "}
-            <span className="text-accent-500">Sustainable</span> Viksit Bharat @2047
+            <span className="text-brand-400">Sustainable</span> Viksit Bharat @2047
           </h1>
 
           <p className="mt-5 max-w-2xl animate-fade-up [animation-delay:360ms] text-base text-slate-300 sm:text-lg">
@@ -95,7 +95,7 @@ function Milestone({ label, value, highlight = false }: { label: string; value: 
   return (
     <div className="flex items-center justify-between gap-4 text-sm">
       <span className="text-slate-400">{label}</span>
-      <span className={`font-semibold ${highlight ? "text-accent-500" : "text-white"}`}>{value}</span>
+      <span className={`font-semibold ${highlight ? "text-brand-400" : "text-white"}`}>{value}</span>
     </div>
   );
 }
