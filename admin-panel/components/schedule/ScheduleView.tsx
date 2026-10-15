@@ -57,7 +57,7 @@ export function ScheduleView() {
       {!data && !query.error && <Loading label="Loading the schedule" />}
       {data && (
         <ScheduleBody
-          key={`${data.updatedAt}|${data.registration.opens}|${data.registration.closes}|${data.nominationsDeadline}|${data.resultsPublishFrom}`}
+          key={`${data.updatedAt}|${data.registration.opens}|${data.registration.closes}|${data.extendedCloses}|${data.nominationsDeadline}|${data.resultsPublishFrom}`}
           schedule={data}
           isSuper={isSuper}
           saved={saved}
@@ -125,6 +125,12 @@ function ScheduleBody({
                 <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Closes</dt>
                 <dd className="font-medium text-navy-900">{formatIst(registration.closes)}</dd>
               </div>
+              {schedule.extendedCloses && (
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-muted">Startups and COE KIET close</dt>
+                  <dd className="font-medium text-navy-900">{formatIst(schedule.extendedCloses)}</dd>
+                </div>
+              )}
             </dl>
             <p className="mt-3 text-xs text-muted">
               {schedule.customised
@@ -255,10 +261,12 @@ function OpenDialog({
 }
 
 function DatesForm({ schedule, isSuper, loadedAt, onSaved }: { schedule: Schedule; isSuper: boolean; loadedAt: number; onSaved: (next: Schedule) => void }) {
-  const ids = { opens: useId(), closes: useId(), deadline: useId(), none: useId(), results: useId(), anyTime: useId() };
+  const ids = { opens: useId(), closes: useId(), extended: useId(), noExtended: useId(), deadline: useId(), none: useId(), results: useId(), anyTime: useId() };
   const initial = {
     opens: toIstInput(schedule.registration.opens),
     closes: toIstInput(schedule.registration.closes),
+    extended: toIstInput(schedule.extendedCloses),
+    noExtended: schedule.extendedCloses === null,
     deadline: toIstInput(schedule.nominationsDeadline),
     noDeadline: schedule.nominationsDeadline === null,
     results: toIstInput(schedule.resultsPublishFrom),
@@ -270,9 +278,10 @@ function DatesForm({ schedule, isSuper, loadedAt, onSaved }: { schedule: Schedul
 
   const opens = fromIstInput(form.opens);
   const closes = fromIstInput(form.closes);
+  const extended = form.noExtended ? null : fromIstInput(form.extended);
   const deadline = form.noDeadline ? null : fromIstInput(form.deadline);
   const results = form.anyTime ? null : fromIstInput(form.results);
-  const problems: { opens?: string; closes?: string; deadline?: string; results?: string } = {};
+  const problems: { opens?: string; closes?: string; extended?: string; deadline?: string; results?: string } = {};
   if (!opens) problems.opens = "Enter the opening date and time.";
   if (!closes) problems.closes = "Enter the closing date and time.";
   if (opens && closes) {
@@ -280,6 +289,8 @@ function DatesForm({ schedule, isSuper, loadedAt, onSaved }: { schedule: Schedul
     if (span <= 0) problems.closes = "Registration must close after it opens.";
     else if (span > 366 * DAY) problems.closes = "Registration can stay open for at most a year.";
   }
+  if (!form.noExtended && !extended) problems.extended = "Enter the date, or choose “No extension”.";
+  else if (extended && closes && new Date(extended) < new Date(closes)) problems.extended = "This cannot be earlier than the general closing date.";
   if (!form.noDeadline && !deadline) problems.deadline = "Enter the deadline, or choose “No deadline”.";
   if (!form.anyTime && !results) problems.results = "Enter the date, or choose “Any time”.";
   else if (results && deadline && new Date(results) < new Date(deadline)) problems.results = "Results can only be published after the nominations deadline.";
@@ -290,6 +301,8 @@ function DatesForm({ schedule, isSuper, loadedAt, onSaved }: { schedule: Schedul
   const planned = {
     opens: toIstInput(schedule.planned.registrationOpens),
     closes: toIstInput(schedule.planned.registrationCloses),
+    extended: toIstInput(schedule.planned.registrationExtendedCloses),
+    noExtended: schedule.planned.registrationExtendedCloses === null,
     deadline: toIstInput(schedule.planned.nominationsDeadline),
     noDeadline: schedule.planned.nominationsDeadline === null,
     results: toIstInput(schedule.planned.resultsPublishFrom),
@@ -316,7 +329,7 @@ function DatesForm({ schedule, isSuper, loadedAt, onSaved }: { schedule: Schedul
     setPending(true);
     setError(null);
     try {
-      onSaved(await api.saveSchedule({ registrationOpens: opens, registrationCloses: closes, nominationsDeadline: deadline, resultsPublishFrom: results }));
+      onSaved(await api.saveSchedule({ registrationOpens: opens, registrationCloses: closes, registrationExtendedCloses: extended, nominationsDeadline: deadline, resultsPublishFrom: results }));
     } catch (err) {
       setError(errorMessage(err));
       setPending(false);
@@ -333,6 +346,34 @@ function DatesForm({ schedule, isSuper, loadedAt, onSaved }: { schedule: Schedul
         <Field label="Registration closes" htmlFor={ids.closes} error={problems.closes}>
           <Input id={ids.closes} type="datetime-local" value={form.closes} disabled={!isSuper} onChange={(e) => setForm({ ...form, closes: e.target.value })} aria-invalid={problems.closes ? true : undefined} />
         </Field>
+        <Field
+          label="Startups and COE KIET close"
+          htmlFor={ids.extended}
+          error={problems.extended}
+          hint="Startup entries and COE KIET (technical club) teams can register until this, later than everyone else. Until the general closing date nothing changes for anyone."
+        >
+          <Input
+            id={ids.extended}
+            type="datetime-local"
+            value={form.noExtended ? "" : form.extended}
+            disabled={!isSuper || form.noExtended}
+            onChange={(e) => setForm({ ...form, extended: e.target.value })}
+            aria-invalid={problems.extended ? true : undefined}
+          />
+        </Field>
+        <div className="flex items-end pb-1">
+          <label htmlFor={ids.noExtended} className="flex items-center gap-2 text-sm text-navy-800">
+            <input
+              id={ids.noExtended}
+              type="checkbox"
+              checked={form.noExtended}
+              disabled={!isSuper}
+              onChange={(e) => setForm({ ...form, noExtended: e.target.checked, extended: form.extended || form.closes })}
+              className="size-4 accent-brand-600"
+            />
+            No extension
+          </label>
+        </div>
         <Field
           label="Finalist nominations due by"
           htmlFor={ids.deadline}

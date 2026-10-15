@@ -20,7 +20,6 @@ from ..schemas import (
     PassOut,
     ProfileInput,
     ProfileOut,
-    RegistrationOut,
     ResultsOut,
     TeamInput,
     TeamOut,
@@ -42,7 +41,7 @@ def no_content() -> Response:
 def get_me(user: CurrentUser, db: Db, settings: AppSettings) -> MeOut:
     profile = db.get(Profile, user.id)
     window = schedule.load(db, settings)
-    registration = RegistrationOut(state=window.registration_state(), opens=window.opens, closes=window.closes)
+    registration = schedule.registration_for(window, students.window_subject(db, user, profile))
     return MeOut(email=user.email, name=user.name, profile=profile_out(profile, user.email) if profile else None, registration=registration)
 
 

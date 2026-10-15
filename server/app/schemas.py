@@ -136,6 +136,8 @@ class RegistrationOut(BaseModel):
     state: rules.RegistrationState
     opens: datetime
     closes: datetime
+    # True when `closes` is the later deadline of startups and COE KIET entries rather than the general one.
+    extended: bool = False
 
 
 class PublicConfigOut(BaseModel):
@@ -148,6 +150,7 @@ class PublicConfigOut(BaseModel):
 class ScheduleDatesOut(BaseModel):
     registration_opens: datetime
     registration_closes: datetime
+    registration_extended_closes: datetime | None = None
     nominations_deadline: datetime | None
     results_publish_from: datetime | None = None
 
@@ -156,6 +159,8 @@ class ScheduleOut(BaseModel):
     """The event schedule an organiser can change (see services/schedule.py)."""
 
     registration: RegistrationOut
+    # Startups and COE KIET entries can register until this (later than `registration.closes`); None = no extension.
+    extended_closes: datetime | None = None
     nominations_deadline: datetime | None
     # False once the deadline has passed: department admins can no longer change nominations, super admins still can.
     nominations_open: bool
@@ -175,6 +180,8 @@ class ScheduleInput(Input):
     registration_opens: AwareDatetime
     registration_closes: AwareDatetime
     nominations_deadline: AwareDatetime | None = None
+    # Leave it out to keep the current extended deadline for startups and COE KIET; null removes the extension.
+    registration_extended_closes: AwareDatetime | None = None
     # Leave it out to keep the current results date; null removes the restriction.
     results_publish_from: AwareDatetime | None = None
 

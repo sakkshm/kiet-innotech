@@ -18,7 +18,11 @@ const listeners = new Set<() => void>();
 
 /** Called with the window from GET /me or GET /config. The server is the authority on it. */
 export function setServerRegistration(next: RegistrationWindow | null | undefined) {
-  if (!next || (server && server.state === next.state && server.opens === next.opens && server.closes === next.closes)) return;
+  if (
+    !next ||
+    (server && server.state === next.state && server.opens === next.opens && server.closes === next.closes && server.extended === next.extended)
+  )
+    return;
   server = next;
   listeners.forEach((listener) => listener());
 }
@@ -68,8 +72,13 @@ export function useRegistrationState(): RegistrationState | null {
  * or close later for operations without a visitor ever seeing a different date.
  */
 export function useRegistrationDates(): { opens: string; closes: string } {
-  return registrationDisplay;
+  // Startups and COE KIET clubs are told their own, later deadline.
+  const extended = useSyncExternalStore(subscribe, extendedSnapshot, () => false);
+  return extended ? extendedDisplay : registrationDisplay;
 }
+
+const extendedDisplay = { opens: registrationDisplay.opens, closes: registrationDisplay.extendedCloses };
+const extendedSnapshot = () => server?.extended === true;
 
 /** Whether registration is upcoming, open or closed by the DISPLAYED dates, so the wording on the page never disagrees with them. Null on the server. */
 export function useDisplayedRegistrationState(): RegistrationState | null {

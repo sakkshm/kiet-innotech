@@ -2,8 +2,11 @@
 The event schedule an organiser can change while the event runs: when registration opens and closes, the
 deadline for department admins' finalist nominations, and the earliest moment results can be published.
 
-The planned dates come from the settings (REGISTRATION_OPENS, REGISTRATION_CLOSES, NOMINATIONS_DEADLINE,
-RESULTS_PUBLISH_FROM). Once a
+Startups and COE KIET (technical club) entries may be given a later registration deadline than everyone else
+(`extended_closes`); until the general deadline passes, nothing differs for anyone.
+
+The planned dates come from the settings (REGISTRATION_OPENS, REGISTRATION_CLOSES, REGISTRATION_EXTENDED_CLOSES,
+NOMINATIONS_DEADLINE, RESULTS_PUBLISH_FROM). Once a
 super admin saves a change, it is stored in the database (the `app_state` row "schedule") and wins over the settings.
 Every request reads it fresh, so a change applies to all API workers at once and no redeploy is needed.
 """
@@ -37,6 +40,8 @@ LATEST = datetime(2100, 1, 1, tzinfo=UTC)
 class Schedule:
     opens: datetime
     closes: datetime
+    # Startups and COE KIET entries can register until this; None = the same deadline as everyone.
+    extended_closes: datetime | None
     nominations_deadline: datetime | None
     # Results cannot be published before this (the event document declares finalists on 26 October).
     results_from: datetime | None
@@ -47,8 +52,16 @@ class Schedule:
     # Development and tests only (FORCE_REGISTRATION_OPEN): registration counts as open whatever the dates say.
     force_open: bool
 
-    def registration_state(self, now: datetime | None = None) -> rules.RegistrationState:
-        return "open" if self.force_open else rules.window_state(self.opens, self.closes, now)
+    def closes_for(self, extended: bool) -> datetime:
+        """The deadline of a startup or COE KIET entry (`extended`), or of everyone else."""
+        return max(self.closes, self.extended_closes) if extended and self.extended_closes else self.closes
+
+    def registration_state(self, now: datetime | None = None, extended: bool = False) -> rules.RegistrationState:
+        return "open" if self.force_open else rules.window_state(self.opens, self.closes_for(extended), now)
+
+    def latest_state(self, now: datetime | None = None) -> rules.RegistrationState:
+        """Open while anyone can still register: what public pages show before a visitor says who they are."""
+        return self.registration_state(now, extended=True)
 
     def nominations_closed(self, now: datetime | None = None) -> bool:
         return self.nominations_deadline is not None and (now or utcnow()) > self.nominations_deadline
@@ -90,6 +103,7 @@ def load(db: Session, settings: Settings, *, lock: bool = False) -> Schedule:
         return Schedule(
             opens=settings.registration_opens,
             closes=settings.registration_closes,
+            extended_closes=settings.registration_extended_closes,
             nominations_deadline=settings.nominations_deadline,
             results_from=settings.results_publish_from,
             customised=False,
@@ -100,6 +114,8 @@ def load(db: Session, settings: Settings, *, lock: bool = False) -> Schedule:
     return Schedule(
         opens=_aware(data["opens"]),  # type: ignore[arg-type]
         closes=_aware(data["closes"]),  # type: ignore[arg-type]
+        # A stored null means "no extension"; a missing key means the planned extension still applies.
+        extended_closes=_aware(data["extended_closes"]) if "extended_closes" in data else settings.registration_extended_closes,
         # A stored null means "no deadline"; a missing key means the planned deadline still applies.
         nominations_deadline=_aware(data["nominations_deadline"]) if "nominations_deadline" in data else settings.nominations_deadline,
         results_from=_aware(data["results_from"]) if "results_from" in data else settings.results_publish_from,
@@ -116,13 +132,29 @@ def day(moment: datetime) -> str:
     return f"{local.day} {local:%B %Y}"
 
 
-def _check(opens: datetime, closes: datetime, deadline: datetime | None, results_from: datetime | None = None) -> None:
-    for name, moment in (("opening", opens), ("closing", closes), ("nomination deadline", deadline), ("results", results_from)):
+def _check(
+    opens: datetime,
+    closes: datetime,
+    deadline: datetime | None,
+    results_from: datetime | None = None,
+    extended_closes: datetime | None = None,
+) -> None:
+    for name, moment in (
+        ("opening", opens),
+        ("closing", closes),
+        ("extended closing", extended_closes),
+        ("nomination deadline", deadline),
+        ("results", results_from),
+    ):
         if moment is not None and not EARLIEST <= moment <= LATEST:
             raise ApiError(f"The {name} date is not a sensible date.", 422)
     if closes <= opens:
         raise ApiError("Registration must close after it opens.", 422)
     if closes - opens > MAX_WINDOW:
+        raise ApiError("Registration can stay open for at most a year.", 422)
+    if extended_closes is not None and extended_closes < closes:
+        raise ApiError("The startups and COE KIET deadline cannot be earlier than the general closing date.", 422)
+    if extended_closes is not None and extended_closes - opens > MAX_WINDOW:
         raise ApiError("Registration can stay open for at most a year.", 422)
     if results_from is not None and deadline is not None and results_from < deadline:
         raise ApiError("Results can only be published after the nominations deadline.", 422)
@@ -137,6 +169,7 @@ def _write(
     *,
     opens: datetime,
     closes: datetime,
+    extended_closes: datetime | None,
     deadline: datetime | None,
     results_from: datetime | None,
 ) -> Schedule:
@@ -148,6 +181,7 @@ def _write(
         {
             "opens": opens.isoformat(),
             "closes": closes.isoformat(),
+            "extended_closes": extended_closes.isoformat() if extended_closes else None,
             "nominations_deadline": deadline.isoformat() if deadline else None,
             "results_from": results_from.isoformat() if results_from else None,
             "by": actor,
@@ -160,8 +194,10 @@ def _write(
 def _describe(schedule: Schedule) -> str:
     deadline = schedule.nominations_deadline.isoformat() if schedule.nominations_deadline else "none"
     results = schedule.results_from.isoformat() if schedule.results_from else "any time"
+    extended = schedule.extended_closes.isoformat() if schedule.extended_closes else "none"
     return (
-        f"opens {schedule.opens.isoformat()}, closes {schedule.closes.isoformat()}, nominations deadline {deadline}, results from {results}"
+        f"opens {schedule.opens.isoformat()}, closes {schedule.closes.isoformat()}, startups and COE KIET close {extended}, "
+        f"nominations deadline {deadline}, results from {results}"
     )
 
 
@@ -178,13 +214,15 @@ def update(
     closes: datetime,
     deadline: datetime | None,
     results_from: datetime | type[KEEP] | None = KEEP,
+    extended_closes: datetime | type[KEEP] | None = KEEP,
 ) -> Schedule:
-    """Sets the dates. The caller must be a super admin. Without `results_from` the current results date is kept."""
+    """Sets the dates. The caller must be a super admin. Without `results_from` or `extended_closes` the current one is kept."""
     before = load(db, settings, lock=False)
     results = before.results_from if results_from is KEEP else results_from
+    extended = before.extended_closes if extended_closes is KEEP else extended_closes
     # A results date that is kept is not re-checked; publishing still waits for the nominations deadline too.
-    _check(opens, closes, deadline, None if results_from is KEEP else results)  # type: ignore[arg-type]
-    schedule = _write(db, settings, actor, opens=opens, closes=closes, deadline=deadline, results_from=results)  # type: ignore[arg-type]
+    _check(opens, closes, deadline, None if results_from is KEEP else results, extended)  # type: ignore[arg-type]
+    schedule = _write(db, settings, actor, opens=opens, closes=closes, extended_closes=extended, deadline=deadline, results_from=results)  # type: ignore[arg-type]
     audit.record(db, actor, "schedule.updated", detail=f"{_describe(schedule)} (was: {_describe(before)})")
     db.commit()
     return schedule
@@ -199,9 +237,17 @@ def open_now(db: Session, settings: Settings, actor: str, *, closes: datetime | 
     new_closes = closes or current.closes
     if new_closes <= now:
         raise ApiError("The closing date has passed. Choose a new closing date to open registration again.", 422)
-    _check(now, new_closes, current.nominations_deadline)
+    extended = current.extended_closes if current.extended_closes and current.extended_closes >= new_closes else None
+    _check(now, new_closes, current.nominations_deadline, None, extended)
     schedule = _write(
-        db, settings, actor, opens=now, closes=new_closes, deadline=current.nominations_deadline, results_from=current.results_from
+        db,
+        settings,
+        actor,
+        opens=now,
+        closes=new_closes,
+        extended_closes=extended,
+        deadline=current.nominations_deadline,
+        results_from=current.results_from,
     )
     audit.record(db, actor, "schedule.opened", detail=f"Registration opened by an organiser; closes {new_closes.isoformat()}")
     db.commit()
@@ -218,8 +264,16 @@ def close_now(db: Session, settings: Settings, actor: str) -> Schedule:
     closes = utcnow().replace(microsecond=0) - timedelta(seconds=1)
     opens = min(current.opens, closes - timedelta(seconds=1))
     _check(opens, closes, current.nominations_deadline)
+    # "Close now" stops everyone, so the later deadline of startups and COE KIET entries goes too.
     schedule = _write(
-        db, settings, actor, opens=opens, closes=closes, deadline=current.nominations_deadline, results_from=current.results_from
+        db,
+        settings,
+        actor,
+        opens=opens,
+        closes=closes,
+        extended_closes=None,
+        deadline=current.nominations_deadline,
+        results_from=current.results_from,
     )
     audit.record(db, actor, "schedule.closed", detail="Registration closed by an organiser")
     db.commit()
@@ -230,6 +284,7 @@ def to_out(window: Schedule, settings: Settings, now: datetime | None = None) ->
     now = now or utcnow()
     return ScheduleOut(
         registration=RegistrationOut(state=window.registration_state(now), opens=window.opens, closes=window.closes),
+        extended_closes=window.extended_closes,
         nominations_deadline=window.nominations_deadline,
         nominations_open=not window.nominations_closed(now),
         results_publish_from=window.results_from,
@@ -241,7 +296,30 @@ def to_out(window: Schedule, settings: Settings, now: datetime | None = None) ->
         planned=ScheduleDatesOut(
             registration_opens=settings.registration_opens,
             registration_closes=settings.registration_closes,
+            registration_extended_closes=settings.registration_extended_closes,
             nominations_deadline=settings.nominations_deadline,
             results_publish_from=settings.results_publish_from,
         ),
+    )
+
+
+def is_extended(subject) -> bool:
+    """Whether a profile or team (anything with participant_type and department) is a startup or COE KIET entry."""
+    return subject is not None and rules.needs_approval(subject.participant_type, subject.department)
+
+
+def registration_for(window: Schedule, subject=None, now: datetime | None = None) -> RegistrationOut:
+    """
+    The registration window as one student sees it. Startups and COE KIET entries get the later deadline. Someone who
+    has not given their profile yet may turn out to be one, so once the general deadline has passed they are shown the
+    later window; saving a profile of another kind is still refused.
+    """
+    general = window.registration_state(now)
+    extended = is_extended(subject) or (subject is None and general == "closed")
+    extended = extended and window.extended_closes is not None and window.extended_closes > window.closes
+    return RegistrationOut(
+        state=window.registration_state(now, extended),
+        opens=window.opens,
+        closes=window.closes_for(extended),
+        extended=extended,
     )

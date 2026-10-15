@@ -464,6 +464,7 @@ function scheduleOf(db: MockDb): Schedule {
   const { opens, closes, deadline, customised, updatedBy, updatedAt } = db.schedule;
   return {
     registration: { state: windowState(opens, closes), opens, closes },
+    extendedCloses: db.schedule.extendedCloses ?? null,
     nominationsDeadline: deadline,
     nominationsOpen: !deadlinePassed(db),
     resultsPublishFrom: resultsFrom(db),
@@ -475,6 +476,7 @@ function scheduleOf(db: MockDb): Schedule {
     planned: {
       registrationOpens: REGISTRATION_OPENS,
       registrationCloses: REGISTRATION_CLOSES,
+      registrationExtendedCloses: null,
       nominationsDeadline: NOMINATIONS_DEADLINE,
       resultsPublishFrom: RESULTS_PUBLISH_FROM,
     },
@@ -746,6 +748,12 @@ export const mockApi: AdminApi = {
     const admin = actor(db);
     requireSuper(admin, "change the schedule");
     writeSchedule(db, admin, input.registrationOpens, input.registrationCloses, input.nominationsDeadline, input.resultsPublishFrom);
+    if (input.registrationExtendedCloses !== undefined) {
+      if (input.registrationExtendedCloses && new Date(input.registrationExtendedCloses) < new Date(input.registrationCloses)) {
+        throw new ApiError(422, "The startups and COE KIET deadline cannot be earlier than the general closing date.");
+      }
+      db.schedule.extendedCloses = input.registrationExtendedCloses;
+    }
     log(db, { actorEmail: admin.email, action: "schedule.updated", department: null, detail: `Registration ${input.registrationOpens} to ${input.registrationCloses}` });
     save(db);
     return clone(scheduleOf(db));

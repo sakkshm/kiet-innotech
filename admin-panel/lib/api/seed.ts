@@ -39,6 +39,8 @@ export type MockDb = {
     opens: string;
     closes: string;
     deadline: string | null;
+    /** Startups and COE KIET register until this. Missing in older saved data: no extension. */
+    extendedCloses?: string | null;
     /** Results cannot be published before this. Missing in older saved data: the planned date applies. */
     resultsFrom?: string | null;
     customised: boolean;

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
 
     registration_opens: datetime = datetime.fromisoformat("2026-10-03T00:00:00+05:30")
     registration_closes: datetime = datetime.fromisoformat("2026-10-15T23:59:59+05:30")
+    # Startups and COE KIET (technical club) entries may register until this, later than everyone else. None = no extension.
+    # Organisers can change it in the admin panel.
+    registration_extended_closes: datetime | None = None
     # Department admins' finalist nominations are due by then (the event document says 24 October, 6:00 PM). After it,
     # only a super admin can still change them. Organisers can change or clear it in the admin panel.
     nominations_deadline: datetime | None = datetime.fromisoformat("2026-10-24T18:00:00+05:30")
@@ -98,7 +101,7 @@ class Settings(BaseSettings):
         dates = [
             self.registration_opens,
             self.registration_closes,
-            *(d for d in (self.nominations_deadline, self.results_publish_from) if d),
+            *(d for d in (self.registration_extended_closes, self.nominations_deadline, self.results_publish_from) if d),
         ]
         if any(moment.tzinfo is None for moment in dates):
             raise ValueError("Registration, nomination and results dates must include a timezone offset, e.g. +05:30.")

@@ -80,7 +80,8 @@
  *          Every admin can read it.
  *
  *   PUT    /admin/schedule        (super_admin only)
- *          body { registration_opens, registration_closes, nominations_deadline | null }, each ISO 8601 WITH an offset.
+ *          body { registration_opens, registration_closes, registration_extended_closes? (startups and COE KIET; null = none),
+ *          nominations_deadline | null }, each ISO 8601 WITH an offset.
  *          422 if closes <= opens, a window over a year, a date outside 2020-2100, or a date without an offset.
  *          Applies on the very next request of every student; audited ("schedule.updated"). → Schedule
  *

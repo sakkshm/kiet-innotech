@@ -661,7 +661,7 @@ def reopen_team(db: Session, admin: Admin, settings: Settings, team_id: uuid.UUI
             409,
         )
     # The leader can only edit and submit while registration is open, so reopening outside it would strand the team.
-    if schedule.load(db, settings).registration_state() != "open":
+    if schedule.load(db, settings).registration_state(extended=schedule.is_extended(team)) != "open":
         raise ApiError(
             "Registration is closed, so the leader could not edit or submit the team again. Reopen it on the Schedule page first.",
             409,

@@ -237,6 +237,7 @@ def set_schedule(data: ScheduleInput, admin: SuperAdmin, db: Db, settings: AppSe
         closes=data.registration_closes,
         deadline=data.nominations_deadline,
         results_from=data.results_publish_from if "results_publish_from" in data.model_fields_set else schedule.KEEP,
+        extended_closes=data.registration_extended_closes if "registration_extended_closes" in data.model_fields_set else schedule.KEEP,
     )
     return schedule.to_out(window, settings)
 

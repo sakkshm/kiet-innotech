@@ -44,10 +44,13 @@ export const navLinks = [
 export const registrationDisplay = {
   opens: "2026-10-03T00:00:00+05:30",
   closes: "2026-10-15T23:59:59+05:30",
+  /** Startups and COE KIET (technical clubs) register until this, later than everyone else. */
+  extendedCloses: "2026-10-21T23:59:59+05:30",
 };
 
 export const liveUpdates = [
   "Registrations are open until 15 October 2026",
+  "Startups and COE KIET clubs can register until 21 October 2026",
   "No registration fee for any participant",
   "Grand Finale on 30 October 2026 at KIET",
 ];
@@ -319,7 +322,7 @@ export const timeline: Milestone[] = [
     dateLabel: "15 Oct 2026",
     start: "2026-10-15",
     end: "2026-10-15",
-    description: "Last day to register and submit your team. Teams are locked after submission.",
+    description: "Last day to register and submit your team. Teams are locked after submission. Startups and COE KIET clubs can register until 21 Oct.",
   },
   {
     title: "Department Level",

@@ -20,6 +20,7 @@ def public_config(db: Annotated[Session, Depends(get_db)], settings: Annotated[S
     window = schedule.load(db, settings)
     now = utcnow()
     return PublicConfigOut(
-        registration=RegistrationOut(state=window.registration_state(now), opens=window.opens, closes=window.closes),
+        # Open while anyone can still register (startups and COE KIET have a later deadline); the server decides per student.
+        registration=RegistrationOut(state=window.latest_state(now), opens=window.opens, closes=window.closes_for(True)),
         server_time=now,
     )
