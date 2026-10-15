@@ -100,7 +100,7 @@ export default function StartupsPage() {
         </Block>
 
         <Block title="Important dates">
-          <ImportantDates exclude={["Department Level", "Finalists Declared"]} />
+          <ImportantDates exclude={["Department Level", "Finalists Declared", "Registrations Close"]} />
         </Block>
 
         <section aria-labelledby="startup-cta" className="relative overflow-hidden rounded-3xl bg-navy-900 px-6 py-10 text-center sm:px-10">

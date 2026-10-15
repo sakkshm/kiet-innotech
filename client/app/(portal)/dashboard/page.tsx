@@ -6,7 +6,7 @@ import { ArrowRight, Check, Mail } from "lucide-react";
 import { api } from "@/lib/api";
 import { dayMonth } from "@/lib/format";
 import { useRegistrationDates, useRegistrationState } from "@/lib/registration";
-import { useTimeline } from "@/lib/schedule-content";
+import { useDateRows } from "@/lib/schedule-content";
 import { TEAM_MIN_SIZE, directFinaleKind, participantTypeLabels, yearLabel } from "@/lib/rules";
 import type { Invitation, Team } from "@/lib/types";
 import { Button, Notice, buttonStyles } from "@/components/ui/form";
@@ -231,7 +231,7 @@ function TeamSummary({ team, isLeader }: { team: Team; isLeader: boolean }) {
 const DEPARTMENT_ROUND_DATES = ["Department Level", "Finalists Declared"];
 
 function KeyDates({ direct = false }: { direct?: boolean }) {
-  const timeline = useTimeline();
+  const timeline = useDateRows();
   return (
     <Panel title="Key dates">
       <ul className="divide-y divide-line">

@@ -48,6 +48,9 @@ export const registrationDisplay = {
   extendedCloses: "2026-10-21T23:59:59+05:30",
 };
 
+/** One sentence for everywhere visitors read the closing date: startups and COE KIET have longer. */
+export const extendedNote = "Startups and COE KIET clubs can register until 21 October 2026.";
+
 export const liveUpdates = [
   "Registrations are open until 15 October 2026",
   "Startups and COE KIET clubs can register until 21 October 2026",
@@ -309,6 +312,15 @@ export type Milestone = {
   description: string;
 };
 
+/** Shown beside "Registrations Close" in the date lists (not in the five-stage timeline graphic). */
+export const extendedMilestone: Milestone = {
+  title: "Startups & COE KIET Registrations Close",
+  dateLabel: "21 Oct 2026",
+  start: "2026-10-21",
+  end: "2026-10-21",
+  description: "Startup entries and COE KIET (technical club) teams can register and submit until this date.",
+};
+
 export const timeline: Milestone[] = [
   {
     title: "Registrations Open",
@@ -538,6 +550,11 @@ export const faqs = [
   {
     question: "Is there a registration fee?",
     answer: "No. Registration is free for everyone. No reimbursement is given for items used in projects, posters or models.",
+  },
+  {
+    question: "Who can still register after 15 October?",
+    answer:
+      "Startups and COE KIET (technical club) entries can register and submit until 21 October 2026, 11:59 PM. Registration for KIET departments, other colleges and schools closes on 15 October 2026.",
   },
   {
     question: "How do I join my friend's team?",

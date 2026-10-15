@@ -10,7 +10,7 @@ import { isPath, isUnder } from "@/lib/paths";
 import { longDate, longDateTime } from "@/lib/format";
 import { event } from "@/lib/content";
 import { attendanceEnabled } from "@/lib/features";
-import { useRegistrationDates, useRegistrationState } from "@/lib/registration";
+import { useExtendedNote, useRegistrationDates, useRegistrationState } from "@/lib/registration";
 import { Button, Notice } from "@/components/ui/form";
 import { MailLink } from "@/components/ui/MailLink";
 import { PortalProvider } from "./PortalProvider";
@@ -30,10 +30,12 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const session = useSession();
   const registration = useRegistrationState();
   const { opens, closes } = useRegistrationDates();
+  const extended = useExtendedNote();
+  const note = extended ? ` ${extended}` : "";
   const registrationMessages = {
-    upcoming: `Registration opens on ${longDate(opens)} and closes on ${longDate(closes)}.`,
-    open: `Registration is open until ${longDateTime(closes)}.`,
-    closed: `Registration closed on ${longDate(closes)}. Teams are now locked.`,
+    upcoming: `Registration opens on ${longDate(opens)} and closes on ${longDate(closes)}.${note}`,
+    open: `Registration is open until ${longDateTime(closes)}.${note}`,
+    closed: `Registration closed on ${longDate(closes)}. Teams are now locked.${note}`,
   };
   const onboarding = isPath(pathname, "/onboarding");
 

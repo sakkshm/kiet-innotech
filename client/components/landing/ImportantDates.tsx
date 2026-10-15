@@ -1,10 +1,10 @@
 "use client";
 
-import { useTimeline } from "@/lib/schedule-content";
+import { useDateRows } from "@/lib/schedule-content";
 
 /** The event timeline as a list, with the registration dates following what organisers have set. */
 export function ImportantDates({ exclude = [] }: { exclude?: string[] }) {
-  const timeline = useTimeline();
+  const timeline = useDateRows();
   return (
     <ol className="divide-y divide-line rounded-2xl bg-white ring-1 ring-line">
       {timeline.filter((item) => !exclude.includes(item.title)).map((item) => (

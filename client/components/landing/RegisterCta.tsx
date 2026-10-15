@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { useDisplayedRegistrationState, useRegistrationDates, useRegistrationState } from "@/lib/registration";
+import { useDisplayedRegistrationState, useExtendedNote, useRegistrationDates, useRegistrationState } from "@/lib/registration";
 import { useRegistrationRange } from "@/lib/schedule-content";
 import { useSession } from "@/lib/auth/session";
 import { longDate } from "@/lib/format";
@@ -28,9 +28,11 @@ export function RegisterCta({ label, className }: { label: string; className: st
 export function RegistrationNote() {
   const state = useDisplayedRegistrationState();
   const { opens, closes } = useRegistrationDates();
-  if (state === "closed") return `Registration closed on ${longDate(closes)}. Registered students can sign in to see their team and results.`;
-  if (state === "upcoming") return `Registration opens on ${longDate(opens)} and closes on ${longDate(closes)}. It is free, and it takes just a few minutes.`;
-  return `Registrations are open until ${longDate(closes)}. It is free, and it takes just a few minutes.`;
+  const extended = useExtendedNote();
+  const note = extended ? ` ${extended}` : "";
+  if (state === "closed") return `Registration closed on ${longDate(closes)}.${note} Registered students can sign in to see their team and results.`;
+  if (state === "upcoming") return `Registration opens on ${longDate(opens)} and closes on ${longDate(closes)}.${note} It is free, and it takes just a few minutes.`;
+  return `Registrations are open until ${longDate(closes)}.${note} It is free, and it takes just a few minutes.`;
 }
 
 /** "3 - 12 Oct 2026": opening and closing date as displayed. */

@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { send } from "./api/http";
-import { registrationDisplay } from "./content";
+import { extendedNote, registrationDisplay } from "./content";
 import { apiMode } from "./auth/session";
 import { registrationState, type RegistrationState } from "./rules";
 import type { RegistrationWindow } from "./types";
@@ -75,6 +75,25 @@ export function useRegistrationDates(): { opens: string; closes: string } {
   // Startups and COE KIET clubs are told their own, later deadline.
   const extended = useSyncExternalStore(subscribe, extendedSnapshot, () => false);
   return extended ? extendedDisplay : registrationDisplay;
+}
+
+/** Whether this signed-in student's own deadline is the later one (startups and COE KIET). */
+export function useIsExtended(): boolean {
+  return useSyncExternalStore(subscribe, extendedSnapshot, () => false);
+}
+
+/**
+ * "Startups and COE KIET clubs can register until 21 October 2026." for everyone who does NOT already see that date
+ * as their own, until it has passed. Empty on the server, so the prerendered page never differs.
+ */
+export function useExtendedNote(): string {
+  const extended = useIsExtended();
+  const open = useSyncExternalStore(
+    () => () => {},
+    () => new Date() <= new Date(registrationDisplay.extendedCloses),
+    () => false,
+  );
+  return open && !extended ? extendedNote : "";
 }
 
 const extendedDisplay = { opens: registrationDisplay.opens, closes: registrationDisplay.extendedCloses };

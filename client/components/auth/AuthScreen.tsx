@@ -12,7 +12,7 @@ import { apiMode, devSignIn, devSignInEnabled, googleClientId, mockSignIn, sessi
 import { event, registrationSteps } from "@/lib/content";
 import { normalisePath } from "@/lib/paths";
 import { longDate } from "@/lib/format";
-import { useRegistrationDates, useRegistrationState } from "@/lib/registration";
+import { useExtendedNote, useRegistrationDates, useRegistrationState } from "@/lib/registration";
 import { useRegistrationSentence } from "@/lib/schedule-content";
 import { Button, Field, Input, Notice } from "@/components/ui/form";
 import { MailLink } from "@/components/ui/MailLink";
@@ -39,6 +39,7 @@ export function AuthScreen({ mode }: { mode: "login" | "register" }) {
   const registration = useRegistrationState();
   const { opens, closes } = useRegistrationDates();
   const registrationSentence = useRegistrationSentence();
+  const extendedNote = useExtendedNote();
   // Only after a client-side trip from the portal, so this never differs from the prerendered page.
   const [ended] = useState(sessionEnded);
   const [signingIn, setSigningIn] = useState(false);
@@ -86,7 +87,7 @@ export function AuthScreen({ mode }: { mode: "login" | "register" }) {
               <span className="text-brand-400">Sustainable</span> Viksit Bharat @2047
             </p>
             <ul className="mt-8 hidden space-y-3 sm:block">
-              {[{ icon: CalendarDays, label: registrationSentence }, ...facts].map(({ icon: FactIcon, label }) => (
+              {[{ icon: CalendarDays, label: registrationSentence }, ...(extendedNote ? [{ icon: CalendarDays, label: extendedNote }] : []), ...facts].map(({ icon: FactIcon, label }) => (
                 <li key={label} className="flex items-center gap-3 text-sm text-slate-300">
                   <FactIcon size={18} className="shrink-0 text-brand-400" aria-hidden="true" />
                   {label}
