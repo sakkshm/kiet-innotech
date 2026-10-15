@@ -2,7 +2,7 @@
 The event schedule an organiser can change while the event runs: when registration opens and closes, the
 deadline for department admins' finalist nominations, and the earliest moment results can be published.
 
-Startups and COE KIET (technical club) entries may be given a later registration deadline than everyone else
+Other colleges, schools, startups and COE KIET (technical club) entries may be given a later registration deadline than KIET departments
 (`extended_closes`); until the general deadline passes, nothing differs for anyone.
 
 The planned dates come from the settings (REGISTRATION_OPENS, REGISTRATION_CLOSES, REGISTRATION_EXTENDED_CLOSES,
@@ -40,7 +40,7 @@ LATEST = datetime(2100, 1, 1, tzinfo=UTC)
 class Schedule:
     opens: datetime
     closes: datetime
-    # Startups and COE KIET entries can register until this; None = the same deadline as everyone.
+    # Other colleges, schools, startups and COE KIET can register until this; None = the same deadline as everyone.
     extended_closes: datetime | None
     nominations_deadline: datetime | None
     # Results cannot be published before this (the event document declares finalists on 26 October).
@@ -53,7 +53,7 @@ class Schedule:
     force_open: bool
 
     def closes_for(self, extended: bool) -> datetime:
-        """The deadline of a startup or COE KIET entry (`extended`), or of everyone else."""
+        """The later deadline (`extended`: not a KIET department), or the general one."""
         return max(self.closes, self.extended_closes) if extended and self.extended_closes else self.closes
 
     def registration_state(self, now: datetime | None = None, extended: bool = False) -> rules.RegistrationState:
@@ -153,7 +153,7 @@ def _check(
     if closes - opens > MAX_WINDOW:
         raise ApiError("Registration can stay open for at most a year.", 422)
     if extended_closes is not None and extended_closes < closes:
-        raise ApiError("The startups and COE KIET deadline cannot be earlier than the general closing date.", 422)
+        raise ApiError("The later deadline cannot be earlier than the general closing date.", 422)
     if extended_closes is not None and extended_closes - opens > MAX_WINDOW:
         raise ApiError("Registration can stay open for at most a year.", 422)
     if results_from is not None and deadline is not None and results_from < deadline:
@@ -196,7 +196,7 @@ def _describe(schedule: Schedule) -> str:
     results = schedule.results_from.isoformat() if schedule.results_from else "any time"
     extended = schedule.extended_closes.isoformat() if schedule.extended_closes else "none"
     return (
-        f"opens {schedule.opens.isoformat()}, closes {schedule.closes.isoformat()}, startups and COE KIET close {extended}, "
+        f"opens {schedule.opens.isoformat()}, closes {schedule.closes.isoformat()}, later deadline {extended}, "
         f"nominations deadline {deadline}, results from {results}"
     )
 
@@ -264,7 +264,7 @@ def close_now(db: Session, settings: Settings, actor: str) -> Schedule:
     closes = utcnow().replace(microsecond=0) - timedelta(seconds=1)
     opens = min(current.opens, closes - timedelta(seconds=1))
     _check(opens, closes, current.nominations_deadline)
-    # "Close now" stops everyone, so the later deadline of startups and COE KIET entries goes too.
+    # "Close now" stops everyone, so the later deadline goes too.
     schedule = _write(
         db,
         settings,
@@ -304,14 +304,14 @@ def to_out(window: Schedule, settings: Settings, now: datetime | None = None) ->
 
 
 def is_extended(subject) -> bool:
-    """Whether a profile or team (anything with participant_type and department) is a startup or COE KIET entry."""
-    return subject is not None and rules.needs_approval(subject.participant_type, subject.department)
+    """Whether a profile or team (anything with participant_type and department) gets the later deadline: not a KIET department."""
+    return subject is not None and rules.has_extended_deadline(subject.participant_type, subject.department)
 
 
 def registration_for(window: Schedule, subject=None, now: datetime | None = None) -> RegistrationOut:
     """
-    The registration window as one student sees it. Startups and COE KIET entries get the later deadline. Someone who
-    has not given their profile yet may turn out to be one, so once the general deadline has passed they are shown the
+    The registration window as one student sees it. Everyone but KIET departments gets the later deadline. Someone who
+    has not given their profile yet may turn out to be one of them, so once the general deadline has passed they are shown the
     later window; saving a profile of another kind is still refused.
     """
     general = window.registration_state(now)

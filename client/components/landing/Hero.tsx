@@ -79,8 +79,8 @@ export function Hero() {
           <Countdown to={event.finaleDate} endsAt={event.finaleEndDate} />
 
           <div className="mt-8 space-y-4 border-t border-white/10 pt-6">
-            <Milestone label="Registrations" value={<RegistrationRange />} />
-            <Milestone label="Startups & COE KIET" value="until 21 Oct 2026" highlight />
+            <Milestone label="KIET departments" value={<RegistrationRange />} />
+            <Milestone label="Colleges, schools, startups & COE" value="until 21 Oct 2026" highlight />
             <Milestone label="Department level" value="22 - 24 Oct 2026" />
             <Milestone label="Grand Finale" value="30 Oct 2026" highlight />
           </div>

@@ -41,7 +41,8 @@ class Settings(BaseSettings):
 
     registration_opens: datetime = datetime.fromisoformat("2026-10-03T00:00:00+05:30")
     registration_closes: datetime = datetime.fromisoformat("2026-10-15T23:59:59+05:30")
-    # Startups and COE KIET (technical club) entries may register until this, later than everyone else. None = no extension.
+    # Other colleges, schools, startups and COE KIET (technical club) entries may register until this, later than KIET
+    # departments. None = no extension.
     # Organisers can change it in the admin panel.
     registration_extended_closes: datetime | None = None
     # Department admins' finalist nominations are due by then (the event document says 24 October, 6:00 PM). After it,

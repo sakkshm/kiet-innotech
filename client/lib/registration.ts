@@ -72,7 +72,7 @@ export function useRegistrationState(): RegistrationState | null {
  * or close later for operations without a visitor ever seeing a different date.
  */
 export function useRegistrationDates(): { opens: string; closes: string } {
-  // Startups and COE KIET clubs are told their own, later deadline.
+  // Everyone but the KIET departments is told the later deadline as their own.
   const extended = useSyncExternalStore(subscribe, extendedSnapshot, () => false);
   return extended ? extendedDisplay : registrationDisplay;
 }
@@ -83,7 +83,7 @@ export function useIsExtended(): boolean {
 }
 
 /**
- * "Startups and COE KIET clubs can register until 21 October 2026." for everyone who does NOT already see that date
+ * "Other colleges, schools, startups and COE KIET clubs can register until 21 October 2026." for everyone who does NOT already see that date
  * as their own, until it has passed. Empty on the server, so the prerendered page never differs.
  */
 export function useExtendedNote(): string {

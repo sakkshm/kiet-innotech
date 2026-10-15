@@ -61,6 +61,11 @@ def needs_approval(participant_type: str, department: str | None) -> bool:
     return participant_type == "startup" or (participant_type == "kiet" and department == CLUB_DEPARTMENT)
 
 
+def has_extended_deadline(participant_type: str, department: str | None) -> bool:
+    """Only KIET departments close on the general date; other colleges, schools, startups and COE KIET get the later one."""
+    return participant_type != "kiet" or department == CLUB_DEPARTMENT
+
+
 def route_for(participant_type: str, department: str | None) -> str:
     """KIET teams take the department round, except COE KIET; everyone else goes straight to the Grand Finale."""
     return "department" if participant_type == "kiet" and department != CLUB_DEPARTMENT else "finale"

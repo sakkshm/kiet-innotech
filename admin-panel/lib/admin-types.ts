@@ -233,7 +233,7 @@ export type RegistrationWindow = {
 /** The event schedule an organiser can change: registration window and the finalist nominations deadline. */
 export type Schedule = {
   registration: RegistrationWindow;
-  /** Startups and COE KIET (technical clubs) can register until this, later than everyone else. Null = no extension. */
+  /** Other colleges, schools, startups and COE KIET (technical clubs) can register until this, later than the KIET departments. Null = no extension. */
   extendedCloses: string | null;
   nominationsDeadline: string | null;
   /** False once the deadline has passed (department admins are then locked out of nominations). */
@@ -259,7 +259,7 @@ export type Schedule = {
 export type ScheduleInput = {
   registrationOpens: string;
   registrationCloses: string;
-  /** Left out: unchanged; null removes the extension for startups and COE KIET. */
+  /** Left out: unchanged; null removes the later deadline for colleges, schools, startups and COE KIET. */
   registrationExtendedCloses?: string | null;
   nominationsDeadline: string | null;
   /** Left out: unchanged. */

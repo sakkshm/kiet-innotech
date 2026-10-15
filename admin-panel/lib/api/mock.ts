@@ -750,7 +750,7 @@ export const mockApi: AdminApi = {
     writeSchedule(db, admin, input.registrationOpens, input.registrationCloses, input.nominationsDeadline, input.resultsPublishFrom);
     if (input.registrationExtendedCloses !== undefined) {
       if (input.registrationExtendedCloses && new Date(input.registrationExtendedCloses) < new Date(input.registrationCloses)) {
-        throw new ApiError(422, "The startups and COE KIET deadline cannot be earlier than the general closing date.");
+        throw new ApiError(422, "The later deadline cannot be earlier than the KIET departments' closing date.");
       }
       db.schedule.extendedCloses = input.registrationExtendedCloses;
     }
