@@ -6,7 +6,11 @@ Description: >-
   Create/update: ./deploy.sh ci
 
 Parameters:
-  GitHubRepository: { Type: String, Description: "owner/name" }
+  GitHubSubject:
+    Type: String
+    Description: >-
+      The repository part of GitHub's token subject: "repo:owner/name", or with immutable subjects (the default for
+      this repository) "repo:owner@<id>/name@<id>". deploy.sh ci reads it from GitHub.
   InstanceId: { Type: String }
   OpsBucket: { Type: String }
   EcrRepository: { Type: String, Description: Repository name (not URI) }
@@ -28,7 +32,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepository}:environment:production"
+                token.actions.githubusercontent.com:sub: !Sub "${GitHubSubject}:environment:production"
       Policies:
         - PolicyName: deploy
           PolicyDocument:

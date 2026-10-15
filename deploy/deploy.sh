@@ -316,10 +316,14 @@ rollback() {
 
 # The IAM role GitHub Actions deploys with (OpenID Connect, no stored keys), in its own stack.
 deploy_ci() {
-  local repo
+  local repo subject
   repo="$(git -C "$ROOT" remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
+  # Repositories with immutable subjects sign tokens as repo:owner@<id>/name@<id>; ask GitHub which applies.
+  subject="$(gh api "repos/$repo/actions/oidc/customization/sub" --jq 'if .use_immutable_subject then .sub_claim_prefix else empty end' 2>/dev/null || true)"
+  subject="${subject:-repo:$repo}"
+  echo "GitHub token subject: $subject:environment:production"
   aws cloudformation deploy --stack-name "$STACK-ci" --template-file "$DEPLOY_DIR/github-ci.yml" --capabilities CAPABILITY_NAMED_IAM \
-    --no-fail-on-empty-changeset --parameter-overrides "GitHubRepository=$repo" "InstanceId=$(output InstanceId)" \
+    --no-fail-on-empty-changeset --parameter-overrides "GitHubSubject=$subject" "InstanceId=$(output InstanceId)" \
     "OpsBucket=$(output OpsBucket)" "EcrRepository=$(output EcrRepository | cut -d/ -f2)" "MainStack=$STACK"
   aws cloudformation describe-stacks --stack-name "$STACK-ci" --query "Stacks[0].Outputs[?OutputKey=='RoleArn'].OutputValue" --output text
 }
