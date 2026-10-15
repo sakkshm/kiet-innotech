@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  InnoTech'26 - the IAM role GitHub Actions deploys with. GitHub proves which workflow is running (OpenID Connect),
+  so no AWS keys are stored in GitHub. Only the repository's "production" environment, which only main can use,
+  may take this role. Kept apart from the main stack so creating or deleting it never touches the server.
+  Create/update: ./deploy.sh ci
+
+Parameters:
+  GitHubRepository: { Type: String, Description: "owner/name" }
+  InstanceId: { Type: String }
+  OpsBucket: { Type: String }
+  EcrRepository: { Type: String, Description: Repository name (not URI) }
+  MainStack: { Type: String, Default: innotech }
+
+Resources:
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${MainStack}-github-deploy"
+      MaxSessionDuration: 7200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            # The account's existing GitHub OpenID Connect provider (shared with other projects, so not created here).
+            Principal: { Federated: !Sub "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com" }
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepository}:environment:production"
+      Policies:
+        - PolicyName: deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadStackOutputs
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${MainStack}/*"
+              - Sid: PushApiImage
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepository}"
+              - Sid: EcrLogin
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              # Release files and site builds only; the database backups in the same bucket stay out of reach.
+              - Sid: ListReleaseFiles
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::${OpsBucket}"
+                Condition: { StringLike: { s3:prefix: ["release/*", "sites/*"] } }
+              - Sid: WriteReleaseFiles
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource: [!Sub "arn:aws:s3:::${OpsBucket}/release/*", !Sub "arn:aws:s3:::${OpsBucket}/sites/*"]
+              - Sid: RunReleaseScriptsOnTheServer
+                Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${InstanceId}"
+                  - !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript"
+              - Sid: ReadCommandResults
+                Effect: Allow
+                Action: [ssm:GetCommandInvocation, ssm:DescribeInstanceInformation]
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt DeployRole.Arn

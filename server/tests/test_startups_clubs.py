@@ -23,7 +23,12 @@ def test_startup_profile_needs_only_name_person_and_phone(as_user):
         assert body["participant_type"] == "startup"
         assert body["institution"] == f"Greenloop Labs {email[:3]}"
         assert (body["department"], body["city"], body["course"], body["year"], body["roll_number"], body["club"]) == (
-            None, "", "Startup", 0, "", ""
+            None,
+            "",
+            "Startup",
+            0,
+            "",
+            "",
         )
 
 
@@ -43,7 +48,14 @@ def test_startup_profile_validation(as_user):
 def test_other_details_sent_with_a_startup_are_ignored(as_user):
     body = startup_profile(department="CSE", club="Some Club", roll_number="X1", course="B.Tech", city="Delhi", year=3)
     saved = as_user("founder@gmail.com").put("/me/profile", body).json()
-    assert (saved["department"], saved["club"], saved["roll_number"], saved["course"], saved["city"], saved["year"]) == (None, "", "", "Startup", "", 0)
+    assert (saved["department"], saved["club"], saved["roll_number"], saved["course"], saved["city"], saved["year"]) == (
+        None,
+        "",
+        "",
+        "Startup",
+        "",
+        0,
+    )
 
 
 # ---------- Startups: one entry, no teammates ----------
@@ -55,7 +67,12 @@ def test_startup_creates_and_submits_a_team_of_one(as_user):
     created = api.post("/teams", team_input(name="Greenloop Labs", category=5))
     assert created.status_code == 201, created.json()
     team = created.json()
-    assert (team["participant_type"], team["route"], team["department"], team["institution"]) == ("startup", "finale", None, "Greenloop Labs")
+    assert (team["participant_type"], team["route"], team["department"], team["institution"]) == (
+        "startup",
+        "finale",
+        None,
+        "Greenloop Labs",
+    )
     assert len(team["members"]) == 1
 
     submitted = api.post(f"/teams/{team['id']}/submit")
@@ -236,7 +253,9 @@ def test_organiser_can_register_a_startup_and_a_coe_student(as_user):
 def test_organiser_creates_and_submits_a_startup_entry(as_user):
     root = as_user("root@kiet.edu")
     as_user("founder@gmail.com").put("/me/profile", startup_profile())
-    response = root.post("/admin/teams", {**team_input(name="Greenloop Labs"), "leader_email": "founder@gmail.com", "member_emails": [], "submit": True})
+    response = root.post(
+        "/admin/teams", {**team_input(name="Greenloop Labs"), "leader_email": "founder@gmail.com", "member_emails": [], "submit": True}
+    )
     assert response.status_code == 201, response.json()
     assert (response.json()["status"], response.json()["participant_type"]) == ("submitted", "startup")
 
@@ -350,7 +369,9 @@ def test_only_the_right_admins_can_approve(as_user, student, team_of):
     make_admin(root, "coe.admin@kiet.edu", "admin", "COE")
     make_admin(root, "cse.admin@kiet.edu", "admin", "CSE")
     make_admin(root, "outside@gmail.com", "outside_admin")
-    startups, coe, cse, outside = (as_user(e) for e in ("startups@gmail.com", "coe.admin@kiet.edu", "cse.admin@kiet.edu", "outside@gmail.com"))
+    startups, coe, cse, outside = (
+        as_user(e) for e in ("startups@gmail.com", "coe.admin@kiet.edu", "cse.admin@kiet.edu", "outside@gmail.com")
+    )
 
     # Each can accept only their own kind.
     assert coe.post(f"/admin/teams/{startup_team['id']}/approve").status_code == 403
@@ -378,7 +399,7 @@ def test_approval_needs_a_submitted_entry_and_ordinary_teams_have_none(as_user, 
 
 def test_withdrawing_approval_and_reopening_require_acceptance_again(as_user):
     root = as_user("root@kiet.edu")
-    founder, team = submitted_startup(as_user)
+    _founder, team = submitted_startup(as_user)
     assert root.post(f"/admin/teams/{team['id']}/approve").status_code == 200
     revoked = root.post(f"/admin/teams/{team['id']}/approval/revoke", {"reason": "Not a registered startup"})
     assert revoked.status_code == 200 and revoked.json()["approved_at"] is None
@@ -403,7 +424,9 @@ def test_approval_cannot_be_withdrawn_once_the_entry_is_in_a_panel(as_user):
 def test_an_entry_created_by_an_organiser_is_already_accepted(as_user):
     root = as_user("root@kiet.edu")
     as_user("founder@gmail.com").put("/me/profile", startup_profile())
-    created = root.post("/admin/teams", {**team_input(name="Greenloop Labs"), "leader_email": "founder@gmail.com", "member_emails": [], "submit": True})
+    created = root.post(
+        "/admin/teams", {**team_input(name="Greenloop Labs"), "leader_email": "founder@gmail.com", "member_emails": [], "submit": True}
+    )
     assert created.status_code == 201, created.json()
     assert created.json()["approval_required"] is True and created.json()["approved_at"] is not None
     assert [t["name"] for t in root.get("/admin/judging/final").json()["unallotted"]] == ["Greenloop Labs"]

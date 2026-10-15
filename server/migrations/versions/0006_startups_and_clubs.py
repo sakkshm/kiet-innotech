@@ -26,9 +26,7 @@ def upgrade() -> None:
         op.f("ck_profiles_participant_type"), "profiles", "participant_type IN ('kiet', 'college', 'school', 'startup')"
     )
     op.drop_constraint(op.f("ck_admins_role"), "admins", type_="check")
-    op.create_check_constraint(
-        op.f("ck_admins_role"), "admins", "role IN ('super_admin', 'admin', 'outside_admin', 'startup_admin')"
-    )
+    op.create_check_constraint(op.f("ck_admins_role"), "admins", "role IN ('super_admin', 'admin', 'outside_admin', 'startup_admin')")
 
 
 def downgrade() -> None:

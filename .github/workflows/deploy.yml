@@ -1,0 +1,189 @@
+# Tests every push and pull request; deploys main to production once every test has passed.
+#
+# Deploy order, each step only after the one before it succeeded:
+#   build the sites and the API image (nothing live changes) -> back up the database and rehearse the migrations on
+#   a copy -> migrate -> switch the API (rolls itself back if its checks fail) -> switch the sites -> check the
+#   public URLs (anything this run switched is rolled back if they fail).
+# Only what changed since the last successful deploy is deployed. Steps live in deploy/deploy.sh, so a deploy by
+# hand does exactly the same (see the top of deploy/deploy.sh). Pause automatic deploys by setting the repository
+# variable AUTO_DEPLOY to false.
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: What to deploy
+        type: choice
+        options: [changed, all, api, sites, nothing]
+        default: changed
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Server tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: innotech_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U app" --health-interval 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: server/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: python -m pytest -p no:cacheprovider
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://app:app@localhost:5432/innotech_test
+
+  sites:
+    name: ${{ matrix.app }} checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        app: [client, admin-panel]
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npm run lint
+
+  deploy:
+    name: Deploy to production
+    needs: [server, sites]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.AUTO_DEPLOY != 'false'
+    # The server is arm64 (t4g), so the API image builds natively here.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    environment: production
+    # One deploy at a time; a newer push waits for the running one instead of cutting it off.
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ap-south-1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
+          aws-region: ap-south-1
+          role-duration-seconds: 7200
+
+      - name: Settings and tools
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        run: |
+          [ -n "$PRODUCTION_ENV" ] || { echo "The PRODUCTION_ENV secret is missing." >&2; exit 1; }
+          printf '%s\n' "$PRODUCTION_ENV" > deploy/production.env
+          command -v dig >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq dnsutils; }
+          command -v jq >/dev/null || sudo apt-get install -yq jq
+          if ! command -v aws >/dev/null; then
+            curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip -o /tmp/awscli.zip
+            unzip -q /tmp/awscli.zip -d /tmp && sudo /tmp/aws/install
+          fi
+          aws --version
+
+      - name: Work out what to deploy
+        id: plan
+        env:
+          CHOICE: ${{ github.event.inputs.deploy || 'changed' }}
+        run: |
+          ops="$(aws cloudformation describe-stacks --stack-name innotech --query "Stacks[0].Outputs[?OutputKey=='OpsBucket'].OutputValue" --output text)"
+          last() { aws s3 cp --quiet "s3://$ops/release/deployed-$1.sha" - 2>/dev/null | tr -d '[:space:]' || true; }
+          # Changed since the last deploy, or unknown (first run, or a commit no longer in the history).
+          changed() {
+            local base="$1"; shift
+            [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null || return 0
+            ! git diff --quiet "$base" HEAD -- "$@"
+          }
+          api_base="$(last api)" sites_base="$(last sites)"
+          api=false sites=false
+          case "$CHOICE" in
+            all) api=true sites=true ;;
+            api) api=true ;;
+            sites) sites=true ;;
+            nothing) ;;
+            *)
+              changed "$api_base" server deploy/compose.yml deploy/Caddyfile deploy/remote deploy/deploy.sh && api=true
+              changed "$sites_base" client admin-panel deploy/remote/sync-sites.sh deploy/deploy.sh && sites=true
+              ;;
+          esac
+          echo "Last deployed: api ${api_base:-unknown}, sites ${sites_base:-unknown}"
+          echo "Deploying: api=$api sites=$sites"
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          echo "sites=$sites" >> "$GITHUB_OUTPUT"
+          if [ "$api" = true ]; then
+            if [ -n "$api_base" ] && git cat-file -e "$api_base^{commit}" 2>/dev/null; then base="$api_base"; else base="HEAD~1"; fi
+            ./deploy/check-migrations.sh "$base"
+          fi
+
+      # Nothing live changes in these two steps.
+      - name: Build the sites
+        if: steps.plan.outputs.sites == 'true'
+        run: ./deploy/deploy.sh build-sites
+      - name: Build and push the API image
+        if: steps.plan.outputs.api == 'true'
+        run: ./deploy/deploy.sh build-api
+
+      - name: Back up, rehearse migrations, migrate and switch the API
+        id: api
+        if: steps.plan.outputs.api == 'true'
+        run: ./deploy/deploy.sh release-api
+      - name: Switch the sites
+        id: sites
+        if: steps.plan.outputs.sites == 'true'
+        run: ./deploy/deploy.sh publish-sites
+
+      - name: Check the public URLs
+        id: smoke
+        if: steps.plan.outputs.api == 'true' || steps.plan.outputs.sites == 'true'
+        run: ./deploy/deploy.sh smoke
+
+      - name: Roll back what this run switched
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: |
+          if [ "${{ steps.sites.outcome }}" = success ]; then ./deploy/deploy.sh rollback sites; fi
+          if [ "${{ steps.api.outcome }}" = success ]; then ./deploy/deploy.sh rollback api; fi
+          ./deploy/deploy.sh smoke
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deploy ${GITHUB_SHA::7}"
+            echo "- API: ${{ steps.plan.outputs.api == 'true' && steps.api.outcome || 'not needed' }}"
+            echo "- Sites: ${{ steps.plan.outputs.sites == 'true' && steps.sites.outcome || 'not needed' }}"
+            echo "- Public checks: ${{ steps.smoke.outcome || 'skipped' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

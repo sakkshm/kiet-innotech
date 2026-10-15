@@ -47,6 +47,16 @@ PostgreSQL in Docker; the two static sites on S3 + CloudFront; daily disk snapsh
 and `deploy/deploy.sh` to roll out releases. Copy `deploy/production.env.example` to `deploy/production.env`, then
 `./deploy.sh stack`, `./deploy.sh api`, `./deploy.sh sites`.
 
+**Automatic deploys.** Every push and pull request runs the tests (`.github/workflows/deploy.yml`). A push to `main`
+that passes them deploys whatever changed since the last deploy: the database is backed up and the migrations are
+rehearsed on a copy of that backup before the real ones run; the new API replaces the old one only after its checks
+pass (otherwise the old one comes back); the sites switch in one step; and if the public URLs then fail, everything
+the run switched is rolled back. Migrations must only add things (CI rejects drops and renames), because a rollback
+keeps the migrated database. GitHub signs in to AWS through the `innotech-github-deploy` role (`./deploy.sh ci`), with
+the repository's `production` environment holding the `PRODUCTION_ENV` secret (the contents of `production.env`) and
+the `AWS_DEPLOY_ROLE` variable. Set the repository variable `AUTO_DEPLOY` to `false` to pause deploys;
+`./deploy.sh rollback api|sites` puts the previous release back by hand.
+
 The app **refuses to start** in production if `DEV_SIGN_IN` or `FORCE_REGISTRATION_OPEN` is set, if `SESSION_SECRET` is
 shorter than 32 characters, if `GOOGLE_CLIENT_IDS` is empty, if `CORS_ORIGINS` contains `*`, or if `EMAIL_BACKEND` is not
 set explicitly.

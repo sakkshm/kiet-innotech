@@ -177,7 +177,9 @@ def save_profile(db: Session, user: User, data: ProfileInput, settings: Settings
     profile.club = data.club
     _commit(
         db,
-        dict([("uq_profiles_kiet_roll_number", ("This roll number is already registered. If it is yours, write to innotech@kiet.edu.", 409))]),
+        dict(
+            [("uq_profiles_kiet_roll_number", ("This roll number is already registered. If it is yours, write to innotech@kiet.edu.", 409))]
+        ),
     )
     return profile
 
@@ -470,7 +472,9 @@ def join_with_code(db: Session, user: User, code: str, settings: Settings) -> Te
     # Pending invitations hold places in the team, except the one this student is using now.
     taken = _member_count(db, team.id) + _pending_count(db, team.id) - (1 if own_invitation else 0)
     if taken >= _max_size(team):
-        raise ApiError("This startup entry cannot take members." if team.participant_type == "startup" else "This team is already full.", 409)
+        raise ApiError(
+            "This startup entry cannot take members." if team.participant_type == "startup" else "This team is already full.", 409
+        )
     if not _same_institution(team, profile):
         raise ApiError("This team is from another college or school. All members must be from the same college or school.", 422)
     if error := rules.category_error(team.category, team.participant_type, [*_member_years(db, team.id), profile.year]):
