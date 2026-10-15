@@ -1,16 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, LockOpen, ScrollText } from "lucide-react";
+import { BookOpen, Lock, LockOpen, ScrollText } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Judging, JudgingRound } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
-import { clubDepartment } from "@/lib/content";
+import { clubDepartment, judgeManualUrl } from "@/lib/content";
 import { formatDateTime, roundLabels } from "@/lib/format";
 import { isTypeAdmin, scopeName } from "@/lib/scope";
 import { useQuery } from "@/lib/use-query";
 import { pickParam, useUrlParams } from "@/lib/use-url-params";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClass } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { Field, Select } from "@/components/ui/Field";
 import { Loading, Notice } from "@/components/ui/Notice";
@@ -73,13 +73,21 @@ export function JudgingView() {
               : "The Grand Finale panels and your teams' stalls. Organisers manage the allotments."
         }
         actions={
-          <Field label="Round" htmlFor="judging-round" className="w-48">
-            <Select id="judging-round" value={round} onChange={(e) => update({ round: e.target.value, tab: null })} disabled={rounds.length === 1}>
-              {rounds.map((r) => (
-                <option key={r} value={r}>{roundLabels[r]}</option>
-              ))}
-            </Select>
-          </Field>
+          <div className="flex w-max items-end gap-2">
+            {round === "department" && (
+              <a href={judgeManualUrl} target="_blank" rel="noopener" className={buttonClass("secondary")} title="The PDF manual for department round judges: share it with your judges.">
+                <BookOpen aria-hidden="true" className="size-4" />
+                Judge manual
+              </a>
+            )}
+            <Field label="Round" htmlFor="judging-round" className="w-48">
+              <Select id="judging-round" value={round} onChange={(e) => update({ round: e.target.value, tab: null })} disabled={rounds.length === 1}>
+                {rounds.map((r) => (
+                  <option key={r} value={r}>{roundLabels[r]}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
         }
       />
 

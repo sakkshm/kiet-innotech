@@ -1,17 +1,18 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ArrowRight, CalendarClock, CheckCircle2, Crown, FileDown, Lock, LockOpen, MapPin, QrCode, RefreshCw, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarClock, CheckCircle2, Crown, FileDown, Lock, LockOpen, MapPin, QrCode, RefreshCw, ShieldCheck, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import type { JudgePanel, JudgeTeam } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
+import { judgeManualUrl } from "@/lib/content";
 import { categoryTitle, formatDateTime, plural, roundLabels } from "@/lib/format";
 import { roomLabel, scoringState, slotLabel, slotState, timeLabel } from "@/lib/rooms";
 import { attendanceEnabled } from "@/lib/features";
 import { useNow } from "@/lib/use-now";
 import { yearLabel } from "@/lib/rules";
 import { useQuery } from "@/lib/use-query";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClass } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Textarea } from "@/components/ui/Field";
@@ -67,16 +68,33 @@ export function JudgeView() {
         title="My judging"
         description={`Signed in as ${me.name}. You see only the teams of your own rooms. Once you submit a team's marks they are final, and they stay hidden on screen: hover over or hold the eye button to see them.`}
         actions={
-          <Button variant="secondary" onClick={view.reload} pending={view.loading && !!view.data}>
-            <RefreshCw aria-hidden="true" className="size-4" />
-            Refresh
-          </Button>
+          // w-max: the header would otherwise squeeze the two buttons into a column.
+          <div className="flex w-max gap-2">
+            <a href={judgeManualUrl} target="_blank" rel="noopener" className={buttonClass("secondary")}>
+              <BookOpen aria-hidden="true" className="size-4" />
+              Judge manual
+            </a>
+            <Button variant="secondary" onClick={view.reload} pending={view.loading && !!view.data}>
+              <RefreshCw aria-hidden="true" className="size-4" />
+              Refresh
+            </Button>
+          </div>
         }
       />
       {view.error && <Notice tone="error">{view.error}</Notice>}
       {!view.data && !view.error && <Loading label="Loading your teams" />}
       {view.data && view.data.panels.length === 0 && (
-        <EmptyState title="No room yet">The organisers have not put you in a room yet. This page shows your room and teams as soon as they do.</EmptyState>
+        <EmptyState
+          title="No room yet"
+          action={
+            <a href={judgeManualUrl} target="_blank" rel="noopener" className={buttonClass("secondary", "sm")}>
+              <BookOpen aria-hidden="true" className="size-3.5" />
+              Read the judge manual
+            </a>
+          }
+        >
+          The organisers have not put you in a room yet. This page shows your room and teams as soon as they do.
+        </EmptyState>
       )}
       {view.data?.panels.map((panel) => {
         const next = nextFor(panel);
@@ -255,7 +273,7 @@ function RoomSection({ panel, now, onScore, onAttendance, banner }: { panel: Jud
       {panel.teams.length === 0 ? (
         <p className="px-6 py-8 text-sm text-muted">No teams in this room yet.</p>
       ) : (
-        <ol className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
+        <ol className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
           {panel.teams.map((team, index) => (
             <TeamCard key={team.id} team={team} index={index} open={status.can} onScore={() => onScore(team)} />
           ))}
@@ -270,7 +288,7 @@ function TeamCard({ team, index, open, onScore }: { team: JudgeTeam; index: numb
   const scored = !!team.myScore;
   const scorable = team.status === "submitted";
   return (
-    <li className={`flex flex-col rounded-2xl p-4 ring-1 ring-inset transition ${scored ? "bg-emerald-50/60 ring-emerald-200" : "bg-white ring-line hover:ring-navy-800/25"}`}>
+    <li className={`flex min-w-0 flex-col rounded-2xl p-4 ring-1 ring-inset transition ${scored ? "bg-emerald-50/60 ring-emerald-200" : "bg-white ring-line hover:ring-navy-800/25"}`}>
       <div className="flex items-start gap-3">
         <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl font-display text-sm font-bold ${scored ? "bg-emerald-600 text-white" : "bg-surface text-navy-900 ring-1 ring-inset ring-line"}`}>
           {scored ? <CheckCircle2 aria-label="Submitted" className="size-5" /> : index + 1}
@@ -283,7 +301,10 @@ function TeamCard({ team, index, open, onScore }: { team: JudgeTeam; index: numb
           </p>
           <p className="mt-0.5 line-clamp-2 text-sm text-navy-800">{team.projectTitle}</p>
           <p className="mt-1.5 flex flex-wrap gap-1.5">
-            <Pill tone="navy">Cat {team.category} · {categoryTitle(team.category)}</Pill>
+            {/* Not a Pill: long category names must wrap on a phone instead of pushing the card wider. */}
+            <span className="inline-flex max-w-full rounded-lg bg-navy-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+              Cat {team.category} · {categoryTitle(team.category)}
+            </span>
             {!scorable && <Pill tone="red">{team.status}</Pill>}
           </p>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
