@@ -48,10 +48,10 @@ check_account() {
   local actual
   actual="$(aws sts get-caller-identity --query Account --output text)"
   if [ "$actual" != "$AWS_ACCOUNT_ID" ]; then
-    echo "AWS profile '$AWS_PROFILE' is account $actual, but production.env says $AWS_ACCOUNT_ID. Stopping." >&2
+    echo "AWS credentials (${AWS_PROFILE:-GitHub Actions role}) are account $actual, but production.env says $AWS_ACCOUNT_ID. Stopping." >&2
     exit 1
   fi
-  echo "AWS account $actual ($AWS_PROFILE), region $AWS_REGION, stack $STACK"
+  echo "AWS account $actual (${AWS_PROFILE:-GitHub Actions role}), region $AWS_REGION, stack $STACK"
 }
 
 output() {
