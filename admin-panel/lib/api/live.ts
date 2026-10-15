@@ -179,32 +179,7 @@
  *                  member.removed | invitation.sent | invitation.cancelled | invitation.declined.
  *          Unknown future actions render with their raw action string.
  */
-import type {
-  AdminInput,
-  AttendanceSheet,
-  JudgeView,
-  Judging,
-  Juror,
-  Panel,
-  Rankings,
-  ScanResult,
-  Timetable,
-  RoundState,
-  Score,
-  AdminStudent,
-  AdminTeam,
-  AdminUser,
-  AuditEntry,
-  FinalistBoard,
-  FinalistSummary,
-  Page,
-  PublishResult,
-  Schedule,
-  ScheduleInput,
-  Stats,
-  StudentQuery,
-  TeamQuery,
-} from "../admin-types";
+import type { AdminInput, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, Page, Panel, PublishResult, Rankings, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 import { getSession } from "../auth/session";
 import { ApiError, type AdminApi } from "./contract";
 
@@ -329,6 +304,7 @@ export const liveApi: AdminApi = {
   withdrawTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/withdraw`, { reason }),
   disqualifyTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/disqualify`, { reason }),
   restoreTeam: (teamId, reason, unbanMembers = false) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/restore`, { reason, unbanMembers }),
+  archiveTeams: (teamIds, reason) => request<ArchiveResult>("POST", "/admin/teams/archive", { teamIds, reason }),
   submitTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/submit`, { reason }),
   reopenTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/reopen`, { reason }),
   dissolveTeam: (teamId, reason) => request<void>("POST", `/admin/teams/${id(teamId)}/dissolve`, { reason }),

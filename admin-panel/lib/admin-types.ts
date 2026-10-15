@@ -34,6 +34,7 @@ export type AdminInput = { email: string; name: string; role: AdminRole; departm
 export type AuditAction =
   | "team.created"
   | "team.submitted"
+  | "team.archived"
   | "team.withdrawn"
   | "team.disqualified"
   | "team.restored"
@@ -189,6 +190,7 @@ export type StatusCounts = {
   submitted: number;
   withdrawn: number;
   disqualified: number;
+  archived: number;
 };
 
 export type Stats = {
@@ -618,4 +620,11 @@ export type AdminStudentInput = {
   course: string;
   year: number;
   rollNumber: string;
+};
+
+/** The outcome of archiving draft teams: how many were archived, and which were skipped and why. */
+export type ArchiveResult = {
+  archived: number;
+  skipped: { code: string; name: string; reason: string }[];
+  notFound: number;
 };

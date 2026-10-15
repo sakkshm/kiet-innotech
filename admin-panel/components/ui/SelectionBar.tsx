@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { CheckSquare, Download, X } from "lucide-react";
 import { formatNumber } from "@/lib/format";
 import { Button } from "./Button";
@@ -13,6 +14,7 @@ export function SelectionBar({
   onSelectAll,
   onClear,
   onExport,
+  actions,
 }: {
   count: number;
   noun: { one: string; many: string };
@@ -21,6 +23,8 @@ export function SelectionBar({
   onSelectAll: () => void;
   onClear: () => void;
   onExport: () => void;
+  /** More buttons for the selection, shown before Export. */
+  actions?: ReactNode;
 }) {
   if (count === 0) return null;
   return (
@@ -51,6 +55,7 @@ export function SelectionBar({
           <X aria-hidden="true" className="size-3.5" />
           Clear
         </button>
+        {actions}
         <Button size="sm" onClick={onExport}>
           <Download aria-hidden="true" className="size-3.5" />
           Export selected

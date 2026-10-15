@@ -215,6 +215,7 @@ const lockedMessages: Record<Exclude<StoredTeam["status"], "draft">, string> = {
   submitted: "This team has been submitted and is locked.",
   withdrawn: "This team has been withdrawn. You can leave it and then join or create another team.",
   disqualified: "This team has been disqualified. If you have questions, write to innotech@kiet.edu.",
+  archived: "This team was not submitted before registration closed, so it has been archived.",
 };
 
 function requireDraft(team: StoredTeam) {

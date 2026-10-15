@@ -639,6 +639,7 @@ export const statusLabels: Record<Team["status"], string> = {
   submitted: "Submitted and locked",
   withdrawn: "Withdrawn",
   disqualified: "Disqualified",
+  archived: "Archived",
 };
 
 function TeamFacts({ team }: { team: Team }) {

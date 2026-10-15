@@ -29,7 +29,7 @@ export type Profile = {
 
 export type ProfileInput = Omit<Profile, "userId" | "email" | "createdAt">;
 
-export type TeamStatus = "draft" | "submitted" | "withdrawn" | "disqualified";
+export type TeamStatus = "draft" | "submitted" | "withdrawn" | "disqualified" | "archived";
 
 /** KIET teams go through the department round; other colleges and schools go straight to the finale. */
 export type TeamRoute = "department" | "finale";

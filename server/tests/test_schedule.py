@@ -533,3 +533,44 @@ def test_a_team_that_breaks_the_rules_is_not_submitted(root, student, team_of, r
     refused = root.post(f"/admin/teams/{team['id']}/submit", {"reason": "Asked by email"})
     assert refused.status_code == 422 and "2 to 5 members" in refused.json()["detail"]
     assert root.get(f"/admin/teams/{team['id']}").json()["status"] == "draft"
+
+
+# ---------- Archiving draft teams after their deadline ----------
+
+
+def test_draft_teams_are_archived_only_once_their_registration_closed(root, as_user, student, team_of, real_window):
+    kiet_lead = student("lead@kiet.edu")
+    kiet_draft = team_of(kiet_lead, [student("mate@kiet.edu")])
+    kiet_done = team_of(student("done@kiet.edu"), [student("done2@kiet.edu")], name="Done Team")
+    assert as_user("done@kiet.edu").post(f"/teams/{kiet_done['id']}/submit").status_code == 200
+    college_lead = as_user("c.lead@gmail.com")
+    assert college_lead.put("/me/profile", college_profile()).status_code == 200
+    college_draft = college_lead.post("/teams", team_input(name="College Crew")).json()
+    root.put("/admin/schedule", extended(timedelta(days=-9), timedelta(days=-1), timedelta(days=2)))
+
+    ids = [kiet_draft["id"], kiet_done["id"], college_draft["id"]]
+    assert as_user("cse@kiet.edu").post("/admin/teams/archive", {"team_ids": ids, "reason": "Not submitted"}).status_code == 403
+    result = root.post("/admin/teams/archive", {"team_ids": ids, "reason": "Not submitted by 15 October"}).json()
+    assert result["archived"] == 1
+    assert {s["code"]: s["reason"] for s in result["skipped"]} == {
+        kiet_done["code"]: "not a draft (submitted)",
+        college_draft["code"]: "registration is still open for this team",
+    }
+    team = root.get(f"/admin/teams/{kiet_draft['id']}").json()
+    assert team["status"] == "archived"
+    assert kiet_lead.get("/me/team").json()["status"] == "archived"
+    assert root.get("/admin/teams", params={"status": "archived"}).json()["total"] == 1
+    assert root.get("/admin/stats").json()["teams"]["archived"] == 1
+    assert root.get("/admin/activity", params={"kind": "team"}).json()["items"][0]["action"] == "team.archived"
+
+    # Later: an archived team can still be submitted, restored or disqualified by a super admin.
+    assert root.post(f"/admin/teams/{kiet_draft['id']}/submit", {"reason": "Leader wrote in"}).json()["status"] == "submitted"
+
+
+def test_an_archived_team_can_be_restored_or_disqualified(root, student, team_of, real_window):
+    team = team_of(student("lead@kiet.edu"), [student("mate@kiet.edu")])
+    root.put("/admin/schedule", window(timedelta(days=-9), timedelta(days=-1)))
+    assert root.post("/admin/teams/archive", {"team_ids": [team["id"]], "reason": "Not submitted"}).json()["archived"] == 1
+    assert root.post(f"/admin/teams/{team['id']}/restore", {"reason": "Archived by mistake"}).json()["status"] == "draft"
+    root.post("/admin/teams/archive", {"team_ids": [team["id"]], "reason": "Not submitted"})
+    assert root.post(f"/admin/teams/{team['id']}/disqualify", {"reason": "Did not submit"}).json()["status"] == "disqualified"

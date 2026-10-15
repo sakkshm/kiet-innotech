@@ -11,6 +11,7 @@ import {
   type AdminStudent,
   type AdminTeam,
   type AdminUser,
+  type ArchiveResult,
   type AuditEntry,
   type FinalistBoard,
   type FinalistSummary,
@@ -313,6 +314,7 @@ function counts(teams: AdminTeam[]): StatusCounts {
     submitted: teams.filter((t) => t.status === "submitted").length,
     withdrawn: teams.filter((t) => t.status === "withdrawn").length,
     disqualified: teams.filter((t) => t.status === "disqualified").length,
+    archived: teams.filter((t) => t.status === "archived").length,
   };
 }
 
@@ -661,6 +663,30 @@ export const mockApi: AdminApi = {
     return setStatus(db, admin, team, status, "team.restored", `Restored to ${status}. Reason: ${text}`);
   },
 
+  async archiveTeams(ids, reason) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    requireSuper(admin, "archive teams");
+    const text = requireReason(reason);
+    const closed = windowState(db.schedule.opens, db.schedule.closes) === "closed";
+    const result: ArchiveResult = { archived: 0, skipped: [], notFound: 0 };
+    for (const id of new Set(ids)) {
+      const team = db.teams.find((t) => t.id === id && canSeeTeam(admin, t));
+      if (!team) result.notFound += 1;
+      else if (team.status !== "draft") result.skipped.push({ code: team.code, name: team.name, reason: `not a draft (${team.status})` });
+      else if (!closed) result.skipped.push({ code: team.code, name: team.name, reason: "registration is still open for this team" });
+      else {
+        team.status = "archived";
+        team.invitations = [];
+        log(db, { actorEmail: admin.email, action: "team.archived", teamId: team.id, teamCode: team.code, department: team.department, detail: text });
+        result.archived += 1;
+      }
+    }
+    save(db);
+    return result;
+  },
+
   async submitTeam(id, reason) {
     await delay();
     const db = load();
@@ -668,7 +694,7 @@ export const mockApi: AdminApi = {
     requireSuper(admin, "submit teams");
     const team = findTeam(db, admin, id);
     const text = requireReason(reason);
-    if (team.status !== "draft") throw new ApiError(409, `Only a draft team can be submitted; this team is ${team.status}.`);
+    if (team.status !== "draft" && team.status !== "archived") throw new ApiError(409, `Only a draft or archived team can be submitted; this team is ${team.status}.`);
     const [low, high] = team.participantType === "startup" ? [1, 1] : [2, 5];
     if (team.members.length < low || team.members.length > high) throw new ApiError(422, `This team cannot be submitted: a team needs ${low} to ${high} members.`);
     team.invitations = [];

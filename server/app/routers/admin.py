@@ -20,6 +20,8 @@ from ..schemas import (
     AdminStudentOut,
     AdminTeamInput,
     AdminTeamOut,
+    ArchiveInput,
+    ArchiveOut,
     AttendanceSheet,
     AuditOut,
     AuditPage,
@@ -106,6 +108,12 @@ def create_team(data: AdminTeamInput, admin: CurrentAdmin, db: Db, settings: App
 def reopen_team(team_id: uuid.UUID, data: ReasonInput, admin: CurrentAdmin, db: Db, settings: AppSettings) -> AdminTeamOut:
     """Super admin: sends a submitted team back to draft (registration must be open)."""
     return service.reopen_team(db, admin, settings, team_id, data.reason)
+
+
+@router.post("/teams/archive")
+def archive_teams(data: ArchiveInput, admin: CurrentAdmin, db: Db, settings: AppSettings) -> ArchiveOut:
+    """Super admin: archives draft teams whose registration has closed (others are skipped and listed)."""
+    return service.archive_teams(db, admin, settings, data.team_ids, data.reason)
 
 
 @router.post("/teams/{team_id}/submit")

@@ -15,6 +15,8 @@ export const statusSeries: Series<TeamStatus>[] = [
   { key: "draft", label: "Draft", color: "#2a78d6" },
   { key: "withdrawn", label: "Withdrawn", color: "#ec835a" },
   { key: "disqualified", label: "Disqualified", color: "#d03b3b" },
+  // Not submitted before the deadline: out of the event, in a neutral grey (labels and the legend carry the meaning).
+  { key: "archived", label: "Archived", color: "#9a9cab" },
 ];
 
 /** Participant type is identity: categorical slots 1 to 3, and purple (slot 7) for startups: at least 13 apart from the others when colour-blind. */

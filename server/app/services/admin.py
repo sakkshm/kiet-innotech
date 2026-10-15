@@ -47,6 +47,7 @@ from ..schemas import (
     AdminStudentOut,
     AdminTeamInput,
     AdminTeamOut,
+    ArchiveOut,
     AuditOut,
     CategoryStats,
     DepartmentStats,
@@ -62,6 +63,7 @@ from ..schemas import (
     PublishOut,
     QuotasInput,
     SizeStats,
+    SkippedTeam,
     StatsOut,
     StatusCounts,
     StudentTeamRef,
@@ -77,7 +79,7 @@ from .serializers import invitation_out, profile_out
 logger = logging.getLogger(__name__)
 
 RESULTS_KEY = "results_published"
-STATUSES = ("draft", "submitted", "withdrawn", "disqualified")
+STATUSES = ("draft", "submitted", "withdrawn", "disqualified", "archived")
 
 
 def _is_super(admin: Admin) -> bool:
@@ -321,7 +323,7 @@ class Paging(BaseModel):
 class TeamFilters(Paging):
     department: str | None = None
     category: int | None = Field(default=None, ge=1, le=8)
-    status: Literal["draft", "submitted", "withdrawn", "disqualified"] | None = None
+    status: Literal["draft", "submitted", "withdrawn", "disqualified", "archived"] | None = None
     type: rules.ParticipantType | None = None
     route: Literal["department", "finale"] | None = None
     # Startup and COE KIET entries: waiting for an admin to accept them, or already accepted.
@@ -443,8 +445,8 @@ def change_status(
 
     published = _results_published(db) is not None
     if action == "restore":
-        if team.status not in ("withdrawn", "disqualified"):
-            raise ApiError("Only withdrawn or disqualified teams can be restored.", 409)
+        if team.status not in ("withdrawn", "disqualified", "archived"):
+            raise ApiError("Only withdrawn, disqualified or archived teams can be restored.", 409)
         # Members of a withdrawn team may have left to join other teams.
         leader_still_in = db.scalar(select(TeamMember.user_id).where(TeamMember.team_id == team.id, TeamMember.user_id == team.leader_id))
         member_count = _member_counts(db, [team.id]).get(team.id, 0)
@@ -470,7 +472,8 @@ def change_status(
                     db, admin.email, "student.unbanned", team, f"With the restored team {team.code}: {', '.join(m.email for m in lifted)}"
                 )
     else:
-        if team.status not in ("draft", "submitted"):
+        # Archived teams can still be withdrawn or disqualified later.
+        if team.status not in ("draft", "submitted", "archived"):
             raise ApiError(f"This team is already {team.status}.", 409)
         team.status = "withdrawn" if action == "withdraw" else "disqualified"
         team.status_reason = reason
@@ -698,8 +701,8 @@ def submit_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> A
 
     _require_super(admin, "submit teams")
     team = _visible_team(db, admin, team_id, lock=True)
-    if team.status != "draft":
-        raise ApiError(f"Only a draft team can be submitted; this team is {team.status}.", 409)
+    if team.status not in ("draft", "archived"):
+        raise ApiError(f"Only a draft or archived team can be submitted; this team is {team.status}.", 409)
     if team.route == "department" and _results_published(db) is not None:
         raise ApiError("Department results have been published, so a KIET team can no longer join the department round.", 409)
     cancelled = db.execute(
@@ -716,6 +719,36 @@ def submit_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> A
     audit.record(db, admin.email, "team.submitted", team, f"Submitted by an organiser. Reason: {reason}.{note}")
     db.commit()
     return admin_teams(db, [team])[0]
+
+
+def archive_teams(db: Session, admin: Admin, settings: Settings, team_ids: list[uuid.UUID], reason: str) -> ArchiveOut:
+    """
+    Archives draft teams whose registration has closed (KIET and startups on the general date, other colleges and
+    schools on the later one). Super admins only. Members, details and history are kept; a super admin can restore or
+    submit an archived team later. Teams that are not drafts, or whose registration is still open, are skipped.
+    """
+    _require_super(admin, "archive teams")
+    window = schedule.load(db, settings)
+    # One order for the locks, so two organisers archiving overlapping selections never deadlock.
+    teams = list(db.scalars(select(Team).where(Team.id.in_(set(team_ids)), team_scope(admin)).order_by(Team.id).with_for_update()))
+    archived, skipped = [], []
+    for team in teams:
+        if team.status != "draft":
+            skipped.append(SkippedTeam(code=team.code, name=team.name, reason=f"not a draft ({team.status})"))
+        elif window.registration_state(extended=schedule.is_extended(team)) != "closed":
+            skipped.append(SkippedTeam(code=team.code, name=team.name, reason="registration is still open for this team"))
+        else:
+            team.status, team.status_reason = "archived", reason
+            db.execute(
+                update(Invitation)
+                .where(Invitation.team_id == team.id, Invitation.status == "pending")
+                .values(status="cancelled", responded_at=utcnow())
+            )
+            audit.record(db, admin.email, "team.archived", team, reason)
+            archived.append(team.code)
+    missing = len(set(team_ids)) - len(teams)
+    db.commit()
+    return ArchiveOut(archived=len(archived), skipped=skipped, not_found=missing)
 
 
 def dissolve_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> None:
@@ -866,7 +899,7 @@ def ban_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str, ban_mem
     """Disqualifies a team (it leaves the competition) and, if asked, bans every member from the portal."""
     _require_super(admin, "ban teams")
     team = _visible_team(db, admin, team_id)
-    if team.status in ("draft", "submitted"):
+    if team.status in ("draft", "submitted", "archived"):
         change_status(db, admin, team_id, "disqualify", f"Banned: {reason}")
     elif not ban_members:
         raise ApiError(f"This team is already {team.status}.", 409)

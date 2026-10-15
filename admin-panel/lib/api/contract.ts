@@ -1,38 +1,4 @@
-import type {
-  ActivityQuery,
-  AdminInput,
-  AdminStudentInput,
-  AdminTeamInput,
-  AttendanceSheet,
-  JudgeView,
-  Judging,
-  JudgingRound,
-  Juror,
-  JurorInput,
-  Panel,
-  PanelInput,
-  PanelPlace,
-  QuotaCell,
-  ScanResult,
-  Timetable,
-  Rankings,
-  RoundState,
-  Score,
-  AdminStudent,
-  AdminTeam,
-  AdminUser,
-  AuditEntry,
-  FinalistBoard,
-  FinalistSummary,
-  NominationInput,
-  Page,
-  PublishResult,
-  Schedule,
-  ScheduleInput,
-  Stats,
-  StudentQuery,
-  TeamQuery,
-} from "../admin-types";
+import type { ActivityQuery, AdminInput, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -56,6 +22,8 @@ export interface AdminApi {
   reopenTeam(id: string, reason: string): Promise<AdminTeam>;
   /** Super admin: submits a draft team for its students, whether or not registration is open (late entries). */
   submitTeam(id: string, reason: string): Promise<AdminTeam>;
+  /** Super admin: archives draft teams whose registration has closed; the rest are skipped and listed. */
+  archiveTeams(ids: string[], reason: string): Promise<ArchiveResult>;
   /** Super admin: deletes a team and frees its members. The history stays in the audit log. */
   dissolveTeam(id: string, reason: string): Promise<void>;
   /** Accepts a submitted startup or COE KIET entry as a legal entry for the Grand Finale. */

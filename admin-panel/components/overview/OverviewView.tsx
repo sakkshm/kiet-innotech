@@ -264,7 +264,7 @@ function Charts({ stats, startupAdmin }: { stats: Stats; startupAdmin: boolean }
             key: String(r.category),
             label: `${r.category}. ${categoryTitle(r.category)}`,
             href: `/teams?category=${r.category}`,
-            values: { submitted: r.submitted, draft: r.draft, withdrawn: r.withdrawn, disqualified: r.disqualified },
+            values: { submitted: r.submitted, draft: r.draft, withdrawn: r.withdrawn, disqualified: r.disqualified, archived: r.archived },
           }))}
         />
       </ChartCard>
@@ -288,7 +288,7 @@ function Charts({ stats, startupAdmin }: { stats: Stats; startupAdmin: boolean }
               label: r.department,
               hint: `${formatNumber(r.students)} students`,
               href: `/teams?department=${encodeURIComponent(r.department)}`,
-              values: { submitted: r.submitted, draft: r.draft, withdrawn: r.withdrawn, disqualified: r.disqualified },
+              values: { submitted: r.submitted, draft: r.draft, withdrawn: r.withdrawn, disqualified: r.disqualified, archived: r.archived },
             }))}
           />
         </ChartCard>

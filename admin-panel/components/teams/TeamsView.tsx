@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Plus, X } from "lucide-react";
+import { Archive, Download, Plus, X } from "lucide-react";
 import { api, errorMessage, MAX_SEARCH_LENGTH } from "@/lib/api";
-import type { AdminTeam, TeamQuery, TeamSort } from "@/lib/admin-types";
+import type { AdminTeam, ArchiveResult, TeamQuery, TeamSort } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { downloadTeams, downloadTeamsExcel } from "@/lib/export";
@@ -16,6 +16,7 @@ import { intParam, pageSizeParam, pickParam, useUrlParams } from "@/lib/use-url-
 import { useSelection } from "@/lib/use-selection";
 import { teamHref } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/Dialog";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ExportDialog, type ExportFormat, type ExportScope } from "@/components/ui/ExportDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -32,7 +33,7 @@ import { YearChips } from "./YearChips";
 import { SearchBox } from "@/components/ui/SearchBox";
 import { numClass, SortableTh, TableFrame, tdClass, Th } from "@/components/ui/Table";
 
-const statuses: TeamStatus[] = ["draft", "submitted", "withdrawn", "disqualified"];
+const statuses: TeamStatus[] = ["draft", "submitted", "withdrawn", "disqualified", "archived"];
 const types: ParticipantType[] = ["kiet", "college", "school", "startup"];
 const routes: TeamRoute[] = ["department", "finale"];
 const approvals = ["pending", "approved"] as const;
@@ -60,6 +61,8 @@ export function TeamsView() {
   const [selectingAll, setSelectingAll] = useState(false);
   const [selectError, setSelectError] = useState<string | null>(null);
   const selection = useSelection(teamKey);
+  const [archiving, setArchiving] = useState(false);
+  const [archived, setArchived] = useState<ArchiveResult | null>(null);
 
   const query: TeamQuery = {
     department: isSuper ? pickParam(params, "department", departments) : undefined,
@@ -77,7 +80,7 @@ export function TeamsView() {
     pageSize: pageSizeParam(params),
   };
   const key = JSON.stringify(query);
-  const { data, error, loading } = useQuery(key, () => api.listTeams(query));
+  const { data, error, loading, reload } = useQuery(key, () => api.listTeams(query));
   const filtered = Boolean(query.department || query.category || query.status || query.type || query.route || query.approval || query.year || query.leaderYear || query.q);
   const yearChoices = [
     // A school admin sees school classes only; a college admin college years only.
@@ -274,7 +277,55 @@ export function TeamsView() {
         onSelectAll={selectAllMatching}
         onClear={selection.clear}
         onExport={() => setExportOpen(true)}
+        actions={
+          isSuper && (
+            <Button size="sm" variant="secondary" onClick={() => setArchiving(true)}>
+              <Archive aria-hidden="true" className="size-3.5" />
+              Archive drafts
+            </Button>
+          )
+        }
       />
+      {archived && (
+        <Notice tone={archived.skipped.length ? "warning" : "success"} title={`${plural(archived.archived, "team")} archived`}>
+          {archived.skipped.length > 0 && (
+            <>
+              {plural(archived.skipped.length, "team")} skipped:{" "}
+              {archived.skipped
+                .slice(0, 8)
+                .map((s) => `${s.code} (${s.reason})`)
+                .join(", ")}
+              {archived.skipped.length > 8 ? ` and ${archived.skipped.length - 8} more` : ""}.
+            </>
+          )}
+        </Notice>
+      )}
+      {archiving && (
+        <ConfirmDialog
+          title={`Archive ${plural(selection.size, "selected team")}?`}
+          description={
+            <>
+              Only <strong className="text-navy-900">draft</strong> teams whose registration has closed are archived (KIET, COE KIET and startups after
+              15 October; other colleges and schools after 21 October). Others are skipped and listed. Members, details and history are kept, and their
+              students see that their registration is archived. A super admin can restore, submit or disqualify an archived team later.
+            </>
+          }
+          confirmLabel="Archive"
+          tone="danger"
+          reasonLabel="Reason"
+          onClose={() => setArchiving(false)}
+          onConfirm={async (reason) => {
+            const result = await api.archiveTeams(
+              selection.rows.map((t) => t.id),
+              reason,
+            );
+            setArchiving(false);
+            setArchived(result);
+            selection.clear();
+            reload();
+          }}
+        />
+      )}
       {selectError && <Notice tone="error">{selectError}</Notice>}
       {error && <Notice tone="error">{error}</Notice>}
       {!data && !error && <Loading label="Loading teams" />}

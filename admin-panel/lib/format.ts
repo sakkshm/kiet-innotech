@@ -55,6 +55,7 @@ export const statusLabels: Record<TeamStatus, string> = {
   submitted: "Submitted",
   withdrawn: "Withdrawn",
   disqualified: "Disqualified",
+  archived: "Archived",
 };
 
 export const resultLabels: Record<TeamResult, string> = {
@@ -91,6 +92,7 @@ export const typeShortLabels: Record<ParticipantType, string> = {
 export const auditLabels: Record<AuditAction, string> = {
   "team.created": "Team created",
   "team.submitted": "Team submitted",
+  "team.archived": "Team archived",
   "team.withdrawn": "Team withdrawn",
   "team.disqualified": "Team disqualified",
   "team.restored": "Team restored",

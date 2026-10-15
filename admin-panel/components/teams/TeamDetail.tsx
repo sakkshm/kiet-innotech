@@ -200,13 +200,13 @@ function TeamView({ id }: { id: string }) {
 
   const t = team.data;
   const canWithdraw = t.status === "draft" || t.status === "submitted";
-  const canDisqualify = isSuper && canWithdraw;
-  const canRestore = isSuper && (t.status === "withdrawn" || t.status === "disqualified");
+  const canDisqualify = isSuper && (canWithdraw || t.status === "archived");
+  const canRestore = isSuper && (t.status === "withdrawn" || t.status === "disqualified" || t.status === "archived");
   const canBan = isSuper;
   const bannedCount = t.members.filter((m) => m.banned).length;
   const canReopen = isSuper && t.status === "submitted";
   // Late entries: a super admin can submit a draft team for its students, e.g. after the deadline.
-  const canSubmit = isSuper && t.status === "draft";
+  const canSubmit = isSuper && (t.status === "draft" || t.status === "archived");
   const canDissolve = isSuper;
   // Startup and COE KIET entries qualify for the Grand Finale only once their admin has accepted them.
   const isApprover = isSuper || admin.role === "startup_admin" || (admin.role === "admin" && admin.department === clubDepartment);
@@ -332,7 +332,7 @@ function TeamView({ id }: { id: string }) {
             </div>
           )}
         </header>
-        {awaitingApproval && t.status !== "withdrawn" && t.status !== "disqualified" && (
+        {awaitingApproval && t.status !== "withdrawn" && t.status !== "disqualified" && t.status !== "archived" && (
           <Notice tone="warning" title="Waiting for approval">
             {t.status === "submitted"
               ? "This entry does not qualify for the Grand Finale until it is accepted as a legal entry. The students have been told to contact the coordinator or write to innotech@kiet.edu."

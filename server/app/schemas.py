@@ -493,6 +493,7 @@ class StatusCounts(BaseModel):
     submitted: int = 0
     withdrawn: int = 0
     disqualified: int = 0
+    archived: int = 0
 
 
 class TypeStats(BaseModel):
@@ -1180,3 +1181,21 @@ class JudgeOut(BaseModel):
     panels: list[JudgePanelOut]
     # So the page counts down by the server's clock, not the phone's.
     server_time: datetime
+
+
+class ArchiveInput(Input):
+    team_ids: list[uuid.UUID] = Field(min_length=1, max_length=5000)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class SkippedTeam(BaseModel):
+    code: str
+    name: str
+    reason: str
+
+
+class ArchiveOut(BaseModel):
+    archived: int
+    skipped: list[SkippedTeam]
+    # Ids that do not exist or are outside the caller's scope.
+    not_found: int = 0

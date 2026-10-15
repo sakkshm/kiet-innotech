@@ -95,7 +95,7 @@ class Team(Base):
     __tablename__ = "teams"
     __table_args__ = (
         CheckConstraint("category BETWEEN 1 AND 8", name="category"),
-        CheckConstraint("status IN ('draft', 'submitted', 'withdrawn', 'disqualified')", name="status"),
+        CheckConstraint("status IN ('draft', 'submitted', 'withdrawn', 'disqualified', 'archived')", name="status"),
         CheckConstraint("result IN ('pending', 'finalist', 'not_selected')", name="result"),
         CheckConstraint("route IN ('department', 'finale')", name="route"),
     )

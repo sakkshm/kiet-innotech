@@ -29,6 +29,7 @@ const statusTones: Record<TeamStatus, PillTone> = {
   submitted: "green",
   withdrawn: "red",
   disqualified: "red",
+  archived: "slate",
 };
 
 export function StatusPill({ status }: { status: TeamStatus }) {
