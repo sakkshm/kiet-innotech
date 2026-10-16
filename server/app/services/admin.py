@@ -779,8 +779,8 @@ def edit_student(db: Session, admin: Admin, user_id: uuid.UUID, data: StudentEdi
                 f"{profile.full_name} is in team {team.code}, so their college or school cannot change. Remove them from the team first.",
                 409,
             )
-        if (data.department == rules.CLUB_DEPARTMENT) != (profile.department == rules.CLUB_DEPARTMENT):
-            raise ApiError("That would move them between COE KIET and a department. Remove them from the team first.", 409)
+        # A team follows its leader's department (and route), so only the leader's department is tied to the team; a
+        # member of a department team who chose the wrong department (e.g. COE) can simply be corrected.
         if team.leader_id == user_id and data.department != profile.department:
             if blocker := _department_change_blocker(db, team, data.department):
                 raise ApiError(blocker, 409)

@@ -57,9 +57,16 @@ def test_a_student_in_a_team_cannot_change_college_or_break_the_team(root_and_te
     moved = root.put(f"/admin/students/{uid}", profile_body(department="IT", roll_number=lead["roll"]))
     assert moved.status_code == 200, moved.json()
     assert root.get(f"/admin/teams/{team['id']}").json()["department"] == "IT"
-    # Moving between COE KIET and a department is refused while in a team.
+    # A leader cannot move between COE KIET and a department: that would change the team's route.
     coe = root.put(f"/admin/students/{uid}", profile_body(department="COE", club="Robotics Club", roll_number=lead["roll"]))
     assert coe.status_code == 409
+    # A member who picked the wrong department (COE) can be corrected, and the team is untouched.
+    mate_id = student_id(root, "mate@kiet.edu")
+    wrong = root.put(f"/admin/students/{mate_id}", profile_body(department="COE", club="AI Club", roll_number="2300290100222"))
+    assert wrong.status_code == 200, wrong.json()
+    fixed = root.put(f"/admin/students/{mate_id}", profile_body(department="CSE(AI)", roll_number="2300290100222"))
+    assert fixed.status_code == 200 and fixed.json()["department"] == "CSE(AI)" and fixed.json()["club"] == ""
+    assert root.get(f"/admin/teams/{team['id']}").json()["department"] == "IT"
 
 
 import pytest  # noqa: E402
