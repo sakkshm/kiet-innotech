@@ -66,7 +66,10 @@ from ..schemas import (
     SkippedTeam,
     StatsOut,
     StatusCounts,
+    StudentEditInput,
     StudentTeamRef,
+    TeamEditInput,
+    TeamMemberInput,
     TeamSummaryOut,
     TimelinePoint,
     TypeStats,
@@ -717,6 +720,236 @@ def submit_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> A
     team.status, team.submitted_at = "submitted", utcnow()
     note = f" {cancelled} pending invitation(s) cancelled." if cancelled else ""
     audit.record(db, admin.email, "team.submitted", team, f"Submitted by an organiser. Reason: {reason}.{note}")
+    db.commit()
+    return admin_teams(db, [team])[0]
+
+
+# ---------- Editing students and teams (super admins) ----------
+
+PROFILE_FIELDS = ("full_name", "participant_type", "institution", "city", "department", "course", "year", "roll_number", "club")
+
+
+def _lock_membership(db: Session, user_id: uuid.UUID) -> tuple[TeamMember | None, Team | None]:
+    """The student's membership and its team, the team locked."""
+    membership = db.scalar(select(TeamMember).where(TeamMember.user_id == user_id))
+    if membership is None:
+        return None, None
+    team = db.scalar(select(Team).where(Team.id == membership.team_id).with_for_update().execution_options(populate_existing=True))
+    return membership, team
+
+
+def _department_change_blocker(db: Session, team: Team, department: str | None) -> str | None:
+    """Why a KIET team cannot change department (it follows its leader's), or None."""
+    if department == team.department:
+        return None
+    if (department == rules.CLUB_DEPARTMENT) != (team.department == rules.CLUB_DEPARTMENT):
+        return (
+            "That would move the team between COE KIET and a department, which changes its route. Dissolve it and create it again instead."
+        )
+    if team.result == "finalist" or db.get(FinalistNomination, team.id) is not None:
+        return "This team is nominated as a finalist for its department, so its department cannot change."
+    return _judging_blocker(db, team)
+
+
+def edit_student(db: Session, admin: Admin, user_id: uuid.UUID, data: StudentEditInput) -> AdminStudentOut:
+    """
+    Corrects a student's profile. The registration window does not apply. Inside a team the details the team depends
+    on stay consistent: the college or school cannot change, a department change moves the team only when its leader
+    changes department, and a submitted team must stay valid. The email (the sign-in) is not editable.
+    """
+    from .students import _commit
+
+    _require_super(admin, "edit student profiles")
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+    profile = db.scalar(select(Profile).where(Profile.user_id == user_id).with_for_update().execution_options(populate_existing=True))
+    if user is None or profile is None:
+        raise ApiError("Student not found.", 404)
+    if data.participant_type not in rules.allowed_participant_types(user.email):
+        raise ApiError(
+            "A @kiet.edu email is a KIET student (or a startup)."
+            if rules.is_kiet_email(user.email)
+            else "A KIET student signs in with a @kiet.edu email, so this account cannot be a KIET student.",
+            422,
+        )
+    key = rules.institution_key(data.participant_type, data.institution, data.city)
+    _, team = _lock_membership(db, user_id)
+    if team is not None:
+        if data.participant_type != profile.participant_type or key != profile.institution_key:
+            raise ApiError(
+                f"{profile.full_name} is in team {team.code}, so their college or school cannot change. Remove them from the team first.",
+                409,
+            )
+        if (data.department == rules.CLUB_DEPARTMENT) != (profile.department == rules.CLUB_DEPARTMENT):
+            raise ApiError("That would move them between COE KIET and a department. Remove them from the team first.", 409)
+        if team.leader_id == user_id and data.department != profile.department:
+            if blocker := _department_change_blocker(db, team, data.department):
+                raise ApiError(blocker, 409)
+            team.department = data.department
+        if data.year != profile.year:
+            # The category's year rules must still hold for the whole team, drafts included.
+            years = [
+                data.year if member_id == user_id else year
+                for member_id, year in db.execute(
+                    select(TeamMember.user_id, Profile.year)
+                    .join(Profile, Profile.user_id == TeamMember.user_id)
+                    .where(TeamMember.team_id == team.id)
+                )
+            ]
+            if error := rules.category_error(team.category, team.participant_type, years):
+                raise ApiError(f"Changing the year would break the team's category rules: {error}", 422)
+
+    changes = []
+    for field in PROFILE_FIELDS:
+        old, new = getattr(profile, field), getattr(data, field)
+        if old != new:
+            changes.append(f"{field}: {old!r} -> {new!r}")
+    if data.phone != profile.phone:
+        changes.append("phone changed")
+    if not changes:
+        raise ApiError("Nothing has changed.", 409)
+    profile.full_name, profile.phone = data.full_name, data.phone
+    profile.participant_type, profile.institution, profile.institution_key = data.participant_type, data.institution, key
+    profile.city, profile.department, profile.course = data.city, data.department, data.course
+    profile.year, profile.roll_number, profile.club = data.year, data.roll_number, data.club
+    audit.record(
+        db,
+        admin.email,
+        "student.edited",
+        team,
+        f"{user.email}: {'; '.join(changes)}. Reason: {data.reason}",
+        department=profile.department,
+        participant_type=profile.participant_type,
+    )
+    _commit(db, {"uq_profiles_kiet_roll_number": ("This roll number is already registered to another student.", 409)})
+    return _one_student(db, admin, user_id)
+
+
+def edit_team(db: Session, admin: Admin, team_id: uuid.UUID, data: TeamEditInput) -> AdminTeamOut:
+    """Changes a team's name, category, domain, project title and abstract, whatever its status."""
+    from .students import NAME_TAKEN, _commit
+
+    _require_super(admin, "edit teams")
+    team = _visible_team(db, admin, team_id, lock=True)
+    new_key = rules.normalise_team_name(data.name)
+    if data.category != team.category:
+        years = _member_years(db, [team.id]).get(team.id, [])
+        if error := rules.category_error(data.category, team.participant_type, [year for _, year in years]):
+            raise ApiError(error, 422)
+        if db.scalar(select(func.count()).select_from(Score).where(Score.team_id == team.id)):
+            raise ApiError("This team has already been scored on its category's rubric, so the category cannot change.", 409)
+    changes = [
+        f"{label}: {old!r} -> {new!r}"
+        for label, old, new in (
+            ("name", team.name, data.name),
+            ("category", team.category, data.category),
+            ("domain", team.domain, data.domain),
+            ("project title", team.project_title, data.project_title),
+        )
+        if old != new
+    ]
+    if data.abstract != team.abstract:
+        changes.append("abstract changed")
+    if not changes:
+        raise ApiError("Nothing has changed.", 409)
+    team.name, team.name_key, team.category = data.name, new_key, data.category
+    team.domain, team.project_title, team.abstract = data.domain, data.project_title, data.abstract
+    audit.record(db, admin.email, "team.edited", team, f"{'; '.join(changes)}. Reason: {data.reason}")
+    _commit(db, dict([NAME_TAKEN]))
+    return admin_teams(db, [team])[0]
+
+
+def _check_team_valid_after(db: Session, team: Team) -> None:
+    """A submitted team must stay a valid one after a member change."""
+    from .students import submission_problem
+
+    if team.status == "submitted" and (problem := submission_problem(db, team)):
+        db.rollback()
+        raise ApiError(f"The team would no longer be valid ({problem}). Send it back to draft first, or fix the members first.", 409)
+
+
+def add_team_member(db: Session, admin: Admin, team_id: uuid.UUID, data: TeamMemberInput) -> AdminTeamOut:
+    """Adds a registered student to a team, whatever its status (except withdrawn or disqualified). The team rules still apply."""
+    from .students import ALREADY_IN_TEAM, _commit, _decline_pending_invitations
+
+    _require_super(admin, "change team members")
+    team = _visible_team(db, admin, team_id, lock=True)
+    if team.status in ("withdrawn", "disqualified"):
+        raise ApiError(f"This team is {team.status}. Restore it first.", 409)
+    row = db.execute(
+        select(User, Profile)
+        .join(Profile, Profile.user_id == User.id)
+        .where(User.email == data.email)
+        .with_for_update(of=Profile)
+        .execution_options(populate_existing=True)
+    ).first()
+    if row is None:
+        raise ApiError(f"No registered student uses {data.email}. They must sign in and complete their profile first.", 422)
+    user, profile = row
+    if user.banned_at is not None:
+        raise ApiError(f"{data.email} is banned, so they cannot be in a team.", 422)
+    taken = db.execute(select(Team.number).join(TeamMember, TeamMember.team_id == Team.id).where(TeamMember.user_id == user.id)).first()
+    if taken:
+        raise ApiError(f"{data.email} is already in team IT26-{taken[0]:04d}.", 409)
+    _, high = rules.team_size_limits(team.participant_type)
+    members = _member_years(db, [team.id]).get(team.id, [])
+    if len(members) + 1 > high:
+        raise ApiError("A startup entry has one member." if high == 1 else f"A team can have at most {high} members.", 422)
+    if profile.participant_type != team.participant_type or (
+        team.participant_type != "kiet" and profile.institution_key != team.institution_key
+    ):
+        raise ApiError(f"{data.email} is not from the same college or school as the team.", 422)
+    if error := rules.category_error(team.category, team.participant_type, [year for _, year in members] + [profile.year]):
+        raise ApiError(error, 422)
+    db.add(TeamMember(team_id=team.id, user_id=user.id, role="member", joined_at=utcnow()))
+    _decline_pending_invitations(db, user.email)
+    db.flush()
+    _check_team_valid_after(db, team)
+    audit.record(db, admin.email, "team.member_added", team, f"{data.email} added by an organiser. Reason: {data.reason}")
+    _commit(db, dict([ALREADY_IN_TEAM]))
+    return admin_teams(db, [team])[0]
+
+
+def remove_team_member(db: Session, admin: Admin, team_id: uuid.UUID, user_id: uuid.UUID, reason: str) -> AdminTeamOut:
+    """Takes a member out of a team (the leader first has to hand over). The student can then join another team."""
+    _require_super(admin, "change team members")
+    team = _visible_team(db, admin, team_id, lock=True)
+    membership = db.scalar(select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.user_id == user_id))
+    if membership is None:
+        raise ApiError("This student is not in the team.", 404)
+    if team.leader_id == user_id:
+        raise ApiError("This is the team leader. Make another member the leader first, or dissolve the team.", 409)
+    email = db.scalar(select(User.email).where(User.id == user_id)) or ""
+    db.delete(membership)
+    db.execute(delete(Attendance).where(Attendance.user_id == user_id))
+    db.flush()
+    _check_team_valid_after(db, team)
+    audit.record(db, admin.email, "team.member_removed", team, f"{email} removed by an organiser. Reason: {reason}")
+    db.commit()
+    return admin_teams(db, [team])[0]
+
+
+def set_team_leader(db: Session, admin: Admin, team_id: uuid.UUID, user_id: uuid.UUID, reason: str) -> AdminTeamOut:
+    """Makes another member the team leader. A KIET team follows its leader's department, so that may be blocked once judging has begun."""
+    _require_super(admin, "change team members")
+    team = _visible_team(db, admin, team_id, lock=True)
+    if team.leader_id == user_id:
+        raise ApiError("This student already leads the team.", 409)
+    new = db.scalar(select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.user_id == user_id))
+    if new is None:
+        raise ApiError("This student is not in the team.", 404)
+    profile = db.get(Profile, user_id)
+    assert profile is not None
+    if team.participant_type == "kiet" and profile.department != team.department:
+        if blocker := _department_change_blocker(db, team, profile.department):
+            raise ApiError(f"{blocker} Choose a leader from {team.department}.", 409)
+        team.department = profile.department
+    old = db.scalar(select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.user_id == team.leader_id))
+    if old is not None:
+        old.role = "member"
+    new.role = "leader"
+    team.leader_id = user_id
+    email = db.scalar(select(User.email).where(User.id == user_id)) or ""
+    audit.record(db, admin.email, "team.leader_changed", team, f"{email} is the new leader. Reason: {reason}")
     db.commit()
     return admin_teams(db, [team])[0]
 

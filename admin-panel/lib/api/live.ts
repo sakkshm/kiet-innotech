@@ -136,6 +136,10 @@
  *          published finalist or a team in judging.
  *   POST   /admin/students    body ProfileInput + { email } → AdminStudent (201). Scoped like the student list.
  *   POST   /admin/students/{user_id}/ban | /unban   (super_admin) body { reason } → AdminStudent
+ *   PUT    /admin/students/{user_id}            (super_admin) body StudentEditInput + reason → AdminStudent
+ *   PUT    /admin/teams/{id}                    (super_admin) body { name, category, domain, project_title, abstract, reason } → AdminTeam
+ *   POST   /admin/teams/{id}/members            (super_admin) body { email, reason } → AdminTeam
+ *   POST   /admin/teams/{id}/members/{user_id}/remove | /leader   (super_admin) → AdminTeam
  *   POST   /admin/students/{user_id}/delete   (super_admin) body { reason } → { message }
  *   POST   /admin/teams/{id}/ban   (super_admin) body { reason, ban_members } → AdminTeam (disqualified)
  *
@@ -314,6 +318,11 @@ export const liveApi: AdminApi = {
   listStudents: (query: StudentQuery) => request<Page<AdminStudent>>("GET", `/admin/students${queryString(query)}`),
   exportStudents: (query: StudentQuery) =>
     request<AdminStudent[]>("GET", `/admin/students/export${queryString(withoutPaging(query))}`),
+  editStudent: (userId, input) => request<AdminStudent>("PUT", `/admin/students/${id(userId)}`, input),
+  editTeam: (teamId, input) => request<AdminTeam>("PUT", `/admin/teams/${id(teamId)}`, input),
+  addTeamMember: (teamId, email, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/members`, { email, reason }),
+  removeTeamMember: (teamId, userId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/members/${id(userId)}/remove`, { reason }),
+  setTeamLeader: (teamId, userId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/leader`, { userId, reason }),
   createStudent: (input) => request<AdminStudent>("POST", "/admin/students", input),
   banStudent: (userId, reason) => request<AdminStudent>("POST", `/admin/students/${id(userId)}/ban`, { reason }),
   unbanStudent: (userId, reason) => request<AdminStudent>("POST", `/admin/students/${id(userId)}/unban`, { reason }),

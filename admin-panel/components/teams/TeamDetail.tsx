@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { ArrowLeft, Ban, BadgeCheck, RotateCcw, Send, ShieldX, Trash2, Undo2, UserMinus } from "lucide-react";
+import { ArrowLeft, Ban, BadgeCheck, Crown, Pencil, RotateCcw, Send, ShieldX, Trash2, Undo2, UserMinus, UserPlus, UserX } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { AdminTeam } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -16,10 +16,12 @@ import { AuditList } from "@/components/audit/AuditList";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Field, Input } from "@/components/ui/Field";
 import { Loading, Notice } from "@/components/ui/Notice";
 import { SectionTitle } from "@/components/ui/PageHeader";
 import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
 import { TableFrame, tdClass, Th } from "@/components/ui/Table";
+import { EditTeamDialog } from "./EditTeamDialog";
 
 type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove" | "submit";
 
@@ -183,6 +185,10 @@ function TeamView({ id }: { id: string }) {
   const [banMembers, setBanMembers] = useState(true);
   const [unbanMembers, setUnbanMembers] = useState(true);
   const [done, setDone] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [addingMember, setAddingMember] = useState(false);
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [memberAction, setMemberAction] = useState<{ kind: "remove" | "leader"; userId: string; name: string } | null>(null);
 
   if (notFound && !team.data) return <TeamNotFound known />;
 
@@ -207,6 +213,9 @@ function TeamView({ id }: { id: string }) {
   const canReopen = isSuper && t.status === "submitted";
   // Late entries: a super admin can submit a draft team for its students, e.g. after the deadline.
   const canSubmit = isSuper && (t.status === "draft" || t.status === "archived");
+  // Super admins can edit details and change members whatever the team's status (not while withdrawn or disqualified).
+  const canEdit = isSuper;
+  const canChangeMembers = isSuper && t.status !== "withdrawn" && t.status !== "disqualified";
   const canDissolve = isSuper;
   // Startup and COE KIET entries qualify for the Grand Finale only once their admin has accepted them.
   const isApprover = isSuper || admin.role === "startup_admin" || (admin.role === "admin" && admin.department === clubDepartment);
@@ -273,7 +282,7 @@ function TeamView({ id }: { id: string }) {
               {t.approvalRequired && <Pill tone={t.approvedAt ? "green" : "orange"}>{t.approvedAt ? "Accepted" : "Awaiting approval"}</Pill>}
             </div>
           </div>
-          {(canApprove || canUnapprove || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
+          {(canEdit || canApprove || canUnapprove || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
             <div className="flex flex-wrap gap-2">
               {canApprove && (
                 <Button onClick={() => setAction("approve")}>
@@ -285,6 +294,12 @@ function TeamView({ id }: { id: string }) {
                 <Button variant="secondary" onClick={() => setAction("unapprove")}>
                   <BadgeCheck aria-hidden="true" className="size-4" />
                   Withdraw acceptance
+                </Button>
+              )}
+              {canEdit && (
+                <Button variant="secondary" onClick={() => setEditing(true)}>
+                  <Pencil aria-hidden="true" className="size-4" />
+                  Edit details
                 </Button>
               )}
               {canSubmit && (
@@ -389,6 +404,14 @@ function TeamView({ id }: { id: string }) {
           title={t.participantType === "startup" ? "Contact person" : `Members (${t.members.length})`}
           meta={t.participantType === "startup" ? "A startup is a single entry" : "Team size must be 2 to 5 at submission"}
         />
+        {canChangeMembers && t.participantType !== "startup" && (
+          <div className="mb-3 flex justify-end">
+            <Button size="sm" variant="secondary" onClick={() => setAddingMember(true)} disabled={t.members.length >= 5}>
+              <UserPlus aria-hidden="true" className="size-4" />
+              Add member
+            </Button>
+          </div>
+        )}
         <TableFrame label="Team members" minWidth="min-w-[860px]">
           <thead>
             <tr>
@@ -400,6 +423,7 @@ function TeamView({ id }: { id: string }) {
               {t.participantType !== "startup" && <Th>Course</Th>}
               {t.participantType !== "startup" && <Th>Year</Th>}
               <Th>Joined</Th>
+              {canChangeMembers && t.participantType !== "startup" && <Th>Change</Th>}
             </tr>
           </thead>
           <tbody>
@@ -437,6 +461,24 @@ function TeamView({ id }: { id: string }) {
                 {t.participantType !== "startup" && <td className={`${tdClass} whitespace-nowrap`}>{m.course}</td>}
                 {t.participantType !== "startup" && <td className={`${tdClass} whitespace-nowrap`}>{yearLabel(m.year, t.participantType)}</td>}
                 <td className={`${tdClass} whitespace-nowrap text-muted`}>{formatDate(m.joinedAt)}</td>
+                {canChangeMembers && t.participantType !== "startup" && (
+                  <td className={`${tdClass} whitespace-nowrap`}>
+                    {m.role === "leader" ? (
+                      <span className="text-xs text-muted">Leader</span>
+                    ) : (
+                      <span className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => setMemberAction({ kind: "leader", userId: m.userId, name: m.fullName })}>
+                          <Crown aria-hidden="true" className="size-3.5" />
+                          Make leader
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-red-700" onClick={() => setMemberAction({ kind: "remove", userId: m.userId, name: m.fullName })}>
+                          <UserX aria-hidden="true" className="size-3.5" />
+                          Remove
+                        </Button>
+                      </span>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -472,6 +514,80 @@ function TeamView({ id }: { id: string }) {
         </ButtonLink>
       </p>
 
+      {editing && (
+        <EditTeamDialog
+          team={t}
+          onClose={() => setEditing(false)}
+          onSaved={(updated) => {
+            team.setData(updated);
+            history.reload();
+            setEditing(false);
+            setDone(`${updated.code} is updated.`);
+          }}
+        />
+      )}
+      {addingMember && (
+        <ConfirmDialog
+          title="Add a member"
+          description={
+            <>
+              Adds a registered student to <strong className="text-navy-900">{t.name}</strong>. They must have completed their profile and not be in another team. The
+              team rules (same college or school, category, size) still apply.
+            </>
+          }
+          confirmLabel="Add member"
+          tone="primary"
+          reasonLabel="Reason"
+          onClose={() => {
+            setAddingMember(false);
+            setNewMemberEmail("");
+          }}
+          onConfirm={async (reason) => {
+            const updated = await api.addTeamMember(t.id, newMemberEmail.trim(), reason);
+            team.setData(updated);
+            history.reload();
+            setAddingMember(false);
+            setNewMemberEmail("");
+            setDone(`${newMemberEmail.trim()} is now in ${updated.code}.`);
+          }}
+        >
+          <Field label="Student's email" htmlFor="new-member-email" className="mb-4">
+            <Input id="new-member-email" type="email" autoComplete="off" value={newMemberEmail} onChange={(e) => setNewMemberEmail(e.target.value)} />
+          </Field>
+        </ConfirmDialog>
+      )}
+      {memberAction && (
+        <ConfirmDialog
+          title={memberAction.kind === "remove" ? `Remove ${memberAction.name}?` : `Make ${memberAction.name} the leader?`}
+          description={
+            memberAction.kind === "remove" ? (
+              <>
+                {memberAction.name} leaves <strong className="text-navy-900">{t.name}</strong> and can join or create another team. A submitted team must stay valid
+                (2 to 5 members and its category), otherwise this is refused.
+              </>
+            ) : (
+              <>
+                {memberAction.name} becomes the leader of <strong className="text-navy-900">{t.name}</strong>; the current leader becomes a member. A KIET team follows its
+                leader&apos;s department, which may be refused once the team is nominated or in judging.
+              </>
+            )
+          }
+          confirmLabel={memberAction.kind === "remove" ? "Remove member" : "Make leader"}
+          tone={memberAction.kind === "remove" ? "danger" : "primary"}
+          reasonLabel="Reason"
+          onClose={() => setMemberAction(null)}
+          onConfirm={async (reason) => {
+            const updated =
+              memberAction.kind === "remove"
+                ? await api.removeTeamMember(t.id, memberAction.userId, reason)
+                : await api.setTeamLeader(t.id, memberAction.userId, reason);
+            team.setData(updated);
+            history.reload();
+            setMemberAction(null);
+            setDone(memberAction.kind === "remove" ? `${memberAction.name} is out of ${updated.code}.` : `${memberAction.name} now leads ${updated.code}.`);
+          }}
+        />
+      )}
       {action && (
         <ConfirmDialog
           title={actionCopy[action].title}

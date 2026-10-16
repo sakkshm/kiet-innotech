@@ -35,6 +35,10 @@ export type AuditAction =
   | "team.created"
   | "team.submitted"
   | "team.archived"
+  | "team.edited"
+  | "team.member_added"
+  | "team.member_removed"
+  | "student.edited"
   | "team.withdrawn"
   | "team.disqualified"
   | "team.restored"
@@ -628,3 +632,9 @@ export type ArchiveResult = {
   skipped: { code: string; name: string; reason: string }[];
   notFound: number;
 };
+
+/** A super admin corrects a student's profile (the sign-in email stays). */
+export type StudentEditInput = Omit<AdminStudentInput, "email"> & { reason: string };
+
+/** A super admin edits a team's details. */
+export type TeamEditInput = { name: string; category: number; domain: string; projectTitle: string; abstract: string; reason: string };

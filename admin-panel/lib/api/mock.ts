@@ -663,6 +663,87 @@ export const mockApi: AdminApi = {
     return setStatus(db, admin, team, status, "team.restored", `Restored to ${status}. Reason: ${text}`);
   },
 
+  async editStudent(userId, input) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    requireSuper(admin, "edit student profiles");
+    const student = db.students.find((s) => s.userId === userId);
+    if (!student) throw new ApiError(404, "Student not found.");
+    requireReason(input.reason);
+    if (input.participantType !== student.participantType && student.teamId) throw new ApiError(409, "They are in a team, so their college or school cannot change.");
+    Object.assign(student, { fullName: input.fullName, phone: input.phone, participantType: input.participantType, institution: input.institution, city: input.city, department: input.department, course: input.course, year: input.year, rollNumber: input.rollNumber, club: input.club });
+    log(db, { actorEmail: admin.email, action: "student.edited", department: student.department, detail: `${student.email}: profile changed. Reason: ${input.reason}` });
+    save(db);
+    return clone(studentRow(db, student));
+  },
+
+  async editTeam(teamId, input) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    requireSuper(admin, "edit teams");
+    const team = findTeam(db, admin, teamId);
+    requireReason(input.reason);
+    if (db.teams.some((t) => t.id !== team.id && t.name.trim().toLowerCase() === input.name.trim().toLowerCase())) throw new ApiError(409, "Another team already uses this name.");
+    Object.assign(team, { name: input.name, category: input.category, domain: input.domain, projectTitle: input.projectTitle, abstract: input.abstract });
+    log(db, { actorEmail: admin.email, action: "team.edited", teamId: team.id, teamCode: team.code, department: team.department, detail: `Details changed. Reason: ${input.reason}` });
+    save(db);
+    return clone(team);
+  },
+
+  async addTeamMember(teamId, email, reason) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    requireSuper(admin, "change team members");
+    const team = findTeam(db, admin, teamId);
+    requireReason(reason);
+    const student = db.students.find((s) => s.email.toLowerCase() === email.trim().toLowerCase());
+    if (!student) throw new ApiError(422, `No registered student uses ${email}.`);
+    if (student.teamId) throw new ApiError(409, `${email} is already in a team.`);
+    if (team.members.length >= (team.participantType === "startup" ? 1 : 5)) throw new ApiError(422, "The team is full.");
+    student.teamId = team.id;
+    team.members.push({ userId: student.userId, fullName: student.fullName, email: student.email, phone: student.phone, rollNumber: student.rollNumber, institution: student.institution, department: student.department, course: student.course, year: student.year, role: "member", joinedAt: now(db), club: student.club } as AdminTeam["members"][number]);
+    log(db, { actorEmail: admin.email, action: "team.member_added", teamId: team.id, teamCode: team.code, department: team.department, detail: `${email} added by an organiser. Reason: ${reason}` });
+    save(db);
+    return clone(team);
+  },
+
+  async removeTeamMember(teamId, userId, reason) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    requireSuper(admin, "change team members");
+    const team = findTeam(db, admin, teamId);
+    requireReason(reason);
+    if (team.leaderId === userId) throw new ApiError(409, "This is the team leader. Make another member the leader first.");
+    const member = team.members.find((m) => m.userId === userId);
+    if (!member) throw new ApiError(404, "This student is not in the team.");
+    team.members = team.members.filter((m) => m.userId !== userId);
+    const student = db.students.find((s) => s.userId === userId);
+    if (student) student.teamId = null;
+    log(db, { actorEmail: admin.email, action: "team.member_removed", teamId: team.id, teamCode: team.code, department: team.department, detail: `${member.email} removed by an organiser. Reason: ${reason}` });
+    save(db);
+    return clone(team);
+  },
+
+  async setTeamLeader(teamId, userId, reason) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    requireSuper(admin, "change team members");
+    const team = findTeam(db, admin, teamId);
+    requireReason(reason);
+    const member = team.members.find((m) => m.userId === userId);
+    if (!member) throw new ApiError(404, "This student is not in the team.");
+    for (const m of team.members) m.role = m.userId === userId ? "leader" : "member";
+    team.leaderId = userId;
+    log(db, { actorEmail: admin.email, action: "team.leader_changed", teamId: team.id, teamCode: team.code, department: team.department, detail: `${member.email} is the new leader. Reason: ${reason}` });
+    save(db);
+    return clone(team);
+  },
+
   async archiveTeams(ids, reason) {
     await delay();
     const db = load();

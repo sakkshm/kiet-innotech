@@ -1,4 +1,4 @@
-import type { ActivityQuery, AdminInput, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
+import type { ActivityQuery, AdminInput, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -35,6 +35,16 @@ export interface AdminApi {
   exportStudents(query: StudentQuery): Promise<AdminStudent[]>;
   /** Registers a student for them (help desk), whether or not registration is open. */
   createStudent(input: AdminStudentInput): Promise<AdminStudent>;
+  /** Super admin: corrects a student's profile (not their sign-in email). */
+  editStudent(userId: string, input: StudentEditInput): Promise<AdminStudent>;
+  /** Super admin: edits a team's name, category, domain, project title and abstract. */
+  editTeam(teamId: string, input: TeamEditInput): Promise<AdminTeam>;
+  /** Super admin: adds a registered student to a team by email. */
+  addTeamMember(teamId: string, email: string, reason: string): Promise<AdminTeam>;
+  /** Super admin: takes a member out of a team (not its leader). */
+  removeTeamMember(teamId: string, userId: string, reason: string): Promise<AdminTeam>;
+  /** Super admin: makes another member the team leader. */
+  setTeamLeader(teamId: string, userId: string, reason: string): Promise<AdminTeam>;
   /** Super admin: the student can no longer use the portal or be put in a team. */
   banStudent(userId: string, reason: string): Promise<AdminStudent>;
   unbanStudent(userId: string, reason: string): Promise<AdminStudent>;

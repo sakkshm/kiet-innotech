@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Download, ShieldCheck, ShieldX, Trash2, UserPlus, X } from "lucide-react";
+import { Download, Pencil, ShieldCheck, ShieldX, Trash2, UserPlus, X } from "lucide-react";
 import { api, errorMessage, MAX_SEARCH_LENGTH } from "@/lib/api";
 import type { AdminStudent, StudentQuery, StudentSort } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { AddStudentDialog } from "./AddStudentDialog";
+import { EditStudentDialog } from "./EditStudentDialog";
 import { ExportDialog, type ExportFormat, type ExportScope } from "@/components/ui/ExportDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Select } from "@/components/ui/Field";
@@ -55,6 +56,7 @@ export function StudentsView() {
   const bannedParam = params.get("banned");
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<AdminStudent | null>(null);
+  const [editing, setEditing] = useState<AdminStudent | null>(null);
   const [banning, setBanning] = useState<{ student: AdminStudent; lift: boolean } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const query: StudentQuery = {
@@ -351,6 +353,10 @@ export function StudentsView() {
                               Ban<span className="sr-only"> {s.fullName}</span>
                             </Button>
                           )}
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(s)}>
+                            <Pencil aria-hidden="true" className="size-3.5" />
+                            Edit<span className="sr-only"> {s.fullName}&apos;s profile</span>
+                          </Button>
                           <Button size="sm" variant="ghost" className="text-red-700" onClick={() => setDeleting(s)}>
                             <Trash2 aria-hidden="true" className="size-3.5" />
                             Delete<span className="sr-only"> {s.fullName}&apos;s profile</span>
@@ -404,6 +410,19 @@ export function StudentsView() {
             const updated = banning.lift ? await api.unbanStudent(banning.student.userId, reason) : await api.banStudent(banning.student.userId, reason);
             setBanning(null);
             setMessage(banning.lift ? `${updated.fullName} can use the portal again.` : `${updated.fullName} is banned.`);
+            reload();
+          }}
+        />
+      )}
+
+      {editing && (
+        <EditStudentDialog
+          key={editing.userId}
+          student={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(updated) => {
+            setEditing(null);
+            setMessage(`${updated.fullName}'s profile is updated.`);
             reload();
           }}
         />

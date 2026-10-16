@@ -1199,3 +1199,32 @@ class ArchiveOut(BaseModel):
     skipped: list[SkippedTeam]
     # Ids that do not exist or are outside the caller's scope.
     not_found: int = 0
+
+
+class StudentEditInput(ProfileInput):
+    """A super admin corrects a student's profile. The email (their sign-in) does not change."""
+
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class TeamEditInput(TeamInput):
+    """A super admin edits a team's details, whatever its status."""
+
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class TeamMemberInput(Input):
+    """Add a registered student to a team by email."""
+
+    email: str = Field(max_length=320)
+    reason: str = Field(min_length=5, max_length=500)
+
+    @field_validator("email")
+    @classmethod
+    def check_email(cls, value: str) -> str:
+        return _email(value)
+
+
+class TeamLeaderInput(Input):
+    user_id: uuid.UUID
+    reason: str = Field(min_length=5, max_length=500)

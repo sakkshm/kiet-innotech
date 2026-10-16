@@ -7,6 +7,10 @@ import { Pill, type PillTone } from "@/components/ui/Pill";
 const tones: Partial<Record<string, PillTone>> = {
   "team.submitted": "green",
   "team.archived": "slate",
+  "team.edited": "navy",
+  "team.member_added": "navy",
+  "team.member_removed": "navy",
+  "student.edited": "navy",
   "team.withdrawn": "red",
   "team.disqualified": "red",
   "team.restored": "cyan",

@@ -52,8 +52,12 @@ from ..schemas import (
     ScheduleOut,
     ScoreOut,
     StatsOut,
+    StudentEditInput,
     StudentPage,
     TeamBanInput,
+    TeamEditInput,
+    TeamLeaderInput,
+    TeamMemberInput,
     TeamPage,
     TentsInput,
     TimetableInput,
@@ -108,6 +112,36 @@ def create_team(data: AdminTeamInput, admin: CurrentAdmin, db: Db, settings: App
 def reopen_team(team_id: uuid.UUID, data: ReasonInput, admin: CurrentAdmin, db: Db, settings: AppSettings) -> AdminTeamOut:
     """Super admin: sends a submitted team back to draft (registration must be open)."""
     return service.reopen_team(db, admin, settings, team_id, data.reason)
+
+
+@router.put("/students/{user_id}")
+def edit_student(user_id: uuid.UUID, data: StudentEditInput, admin: CurrentAdmin, db: Db) -> AdminStudentOut:
+    """Super admin: corrects a student's profile (not their sign-in email)."""
+    return service.edit_student(db, admin, user_id, data)
+
+
+@router.put("/teams/{team_id}")
+def edit_team(team_id: uuid.UUID, data: TeamEditInput, admin: CurrentAdmin, db: Db) -> AdminTeamOut:
+    """Super admin: edits a team's name, category, domain, project title and abstract."""
+    return service.edit_team(db, admin, team_id, data)
+
+
+@router.post("/teams/{team_id}/members")
+def add_team_member(team_id: uuid.UUID, data: TeamMemberInput, admin: CurrentAdmin, db: Db) -> AdminTeamOut:
+    """Super admin: adds a registered student to a team."""
+    return service.add_team_member(db, admin, team_id, data)
+
+
+@router.post("/teams/{team_id}/members/{user_id}/remove")
+def remove_team_member(team_id: uuid.UUID, user_id: uuid.UUID, data: ReasonInput, admin: CurrentAdmin, db: Db) -> AdminTeamOut:
+    """Super admin: takes a member out of a team (not the leader)."""
+    return service.remove_team_member(db, admin, team_id, user_id, data.reason)
+
+
+@router.post("/teams/{team_id}/leader")
+def set_team_leader(team_id: uuid.UUID, data: TeamLeaderInput, admin: CurrentAdmin, db: Db) -> AdminTeamOut:
+    """Super admin: makes another member the team leader."""
+    return service.set_team_leader(db, admin, team_id, data.user_id, data.reason)
 
 
 @router.post("/teams/archive")
