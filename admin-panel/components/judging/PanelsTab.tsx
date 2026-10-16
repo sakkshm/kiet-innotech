@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { CalendarClock, ChevronDown, Crown, MapPin, Pencil, Plus, Trash2, UserCog, UserPlus, Users } from "lucide-react";
-import { api, errorMessage } from "@/lib/api";
+import { api, ApiError, errorMessage } from "@/lib/api";
 import type { Judging, Juror, Panel, PanelJuror, PanelScore, PanelTeam, TeamSummary, Timetable } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { attendanceEnabled } from "@/lib/features";
@@ -28,6 +28,10 @@ import { TimetableStrip } from "./TimetableStrip";
 
 const roomDepartments = departments.filter((d) => d !== clubDepartment);
 
+/** The room no longer exists: another organiser deleted it (several can work on a department's rooms at once). */
+const isGone = (err: unknown) => err instanceof ApiError && err.status === 404;
+const GONE_MESSAGE = "That room was already deleted by another organiser. The list is up to date now.";
+
 export function PanelsTab({ judging, reload }: { judging: Judging; reload: () => void }) {
   const admin = useAdmin();
   const isSuper = admin.role === "super_admin";
@@ -40,6 +44,18 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
   const [staffing, setStaffing] = useState<Panel | null>(null);
   const [deleting, setDeleting] = useState<Panel | null>(null);
   const [changing, setChanging] = useState<{ panel: Panel; team: PanelTeam } | null>(null);
+  const [gone, setGone] = useState<string | null>(null);
+  // A room another organiser removed: close whatever was open on it and show the current list.
+  const roomGone = () => {
+    setCreating(false);
+    setEditing(null);
+    setAllotting(null);
+    setStaffing(null);
+    setChanging(null);
+    setDeleting(null);
+    setGone(GONE_MESSAGE);
+    reload();
+  };
 
   const panels = department ? judging.panels.filter((p) => p.department === department) : judging.panels;
   const waiting = department ? judging.unallotted.filter((t) => t.department === department) : judging.unallotted;
@@ -127,6 +143,11 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
         </div>
       )}
 
+      {gone && (
+        <div className="mb-4">
+          <Notice tone="info">{gone}</Notice>
+        </div>
+      )}
       {(creating || editing) && (
         <PanelFormDialog
           round={round}
@@ -139,7 +160,9 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
             setCreating(false);
             setEditing(null);
           }}
+          onGone={roomGone}
           onSaved={() => {
+            setGone(null);
             setCreating(false);
             setEditing(null);
             reload();
@@ -151,6 +174,7 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
           panel={allotting}
           candidates={[...allotting.teams, ...judging.unallotted.filter((t) => round === "final" || t.department === allotting.department)]}
           onClose={() => setAllotting(null)}
+          onGone={roomGone}
           onSaved={() => {
             setAllotting(null);
             reload();
@@ -161,6 +185,7 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
         <PanelJudgesDialog
           panel={staffing}
           onClose={() => setStaffing(null)}
+          onGone={roomGone}
           onSaved={() => {
             setStaffing(null);
             reload();
@@ -186,7 +211,14 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
           tone="danger"
           onClose={() => setDeleting(null)}
           onConfirm={async () => {
-            await api.deletePanel(deleting.id);
+            try {
+              await api.deletePanel(deleting.id);
+              setGone(null);
+            } catch (err) {
+              // Already deleted by someone else: the goal is met, so refresh instead of failing again and again.
+              if (!isGone(err)) throw err;
+              setGone(GONE_MESSAGE);
+            }
             setDeleting(null);
             reload();
           }}
@@ -501,6 +533,7 @@ function PanelFormDialog({
   fixedDepartment,
   onClose,
   onSaved,
+  onGone,
 }: {
   round: Judging["round"]["round"];
   panel: Panel | null;
@@ -510,6 +543,8 @@ function PanelFormDialog({
   fixedDepartment: boolean;
   onClose: () => void;
   onSaved: () => void;
+  /** The room being edited was deleted meanwhile. */
+  onGone: () => void;
 }) {
   const isRoom = round === "department";
   // A new room starts at its department's slot in the timetable.
@@ -548,6 +583,7 @@ function PanelFormDialog({
       else await api.createPanel({ round, ...place, department: isRoom ? department : null });
       onSaved();
     } catch (err) {
+      if (panel && isGone(err)) return onGone();
       setError(errorMessage(err));
       setPending(false);
     }
@@ -641,7 +677,7 @@ function PanelFormDialog({
   );
 }
 
-function AllotTeamsDialog({ panel, candidates, onClose, onSaved }: { panel: Panel; candidates: TeamSummary[]; onClose: () => void; onSaved: () => void }) {
+function AllotTeamsDialog({ panel, candidates, onClose, onSaved, onGone }: { panel: Panel; candidates: TeamSummary[]; onClose: () => void; onSaved: () => void; onGone: () => void }) {
   const [chosen, setChosen] = useState(() => new Set(panel.teams.map((t) => t.id)));
   const [category, setCategory] = useState(0);
   const [text, setText] = useState("");
@@ -667,6 +703,7 @@ function AllotTeamsDialog({ panel, candidates, onClose, onSaved }: { panel: Pane
       await api.setPanelTeams(panel.id, [...chosen]);
       onSaved();
     } catch (err) {
+      if (isGone(err)) return onGone();
       setError(errorMessage(err));
       setPending(false);
     }
@@ -797,7 +834,7 @@ function JudgeOption({ juror, panel, name, checked, onPick }: { juror: Juror; pa
   );
 }
 
-function PanelJudgesDialog({ panel, onClose, onSaved }: { panel: Panel; onClose: () => void; onSaved: () => void }) {
+function PanelJudgesDialog({ panel, onClose, onSaved, onGone }: { panel: Panel; onClose: () => void; onSaved: () => void; onGone: () => void }) {
   const jurors = useQuery("jurors", () => api.listJurors());
   const seats = panel.round === "department";
   // Department rooms: two seats, one judge from the room's department and one from another department.
@@ -829,6 +866,7 @@ function PanelJudgesDialog({ panel, onClose, onSaved }: { panel: Panel; onClose:
       await api.setPanelJurors(panel.id, picked.map((email) => ({ email, chair: email === chairOf })));
       onSaved();
     } catch (err) {
+      if (isGone(err)) return onGone();
       setError(errorMessage(err));
       setPending(false);
     }

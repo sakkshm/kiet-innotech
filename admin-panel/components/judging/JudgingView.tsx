@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BookOpen, Lock, LockOpen, ScrollText } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Judging, JudgingRound } from "@/lib/admin-types";
@@ -59,6 +59,19 @@ export function JudgingView() {
   ];
   const tab = pickParam(params, "tab", tabs.map((t) => t.key)) ?? "rooms";
   const judging = useQuery(`judging-${round}`, () => api.judging(round));
+
+  // Several organisers can set up the same department's rooms at once: keep this list current, so nobody works on a
+  // room someone else has deleted. Refreshes when the tab is shown again and every 45 seconds while it is visible.
+  const { reload } = judging;
+  useEffect(() => {
+    const refresh = () => document.visibilityState === "visible" && reload();
+    const timer = window.setInterval(refresh, 45_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [reload]);
 
   return (
     <div className="space-y-6">
