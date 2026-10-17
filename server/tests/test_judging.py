@@ -640,3 +640,34 @@ def test_students_see_their_results(judging, as_user, settings):
     final = alpha.get("/me/results").json()["cards"][0]
     assert (final["status"], final["place"], final["amount"]) == ("winner", 2, 5000)
     assert college.get("/me/results").json()["cards"][0]["status"] == "participated"
+
+
+# ---------- Readiness board ----------
+
+
+def test_the_readiness_board_ranks_departments_and_shows_counts_only(judging):
+    root, cse, it = judging["root"], judging["cse"], judging["it"]
+    before = {r["department"]: r for r in root.get("/admin/judging/department/readiness").json()["rows"]}
+    assert before["CSE"]["rooms"] == 1 and before["CSE"]["allotted"] == 0 and before["CSE"]["percent"] == 0
+
+    # CSE allots its teams and staffs the room; IT has done nothing.
+    cse_teams = [t["id"] for t in root.get("/admin/judging/department").json()["unallotted"] if t["department"] == "CSE"]
+    assert cse.put(f"/admin/panels/{judging['room']['id']}/teams", {"team_ids": cse_teams}).status_code == 200
+    staffed = cse.put(
+        f"/admin/panels/{judging['room']['id']}/jurors",
+        {"jurors": [{"email": "cse.prof@kiet.edu", "chair": True}, {"email": "it.prof@kiet.edu", "chair": False}]},
+    )
+    assert staffed.status_code == 200, staffed.text
+
+    # Every department admin sees everyone's progress (counts only), ranked, with their own marked.
+    for api, mine in ((cse, "CSE"), (it, "IT"), (root, None)):
+        board = api.get("/admin/judging/department/readiness").json()
+        assert board["mine"] == mine
+        rows = {r["department"]: r for r in board["rows"]}
+        assert rows["CSE"]["percent"] > rows["IT"]["percent"] and rows["CSE"]["rank"] < rows["IT"]["rank"]
+        assert rows["CSE"]["ready"] is True and rows["IT"]["ready"] is False
+        assert set(rows["CSE"]) == {"department", "teams", "allotted", "rooms", "staffed", "percent", "ready", "rank"}
+    # Outside and startup admins have no part in the department round.
+    for email, role in (("outside.desk@gmail.com", "outside_admin"), ("startup.desk@gmail.com", "startup_admin")):
+        assert root.post("/admin/admins", {"email": email, "name": "Desk", "role": role}).status_code == 201
+        assert Api(root.client, email).get("/admin/judging/department/readiness").status_code == 403

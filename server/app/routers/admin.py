@@ -43,6 +43,7 @@ from ..schemas import (
     PublishOut,
     QuotasInput,
     RankingsOut,
+    ReadinessOut,
     ReasonInput,
     RestoreInput,
     RoundOut,
@@ -345,6 +346,12 @@ def judging_timetable(admin: CurrentAdmin, db: Db) -> TimetableOut:
 @router.put("/judging/timetable")
 def save_judging_timetable(data: TimetableInput, admin: CurrentAdmin, db: Db) -> TimetableOut:
     return judging.save_timetable(db, admin, data)
+
+
+@router.get("/judging/department/readiness")
+def judging_readiness(admin: CurrentAdmin, db: Db) -> ReadinessOut:
+    """Every department's progress setting up its rooms, ranked; visible to super admins and all department admins."""
+    return judging.readiness(db, admin)
 
 
 @router.get("/judging/{round_}")

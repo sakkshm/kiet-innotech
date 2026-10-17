@@ -638,3 +638,18 @@ export type StudentEditInput = Omit<AdminStudentInput, "email"> & { reason: stri
 
 /** A super admin edits a team's details. */
 export type TeamEditInput = { name: string; category: number; domain: string; projectTitle: string; abstract: string; reason: string };
+
+/** One department's progress setting up its department-round rooms (counts only). */
+export type ReadinessRow = {
+  department: string;
+  teams: number;
+  allotted: number;
+  rooms: number;
+  /** Rooms with both judges. */
+  staffed: number;
+  percent: number;
+  ready: boolean;
+  rank: number;
+};
+
+export type Readiness = { rows: ReadinessRow[]; /** The caller's own department, for a department admin. */ mine: string | null };

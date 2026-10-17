@@ -1286,6 +1286,7 @@ export const mockApi: AdminApi = {
 
   saveQuotas: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   judging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  readiness: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   saveTimetable: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   declareAward: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   removeAward: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),

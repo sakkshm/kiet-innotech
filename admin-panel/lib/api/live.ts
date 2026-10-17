@@ -183,7 +183,7 @@
  *                  member.removed | invitation.sent | invitation.cancelled | invitation.declined.
  *          Unknown future actions render with their raw action string.
  */
-import type { AdminInput, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, Page, Panel, PublishResult, Rankings, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
+import type { AdminInput, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 import { getSession } from "../auth/session";
 import { ApiError, type AdminApi } from "./contract";
 
@@ -352,6 +352,7 @@ export const liveApi: AdminApi = {
   activity: (query) => request<Page<AuditEntry>>("GET", `/admin/activity${queryString(query)}`),
 
   judging: (round) => request<Judging>("GET", `/admin/judging/${round}`),
+  readiness: () => request<Readiness>("GET", "/admin/judging/department/readiness"),
   saveTimetable: (slots, graceMinutes, moveRooms) => request<Timetable>("PUT", "/admin/judging/timetable", { slots, graceMinutes, moveRooms }),
   declareAward: (round, teamId, place) => request<void>("POST", `/admin/judging/${round}/awards`, { teamId, place }),
   removeAward: (round, teamId) => request<void>("DELETE", `/admin/judging/${round}/awards/${id(teamId)}`),

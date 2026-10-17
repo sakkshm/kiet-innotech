@@ -76,6 +76,8 @@ from ..schemas import (
     RankedTeam,
     RankingGroup,
     RankingsOut,
+    ReadinessOut,
+    ReadinessRow,
     RoundOut,
     ScoreInput,
     ScoreOut,
@@ -1488,3 +1490,62 @@ def edit_score(db: Session, admin: Admin, panel_id: uuid.UUID, team_id: uuid.UUI
         raise ApiError("The judge submitted marks for this team just now. Reload to see them, then change them if needed.", 409) from exc
     db.refresh(current)
     return _score_out(current)
+
+
+# ---------- Readiness board ----------
+
+
+def readiness(db: Session, admin: Admin) -> ReadinessOut:
+    """
+    How far each department has got with its department-round rooms, ranked. Every organiser who runs the round
+    (super admins and all department admins) can see everyone's, so departments can see where they stand. Only counts
+    are shown: no team names, rooms or judges of other departments.
+    """
+    if admin.role not in ("super_admin", "admin"):
+        raise ApiError("The readiness board is for super admins and department admins.", 403)
+    teams = dict(
+        db.execute(
+            select(Team.department, func.count())
+            .where(_eligible_condition("department"), Team.department.is_not(None))
+            .group_by(Team.department)
+        ).all()
+    )
+    allotted = dict(
+        db.execute(
+            select(Panel.department, func.count(func.distinct(PanelTeam.team_id)))
+            .join(PanelTeam, PanelTeam.panel_id == Panel.id)
+            .where(Panel.round == "department")
+            .group_by(Panel.department)
+        ).all()
+    )
+    rooms = dict(db.execute(select(Panel.department, func.count()).where(Panel.round == "department").group_by(Panel.department)).all())
+    judges_per_room = (
+        select(Panel.department.label("department"), Panel.id.label("id"), func.count(PanelJuror.juror_email).label("judges"))
+        .outerjoin(PanelJuror, PanelJuror.panel_id == Panel.id)
+        .where(Panel.round == "department")
+        .group_by(Panel.department, Panel.id)
+        .subquery()
+    )
+    staffed = dict(
+        db.execute(
+            select(judges_per_room.c.department, func.count()).where(judges_per_room.c.judges >= 2).group_by(judges_per_room.c.department)
+        ).all()
+    )
+    rows = []
+    for department, total in teams.items():
+        done, room_count, full = min(allotted.get(department, 0), total), rooms.get(department, 0), staffed.get(department, 0)
+        percent = round((100 * done / total + (100 * full / room_count if room_count else 0)) / 2)
+        rows.append(
+            (department, total, done, room_count, full, percent, total > 0 and done == total and room_count > 0 and full == room_count)
+        )
+    rows.sort(key=lambda r: (-r[5], -r[1], r[0]))
+    ranked = []
+    for index, (department, total, done, room_count, full, percent, ready) in enumerate(rows):
+        # Equal progress shares a rank.
+        rank = ranked[-1].rank if ranked and ranked[-1].percent == percent else index + 1
+        ranked.append(
+            ReadinessRow(
+                department=department, teams=total, allotted=done, rooms=room_count, staffed=full, percent=percent, ready=ready, rank=rank
+            )
+        )
+    return ReadinessOut(rows=ranked, mine=admin.department if admin.role == "admin" else None)

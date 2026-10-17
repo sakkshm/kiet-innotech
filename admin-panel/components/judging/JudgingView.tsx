@@ -19,6 +19,7 @@ import { Pill } from "@/components/ui/Pill";
 import { JurorsTab } from "./JurorsTab";
 import { PanelsTab } from "./PanelsTab";
 import { RankingsTab } from "./RankingsTab";
+import { ReadinessBoard } from "./ReadinessBoard";
 import { TentsTab } from "./TentsTab";
 
 type Tab = "rooms" | "judges" | "tents" | "rankings";
@@ -110,6 +111,7 @@ export function JudgingView() {
       {judging.data && (
         <>
           <RoundBar judging={judging.data} canManage={isSuper} onChange={judging.reload} />
+          {round === "department" && (isSuper || admin.role === "admin") && <ReadinessBoard refreshKey={judging.data.panels.map((p) => `${p.id}:${p.teams.length}:${p.jurors.length}`).join("|") + judging.data.unallotted.length} />}
           <details className="group rounded-2xl bg-white ring-1 ring-line">
             <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-navy-900">
               <ScrollText aria-hidden="true" className="size-4 text-brand-600" />

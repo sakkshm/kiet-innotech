@@ -1228,3 +1228,25 @@ class TeamMemberInput(Input):
 class TeamLeaderInput(Input):
     user_id: uuid.UUID
     reason: str = Field(min_length=5, max_length=500)
+
+
+class ReadinessRow(BaseModel):
+    """One department's progress in setting up its department-round rooms (counts only, no names)."""
+
+    department: str
+    # Submitted teams that will be judged, and how many already sit in a room.
+    teams: int
+    allotted: int
+    rooms: int
+    # Rooms that have both judges.
+    staffed: int
+    # 0-100: half from teams allotted, half from rooms staffed.
+    percent: int
+    ready: bool
+    rank: int
+
+
+class ReadinessOut(BaseModel):
+    rows: list[ReadinessRow]
+    # The caller's own department, if they are a department admin.
+    mine: str | None = None
