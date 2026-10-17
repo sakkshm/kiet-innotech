@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { resultLabels, statusLabels } from "@/lib/format";
+import { resultLabels, standingLabel, statusLabels } from "@/lib/format";
 import type { TeamResult, TeamStatus } from "@/lib/types";
 
 export type PillTone = "slate" | "green" | "red" | "orange" | "cyan" | "navy" | "violet";
@@ -44,4 +44,13 @@ const resultTones: Record<TeamResult, PillTone> = {
 
 export function ResultPill({ result }: { result: TeamResult }) {
   return <Pill tone={resultTones[result]}>{resultLabels[result]}</Pill>;
+}
+
+const standingTones: Record<string, PillTone> = { Disqualified: "red", "Qualified for final": "green", Awaiting: "cyan" };
+
+/** A team's standing: its department round result, or for other colleges awaiting / qualified for the final / disqualified. Nothing when there is none. */
+export function StandingPill({ team }: { team: { participantType: string; status: TeamStatus; result: TeamResult } }) {
+  const label = standingLabel(team);
+  if (!label) return null;
+  return <Pill tone={standingTones[label] ?? resultTones[team.result]}>{label}</Pill>;
 }

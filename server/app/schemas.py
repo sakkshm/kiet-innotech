@@ -728,6 +728,8 @@ class PanelPlace(Input):
     location: str = Field(default="", max_length=120)
     slot_start: AwareDatetime | None = None
     slot_end: AwareDatetime | None = None
+    # Department round: extra minutes after the slot in which judges can still submit marks.
+    buffer_minutes: int = Field(default=rules.DEFAULT_BUFFER_MINUTES, ge=0, le=rules.MAX_BUFFER_MINUTES)
 
     @model_validator(mode="after")
     def check_place(self) -> "PanelPlace":
@@ -799,14 +801,12 @@ class TimetableSlot(Input):
 
 class TimetableInput(Input):
     slots: list[TimetableSlot] = Field(max_length=40)
-    grace_minutes: int = Field(ge=0, le=rules.MAX_GRACE_MINUTES)
     # Also move the department's rooms that still sit at the old time.
     move_rooms: bool = True
 
 
 class TimetableOut(BaseModel):
     slots: list[TimetableSlot]
-    grace_minutes: int
     customised: bool
     updated_by: str | None = None
 
@@ -836,6 +836,8 @@ class PanelJurorOut(BaseModel):
     department: str | None
     organisation: str
     chair: bool
+    # The judge has locked all their marks in this room (or its time is over).
+    locked: bool = False
 
 
 class PanelScoreOut(BaseModel):
@@ -845,8 +847,12 @@ class PanelScoreOut(BaseModel):
     total: int
     remarks: str
     updated_at: datetime
-    # A super admin who changed the judge's submitted marks.
+    # An organiser who changed or entered the marks.
     edited_by: str | None
+    # How often the saved marks were changed afterwards, and why (the last time): shown highlighted to organisers.
+    edit_count: int = 0
+    edit_reason: str | None = None
+    locked: bool = False
 
 
 class PanelTeamOut(TeamSummaryOut):
@@ -873,8 +879,12 @@ class PanelOut(BaseModel):
     teams: list[PanelTeamOut]
     # Whether the caller can change this room (super admins, and department admins for their own rooms).
     can_edit: bool = False
-    # Department rooms: judges submit marks from the slot's start until this moment (slot end + extra minutes).
+    # Department rooms: judges submit marks from the slot's start until this moment (slot end + the room's buffer).
     scoring_until: datetime | None = None
+    buffer_minutes: int = rules.DEFAULT_BUFFER_MINUTES
+    # Whether the caller may change submitted marks in this room right now (super admins always; the department's
+    # own admin during the room's slot and buffer).
+    can_edit_marks: bool = False
 
 
 class RoundOut(BaseModel):
@@ -1080,8 +1090,8 @@ class AwardInput(Input):
 class ResultCard(BaseModel):
     round: str
     # awaiting: not announced yet; finalist / not_selected: department round outcome; winner: a cash prize;
-    # participated: took part in the finale without a prize.
-    status: Literal["awaiting", "finalist", "not_selected", "winner", "participated"]
+    # participated: took part in the finale without a prize; qualified / disqualified: an other-college team's standing.
+    status: Literal["awaiting", "finalist", "not_selected", "winner", "participated", "qualified", "disqualified"]
     title: str
     message: str
     place: int | None = None
@@ -1104,17 +1114,39 @@ class ScoreInput(Input):
         return value
 
 
+class JudgeScoreInput(ScoreInput):
+    # Needed only when changing marks that were already saved.
+    edit_reason: str = Field(default="", max_length=500)
+
+
 class ScoreOut(BaseModel):
     marks: list[int]
     total: int
     remarks: str
     updated_at: datetime
     edited_by: str | None = None
+    # Locked: the judge locked all their marks, or the room's time is over. Locked marks cannot be changed by the judge.
+    locked: bool = False
+    edit_count: int = 0
+
+
+class LockOut(BaseModel):
+    locked: int
+    # Teams in the room the judge has no marks for.
+    unscored: int
 
 
 class AdminScoreInput(ScoreInput):
-    # Why a super admin changes (or enters) a judge's marks; kept in the activity log.
-    reason: str = Field(min_length=5, max_length=300)
+    # Why an organiser changes (or enters) a judge's marks. A department admin must give a real reason; a super admin need not.
+    reason: str = Field(default="", max_length=500)
+
+
+class BufferInput(Input):
+    buffer_minutes: int = Field(ge=0, le=rules.MAX_BUFFER_MINUTES)
+
+
+class UnlockInput(Input):
+    reason: str = Field(default="", max_length=500)
 
 
 class QuotaCell(Input):
@@ -1167,6 +1199,10 @@ class JudgePanelOut(BaseModel):
     slot_end: datetime | None
     department: str | None
     chair: bool
+    # The judge has locked all their marks here, or the room's time is over: nothing more can be changed by the judge.
+    locked: bool = False
+    # Extra minutes after the slot in which marks can still be submitted.
+    buffer_minutes: int = rules.DEFAULT_BUFFER_MINUTES
     # Scores can be saved only while the organisers keep this round open...
     open: bool
     # ...and, for a department room, from its slot's start until the slot's end plus the extra minutes.
@@ -1188,10 +1224,22 @@ class ArchiveInput(Input):
     reason: str = Field(min_length=5, max_length=500)
 
 
+class QualifyInput(Input):
+    team_ids: list[uuid.UUID] = Field(min_length=1, max_length=5000)
+    # True: qualified for the Grand Finale. False: back to awaiting.
+    qualified: bool
+
+
 class SkippedTeam(BaseModel):
     code: str
     name: str
     reason: str
+
+
+class QualifyOut(BaseModel):
+    changed: int
+    skipped: list["SkippedTeam"]
+    not_found: int
 
 
 class ArchiveOut(BaseModel):

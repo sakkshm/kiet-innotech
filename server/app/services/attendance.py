@@ -151,7 +151,7 @@ def _may_mark(db: Session, staff: Staff, team: Team, round_: str) -> bool:
             .where(PanelTeam.team_id == team.id, PanelTeam.round == round_, PanelJuror.juror_email == staff.juror.email)
         )
         if room is not None:
-            opens, closes = judging.scoring_window(room, judging.timetable(db).grace)
+            opens, closes = judging.scoring_window(room)
             return opens is None or closes is None or opens - timedelta(hours=2) <= judging.utcnow() <= closes
     return False
 

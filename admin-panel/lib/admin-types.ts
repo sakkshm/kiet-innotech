@@ -69,6 +69,11 @@ export type AuditAction =
   | "judging.teams_allotted"
   | "judging.judges_assigned"
   | "judging.score_edited"
+  | "judging.marks_locked"
+  | "judging.marks_unlocked"
+  | "judging.buffer_changed"
+  | "team.qualified"
+  | "team.qualification_removed"
   | "judging.timetable_updated"
   | "judging.award_declared"
   | "judging.award_removed"
@@ -160,6 +165,8 @@ export type TeamQuery = {
   route?: TeamRoute;
   /** Startup and COE KIET entries: waiting for an admin to accept them, or already accepted. */
   approval?: "pending" | "approved";
+  /** Department round result; for other colleges: pending = awaiting, finalist = qualified for the final. */
+  result?: TeamResult;
   /** Teams with at least one member in this year (college) or class (school). */
   year?: number;
   /** Teams whose leader is in this year or class. */
@@ -386,7 +393,11 @@ export type Juror = {
 
 export type JurorInput = Pick<Juror, "email" | "name" | "kind" | "department" | "organisation" | "phone">;
 
-export type PanelJuror = Pick<Juror, "email" | "name" | "kind" | "department" | "organisation"> & { chair: boolean };
+export type PanelJuror = Pick<Juror, "email" | "name" | "kind" | "department" | "organisation"> & {
+  chair: boolean;
+  /** The judge locked all their marks in this room (or its time is over). */
+  locked: boolean;
+};
 
 /** One judge's submitted marks for a team (super admins only). */
 export type PanelScore = {
@@ -396,8 +407,12 @@ export type PanelScore = {
   total: number;
   remarks: string;
   updatedAt: string;
-  /** The super admin who changed the judge's marks, if any. */
+  /** The organiser who changed or entered the judge's marks, if any. */
   editedBy: string | null;
+  /** How often the saved marks were changed afterwards, and why (the last time). Shown highlighted. */
+  editCount: number;
+  editReason: string | null;
+  locked: boolean;
 };
 
 export type PanelTeam = TeamSummary & {
@@ -427,8 +442,12 @@ export type Panel = {
   teams: PanelTeam[];
   /** Super admins, and department admins for their own rooms. */
   canEdit: boolean;
-  /** Department rooms: judges submit marks from the slot's start until this moment (slot end + extra minutes). */
+  /** Department rooms: judges submit marks from the slot's start until this moment (slot end + the room's buffer). */
   scoringUntil: string | null;
+  /** Extra minutes after the slot in which the room's judges can still submit marks (0 to 60). */
+  bufferMinutes: number;
+  /** Whether the viewer may change the judges' marks in this room right now (super admins always; the department's own admin during the slot and buffer). */
+  canEditMarks: boolean;
 };
 
 /** One department's slot in the department round timetable (null: no slot yet). */
@@ -436,8 +455,6 @@ export type TimetableSlot = { department: string; slotStart: string | null; slot
 
 export type Timetable = {
   slots: TimetableSlot[];
-  /** Relaxation time: judges can still submit this many minutes after their slot (they are not told). */
-  graceMinutes: number;
   customised: boolean;
   updatedBy: string | null;
 };
@@ -461,13 +478,13 @@ export type Judging = {
   unallotted: TeamSummary[];
   /** Final round only: every Grand Finale team and its stall (the field is still called tent). */
   tents: { team: TeamSummary; tent: string | null }[] | null;
-  /** Department round: each department's slot and the extra scoring minutes. */
+  /** Department round: each department's slot. */
   timetable: Timetable | null;
   serverTime: string | null;
 };
 
 /** Where and when a room sits. Times are ISO 8601 with an offset. */
-export type PanelPlace = { building: string; name: string; location: string; slotStart: string | null; slotEnd: string | null };
+export type PanelPlace = { building: string; name: string; location: string; slotStart: string | null; slotEnd: string | null; bufferMinutes: number };
 
 export type PanelInput = PanelPlace & { round: JudgingRound; department: string | null };
 
@@ -571,7 +588,20 @@ export type Rankings = {
   canPublishAwards: boolean;
 };
 
-export type Score = { marks: number[]; total: number; remarks: string; updatedAt: string; editedBy: string | null };
+export type Score = {
+  marks: number[];
+  total: number;
+  remarks: string;
+  updatedAt: string;
+  editedBy: string | null;
+  /** The judge locked their marks, or the room's time is over: the judge cannot change them any more. */
+  locked: boolean;
+  /** How often the judge changed these marks after saving them. */
+  editCount: number;
+};
+
+/** After a judge locks their marks: how many teams they locked marks for, and how many have none. */
+export type LockResult = { locked: number; unscored: number };
 
 export type JudgeTeam = {
   id: string;
@@ -602,9 +632,13 @@ export type JudgePanel = {
   chair: boolean;
   /** Scores can be saved only while organisers keep the round open... */
   open: boolean;
-  /** ...and, for a department room, between these moments (its slot plus the extra minutes). */
+  /** ...and, for a department room, between these moments (its slot plus the room's buffer). */
   scoringFrom: string | null;
   scoringUntil: string | null;
+  /** Extra minutes after the slot in which marks can still be submitted. */
+  bufferMinutes: number;
+  /** The judge locked all their marks here, or the room's time is over. */
+  locked: boolean;
   teams: JudgeTeam[];
 };
 
@@ -629,6 +663,13 @@ export type AdminStudentInput = {
 /** The outcome of archiving draft teams: how many were archived, and which were skipped and why. */
 export type ArchiveResult = {
   archived: number;
+  skipped: { code: string; name: string; reason: string }[];
+  notFound: number;
+};
+
+/** The outcome of qualifying teams from other colleges for the Grand Finale (or sending them back to awaiting). */
+export type QualifyResult = {
+  changed: number;
   skipped: { code: string; name: string; reason: string }[];
   notFound: number;
 };

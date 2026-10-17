@@ -55,7 +55,9 @@ export function TeamStatusNotice({ team }: { team: Team }) {
         {!team.approvalRequired &&
           (team.route === "department"
             ? ` Your team will be evaluated at the ${team.department} department round on 22 to 24 October.`
-            : " Your team goes straight to the Grand Finale on 30 October 2026.")}
+            : team.participantType === "college"
+              ? " The organisers review entries from other colleges. Your status appears on your dashboard."
+              : team.participantType !== "school" && " Your team goes straight to the Grand Finale on 30 October 2026.")}
       </Notice>
     );
   }

@@ -6,8 +6,8 @@ import { api, errorMessage } from "@/lib/api";
 import type { Judging, Timetable } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { departmentLabel } from "@/lib/content";
-import { timeLabel } from "@/lib/rooms";
-import { useNow } from "@/lib/use-now";
+import { countdown, timeLabel, WARNING_MINUTES } from "@/lib/rooms";
+import { useServerNow } from "@/lib/use-room-now";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Dialog } from "@/components/ui/Dialog";
@@ -34,11 +34,11 @@ function groups(timetable: Timetable): Group[] {
 /** The department round at a glance: who is judged when, with a live "now" badge. Super admins edit it here. */
 export function TimetableStrip({ judging, onSaved }: { judging: Judging; onSaved: () => void }) {
   const admin = useAdmin();
-  const now = useNow();
+  // The server's clock, ticking every second, so the countdown matches what the server enforces.
+  const now = useServerNow(judging.serverTime);
   const [editing, setEditing] = useState(false);
   const timetable = judging.timetable;
   if (!timetable) return null;
-  const graceMs = timetable.graceMinutes * 60_000;
   const rooms = (department: string) => judging.panels.filter((p) => p.department === department).length;
   const unscheduled = timetable.slots.filter((s) => !s.slotStart).map((s) => s.department);
   const mine = admin.role === "admin" ? admin.department : null;
@@ -52,8 +52,8 @@ export function TimetableStrip({ judging, onSaved }: { judging: Judging; onSaved
             Department round timetable
           </h2>
           <p className="text-sm text-muted">
-            New rooms take their department&apos;s slot. Judges submit marks during their room&apos;s slot, plus a relaxation time of{" "}
-            {timetable.graceMinutes} minutes that only organisers see.
+            New rooms take their department&apos;s slot. Judges save marks during their room&apos;s slot and its buffer: extra minutes after the slot
+            (15 by default; a department admin can change it for each room, up to 60).
           </p>
         </div>
         {admin.role === "super_admin" && (
@@ -67,13 +67,14 @@ export function TimetableStrip({ judging, onSaved }: { judging: Judging; onSaved
         {groups(timetable).map((g, i) => {
           const start = new Date(g.start).getTime();
           const end = new Date(g.end).getTime();
-          const state = now < start ? "upcoming" : now <= end ? "now" : now <= end + graceMs ? "extra" : "done";
+          const state = now < start ? "upcoming" : now <= end ? "now" : "done";
+          const warn = state === "now" && end - now <= WARNING_MINUTES * 60_000;
           return (
-            <li key={g.start + g.end} className={`overflow-hidden rounded-2xl bg-white ring-1 ${state === "now" || state === "extra" ? "ring-2 ring-emerald-500" : "ring-line"} ${state === "done" ? "opacity-70" : ""}`}>
+            <li key={g.start + g.end} className={`overflow-hidden rounded-2xl bg-white ring-1 ${state === "now" ? (warn ? "ring-2 ring-red-500" : "ring-2 ring-emerald-500") : "ring-line"} ${state === "done" ? "opacity-70" : ""}`}>
               <div className={`flex items-center justify-between gap-2 px-4 py-2.5 text-white ${tones[i % tones.length]}`}>
                 <span className="font-display text-sm font-bold">{day.format(new Date(g.start))}</span>
-                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold">
-                  {state === "upcoming" ? "Upcoming" : state === "now" ? "Judging now" : state === "extra" ? `Relaxation · till ${timeLabel(new Date(end + graceMs).toISOString())}` : "Done"}
+                <span role="timer" className={`rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums ${warn ? "bg-red-600" : "bg-white/20"}`}>
+                  {state === "upcoming" ? (start - now < 86_400_000 ? `Starts in ${countdown(start - now)}` : "Upcoming") : state === "now" ? `${countdown(end - now)} left` : "Done"}
                 </span>
               </div>
               <div className="px-4 py-3">
@@ -142,7 +143,6 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
   const [rows, setRows] = useState<SlotRow[]>(() =>
     groups(timetable).map((g, i) => ({ id: i, date: parts(g.start).date, from: parts(g.start).time, to: parts(g.end).time, departments: g.departments })),
   );
-  const [grace, setGrace] = useState(String(timetable.graceMinutes));
   const [move, setMove] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -160,8 +160,6 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
     );
 
   async function save() {
-    const minutes = Number(grace);
-    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) return setError("Relaxation time: a whole number of minutes from 0 to 240.");
     for (const [i, r] of rows.entries()) {
       if (!r.date || !r.from || !r.to) return setError(`Slot ${i + 1}: give the date, the start and the end.`);
       if (r.to <= r.from) return setError(`Slot ${i + 1}: the end must be after the start.`);
@@ -175,7 +173,6 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
           const r = slotOf.get(department);
           return { department, slotStart: r ? `${r.date}T${r.from}:00+05:30` : null, slotEnd: r ? `${r.date}T${r.to}:00+05:30` : null };
         }),
-        minutes,
         move,
       );
       onSaved();
@@ -257,10 +254,7 @@ function TimetableDialog({ timetable, onClose, onSaved }: { timetable: Timetable
           <p className="text-sm text-accent-600">Not in any slot: {unplaced.map(departmentLabel).join(", ")}. Their rooms will need their own date and time.</p>
         )}
         <div className="flex flex-wrap items-end gap-4 rounded-2xl bg-surface p-4">
-          <Field label="Relaxation time after every slot (minutes)" htmlFor="grace" hint="Judges can still submit marks for this long after their slot ends. They are not told about it." className="w-80">
-            <Input id="grace" type="number" min={0} max={240} step={15} value={grace} onChange={(e) => setGrace(e.target.value)} />
-          </Field>
-          <label className="flex items-center gap-2 pb-2 text-sm text-navy-800">
+          <label className="flex items-center gap-2 text-sm text-navy-800">
             <Checkbox label="Move rooms that are still at a department's old time" checked={move} onChange={setMove} />
             Move rooms that are still at a department&apos;s old time
           </label>

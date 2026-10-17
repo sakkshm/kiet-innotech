@@ -35,3 +35,55 @@ const clock = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-dig
 export function timeLabel(iso: string) {
   return clock.format(new Date(iso));
 }
+
+// ---------- The room clock: slot, buffer, and the minutes left ----------
+
+/** A department room's buffer: the extra minutes after its slot for judges to submit marks (server: rules.py). */
+export const DEFAULT_BUFFER_MINUTES = 15;
+export const MAX_BUFFER_MINUTES = 60;
+/** The popup that warns judges and organisers this many minutes before the slot ends. */
+export const WARNING_MINUTES = 15;
+
+export type RoomPhase = "before" | "slot" | "buffer" | "over";
+
+export type RoomClock = {
+  phase: RoomPhase;
+  /** Milliseconds to the next change: the slot's start, its end, or the end of the buffer (0 when over). */
+  msLeft: number;
+  /** The slot ends within the warning window. */
+  warn: boolean;
+};
+
+/** Where a department room stands at `now`: before its slot, in it, in the buffer after it, or over. Null for rooms without a slot. */
+export function roomClock(slotStart: string | null, slotEnd: string | null, scoringUntil: string | null, now: number): RoomClock | null {
+  if (!slotStart || !slotEnd) return null;
+  const start = new Date(slotStart).getTime();
+  const end = new Date(slotEnd).getTime();
+  const until = scoringUntil ? new Date(scoringUntil).getTime() : end;
+  if (now < start) return { phase: "before", msLeft: start - now, warn: false };
+  if (now <= end) return { phase: "slot", msLeft: end - now, warn: end - now <= WARNING_MINUTES * 60_000 };
+  if (now <= until) return { phase: "buffer", msLeft: until - now, warn: false };
+  return { phase: "over", msLeft: 0, warn: false };
+}
+
+/** "1:24:10", "12:05" or, far away, "2 d 3 h". */
+export function countdown(ms: number) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const days = Math.floor(total / 86_400);
+  const hours = Math.floor((total % 86_400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (days > 0) return `${days} d ${hours} h`;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return hours > 0 ? `${hours}:${two(minutes)}:${two(seconds)}` : `${two(minutes)}:${two(seconds)}`;
+}
+
+/** Why a reason for changing saved marks is too weak, or null when it is fine (server: judging._strong_reason). */
+export const MIN_REASON_LENGTH = 15;
+export function reasonProblem(reason: string): string | null {
+  const text = reason.trim().replace(/\s+/g, " ");
+  if (text.length < MIN_REASON_LENGTH || new Set(text.toLowerCase()).size < 5) {
+    return `Give a clear reason, in a sentence (at least ${MIN_REASON_LENGTH} characters).`;
+  }
+  return null;
+}

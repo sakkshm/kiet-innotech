@@ -19,11 +19,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Input } from "@/components/ui/Field";
 import { Loading, Notice } from "@/components/ui/Notice";
 import { SectionTitle } from "@/components/ui/PageHeader";
-import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
+import { Pill, ResultPill, StandingPill, StatusPill } from "@/components/ui/Pill";
 import { TableFrame, tdClass, Th } from "@/components/ui/Table";
 import { EditTeamDialog } from "./EditTeamDialog";
 
-type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove" | "submit";
+type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove" | "submit" | "qualify" | "unqualify";
 
 const actionCopy: Record<Action, { title: string; confirm: string; tone: "primary" | "danger"; description: (team: AdminTeam) => ReactNode }> = {
   withdraw: {
@@ -98,6 +98,26 @@ const actionCopy: Record<Action, { title: string; confirm: string; tone: "primar
       <>
         <strong className="text-navy-900">{team.name}</strong> ({team.code}) is accepted as a legal entry, so it qualifies for the Grand Finale and can be
         allotted to a judging panel and a stall.
+      </>
+    ),
+  },
+  qualify: {
+    title: "Qualify for the Grand Finale",
+    confirm: "Qualify for final",
+    tone: "primary",
+    description: (team) => (
+      <>
+        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is shown to its students as qualified for the Grand Finale on 30 October.
+      </>
+    ),
+  },
+  unqualify: {
+    title: "Back to awaiting",
+    confirm: "Back to awaiting",
+    tone: "primary",
+    description: (team) => (
+      <>
+        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is shown to its students as awaiting the organisers&apos; decision again.
       </>
     ),
   },
@@ -222,6 +242,9 @@ function TeamView({ id }: { id: string }) {
   const awaitingApproval = t.approvalRequired && !t.approvedAt;
   const canApprove = isApprover && awaitingApproval && t.status === "submitted";
   const canUnapprove = isApprover && t.approvalRequired && !!t.approvedAt && t.status === "submitted";
+  // Teams from other colleges are awaiting until their admin (or a super admin) qualifies them for the Grand Finale.
+  const canQualify = (isSuper || admin.role === "outside_admin" || admin.role === "college_admin") && t.participantType === "college" && t.status === "submitted";
+  const qualified = t.result === "finalist";
 
   async function run(kind: Action, reason: string) {
     if (kind === "approve" || kind === "unapprove") {
@@ -230,6 +253,15 @@ function TeamView({ id }: { id: string }) {
       history.reload();
       setAction(null);
       setDone(kind === "approve" ? `${updated.code} is accepted and now qualifies for the Grand Finale.` : `${updated.code} no longer qualifies until it is accepted again.`);
+      return;
+    }
+    if (kind === "qualify" || kind === "unqualify") {
+      const result = await api.qualifyTeams([t.id], kind === "qualify");
+      if (result.changed === 0) throw new Error(result.skipped[0]?.reason ? `Nothing changed: ${result.skipped[0].reason}.` : "Nothing changed.");
+      team.reload();
+      history.reload();
+      setAction(null);
+      setDone(kind === "qualify" ? `${t.code} is qualified for the Grand Finale.` : `${t.code} is back to awaiting.`);
       return;
     }
     if (kind === "dissolve") {
@@ -276,18 +308,24 @@ function TeamView({ id }: { id: string }) {
             <h1 className="mt-1 font-display text-2xl font-bold break-words text-navy-900 sm:text-3xl">{t.name}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusPill status={t.status} />
-              <ResultPill result={t.result} />
+              {t.participantType === "college" ? <StandingPill team={t} /> : <ResultPill result={t.result} />}
               <Pill tone={t.route === "finale" ? "orange" : "cyan"}>{routeLabels[t.route]}</Pill>
               {otherDepartments.length > 0 && <Pill tone="navy">Mixed departments</Pill>}
               {t.approvalRequired && <Pill tone={t.approvedAt ? "green" : "orange"}>{t.approvedAt ? "Accepted" : "Awaiting approval"}</Pill>}
             </div>
           </div>
-          {(canEdit || canApprove || canUnapprove || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
+          {(canEdit || canApprove || canUnapprove || canQualify || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
             <div className="flex flex-wrap gap-2">
               {canApprove && (
                 <Button onClick={() => setAction("approve")}>
                   <BadgeCheck aria-hidden="true" className="size-4" />
                   Accept entry
+                </Button>
+              )}
+              {canQualify && (
+                <Button variant={qualified ? "secondary" : "primary"} onClick={() => setAction(qualified ? "unqualify" : "qualify")}>
+                  <BadgeCheck aria-hidden="true" className="size-4" />
+                  {qualified ? "Back to awaiting" : "Qualify for final"}
                 </Button>
               )}
               {canUnapprove && (
@@ -594,7 +632,7 @@ function TeamView({ id }: { id: string }) {
           description={actionCopy[action].description(t)}
           confirmLabel={actionCopy[action].confirm}
           tone={actionCopy[action].tone}
-          reasonLabel={action === "approve" ? undefined : "Reason"}
+          reasonLabel={action === "approve" || action === "qualify" || action === "unqualify" ? undefined : "Reason"}
           typeToConfirm={action === "dissolve" ? t.name : undefined}
           onConfirm={(reason) => run(action, reason)}
           onClose={() => setAction(null)}

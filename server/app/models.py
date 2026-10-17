@@ -283,6 +283,7 @@ class Panel(Base):
         CheckConstraint("round IN ('department', 'final')", name="round"),
         CheckConstraint("round = 'final' OR department IS NOT NULL", name="department"),
         CheckConstraint("slot_end IS NULL OR slot_end > slot_start", name="slot"),
+        CheckConstraint("buffer_minutes BETWEEN 0 AND 60", name="buffer"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -295,6 +296,8 @@ class Panel(Base):
     location: Mapped[str] = mapped_column(String(120), default="")
     slot_start: Mapped[datetime | None] = mapped_column(Timestamp)
     slot_end: Mapped[datetime | None] = mapped_column(Timestamp)
+    # Department round: judges can still submit marks this many minutes after the slot ends (0 to 60).
+    buffer_minutes: Mapped[int] = mapped_column(Integer, default=15, server_default=text("15"))
     # Department round: the department whose teams are judged here.
     department: Mapped[str | None] = mapped_column(String(20), index=True)
     created_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)
@@ -311,6 +314,8 @@ class PanelJuror(Base):
     panel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("panels.id", ondelete="CASCADE"), primary_key=True)
     juror_email: Mapped[str] = mapped_column(ForeignKey("jurors.email", ondelete="RESTRICT"), primary_key=True, index=True)
     chair: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Set when the judge locks all their marks in this room; an organiser can unlock them.
+    locked_at: Mapped[datetime | None] = mapped_column(Timestamp)
 
 
 class PanelTeam(Base):
@@ -354,8 +359,11 @@ class Score(Base):
     remarks: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow, onupdate=utcnow)
-    # A judge's submitted marks are final; only a super admin can change them, and is then named here.
+    # An organiser who changed or entered the marks (a judge's own edits only count in edit_count).
     edited_by: Mapped[str | None] = mapped_column(String(320))
+    # How many times the saved marks were changed afterwards, and the reason given for the last change.
+    edit_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    edit_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class Attendance(Base):

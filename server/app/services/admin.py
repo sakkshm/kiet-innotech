@@ -61,6 +61,7 @@ from ..schemas import (
     NominationsInput,
     PublishInput,
     PublishOut,
+    QualifyOut,
     QuotasInput,
     SizeStats,
     SkippedTeam,
@@ -331,6 +332,8 @@ class TeamFilters(Paging):
     route: Literal["department", "finale"] | None = None
     # Startup and COE KIET entries: waiting for an admin to accept them, or already accepted.
     approval: Literal["pending", "approved"] | None = None
+    # Department round result, or (other colleges) awaiting / qualified for the Grand Finale.
+    result: Literal["pending", "finalist", "not_selected"] | None = None
     # Teams with at least one member in this year (college) or class (school).
     year: int | None = Field(default=None, ge=1, le=12)
     # Teams whose leader is in this year or class.
@@ -353,6 +356,8 @@ def _team_query(admin: Admin, f: TeamFilters):
         conditions.append(Team.participant_type == f.type)
     if f.route:
         conditions.append(Team.route == f.route)
+    if f.result:
+        conditions.append(Team.result == f.result)
     if f.approval == "pending":
         conditions.append(and_(Team.approval_required.is_(True), Team.approved_at.is_(None)))
     elif f.approval == "approved":
@@ -984,12 +989,42 @@ def archive_teams(db: Session, admin: Admin, settings: Settings, team_ids: list[
     return ArchiveOut(archived=len(archived), skipped=skipped, not_found=missing)
 
 
+def set_qualified(db: Session, admin: Admin, team_ids: list[uuid.UUID], qualified: bool) -> QualifyOut:
+    """
+    Marks submitted teams from other colleges as qualified for the Grand Finale, or back to awaiting. Super admins and
+    the admins of other colleges. Other teams in the selection are skipped and listed; the rest is recorded in the log.
+    """
+    if not (_is_super(admin) or admin.role in ("outside_admin", "college_admin")):
+        raise ApiError("Only a super admin or an admin of other colleges can qualify teams for the Grand Finale.", 403)
+    teams = list(db.scalars(select(Team).where(Team.id.in_(set(team_ids)), team_scope(admin)).order_by(Team.id).with_for_update()))
+    changed, skipped = 0, []
+    for team in teams:
+        if team.participant_type != "college":
+            skipped.append(SkippedTeam(code=team.code, name=team.name, reason="not a team from another college"))
+        elif team.status != "submitted":
+            skipped.append(SkippedTeam(code=team.code, name=team.name, reason=f"not a submitted team ({team.status})"))
+        elif (team.result == "finalist") != qualified:
+            team.result = "finalist" if qualified else "pending"
+            audit.record(
+                db,
+                admin.email,
+                "team.qualified" if qualified else "team.qualification_removed",
+                team,
+                "Qualified for the Grand Finale" if qualified else "Back to awaiting",
+            )
+            changed += 1
+    db.commit()
+    return QualifyOut(changed=changed, skipped=skipped, not_found=len(set(team_ids)) - len(teams))
+
+
 def dissolve_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> None:
     """Deletes a team and frees all its members to join or create another. The history stays in the audit log."""
     _require_super(admin, "dissolve teams")
     team = _visible_team(db, admin, team_id, lock=True)
     if team.result == "finalist":
-        raise ApiError("This team is a published finalist, so it cannot be dissolved. Disqualify it instead.", 409)
+        raise ApiError(
+            "This team is a finalist (or qualified for the Grand Finale), so it cannot be dissolved. Disqualify it instead.", 409
+        )
     if blocked := _judging_blocker(db, team):
         raise ApiError(blocked, 409)
     members = db.scalars(select(User.email).join(TeamMember, TeamMember.user_id == User.id).where(TeamMember.team_id == team.id)).all()
@@ -1068,7 +1103,9 @@ def delete_student(db: Session, admin: Admin, user_id: uuid.UUID, reason: str) -
         mates = db.scalars(select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.user_id != user.id)).all()
         if team.leader_id == user.id and not mates:
             if team.result == "finalist":
-                raise ApiError("This student's team is a published finalist, so it cannot be deleted. Disqualify it.", 409)
+                raise ApiError(
+                    "This student's team is a finalist (or qualified for the Grand Finale), so it cannot be deleted. Disqualify it.", 409
+                )
             if blocked := _judging_blocker(db, team):
                 raise ApiError(blocked, 409)
             audit.record(db, admin.email, "team.dissolved", team, f"{team.name} deleted with its only member {user.email}. {reason}")

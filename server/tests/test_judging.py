@@ -293,23 +293,43 @@ def test_scores_are_validated_and_scoped(judging):
         assert score(judge, room, team, bad).status_code == 422, bad
     saved = score(judge, room, team, [4, 3, 5, 2, 1, 0, 5, 5, 7])
     assert saved.status_code == 200 and saved.json()["total"] == 32
-    # Submitted marks are final for the judge.
-    again = score(judge, room, team, [5, 5, 5, 5, 5, 5, 5, 5, 9])
+    # Saved marks stay open to the judge until they lock them, but changing them needs a clear reason.
+    edit = {"marks": [5, 5, 5, 5, 5, 5, 5, 5, 9], "remarks": ""}
+    assert judge.put(f"/judge/panels/{room['id']}/teams/{team['id']}/score", edit).status_code == 422
+    assert judge.put(f"/judge/panels/{room['id']}/teams/{team['id']}/score", edit | {"edit_reason": "typo"}).status_code == 422
+    assert (
+        judge.put(f"/judge/panels/{room['id']}/teams/{team['id']}/score", edit | {"edit_reason": "aaaaaaaaaaaaaaaaaa"}).status_code == 422
+    )
+    # Saving the same marks again is harmless and needs no reason.
+    assert score(judge, room, team, [4, 3, 5, 2, 1, 0, 5, 5, 7]).status_code == 200
+    changed = judge.put(f"/judge/panels/{room['id']}/teams/{team['id']}/score", edit | {"edit_reason": "I mis-typed the last mark"})
+    assert changed.status_code == 200 and changed.json()["total"] == 49 and changed.json()["edit_count"] == 1
+    # Once the judge locks their marks in the room, they are final for the judge.
+    lock = judge.post(f"/judge/panels/{room['id']}/lock")
+    assert lock.status_code == 200 and lock.json() == {"locked": 1, "unscored": 2}
+    assert judge.post(f"/judge/panels/{room['id']}/lock").status_code == 200
+    again = judge.put(f"/judge/panels/{room['id']}/teams/{team['id']}/score", edit | {"edit_reason": "I changed my mind again"})
     assert again.status_code == 409 and "Only a super admin" in again.json()["detail"]
-    # Only a super admin changes them, with a reason; the activity log keeps the old marks.
+    assert judge.get("/judge").json()["panels"][0]["locked"] is True
+    # A department admin changes them with a real reason, a super admin with none; the activity log keeps the old marks.
     path = f"/admin/panels/{room['id']}/teams/{team['id']}/scores/it.prof@kiet.edu"
-    body = {"marks": [5, 5, 5, 5, 5, 5, 5, 5, 9], "remarks": "", "reason": "Judge asked to correct a typo"}
-    assert judging["cse"].put(path, body).status_code == 403
-    assert root.put(path, body | {"reason": "x"}).status_code == 422
+    body = {"marks": [5, 5, 5, 5, 5, 5, 5, 5, 8], "remarks": "", "reason": "Judge asked to correct a typo"}
+    assert judging["it"].put(path, body).status_code == 403
+    assert judging["cse"].put(path, body | {"reason": ""}).status_code == 422
+    assert judging["cse"].put(path, body | {"reason": "x"}).status_code == 422
     assert root.put(path, body | {"marks": [6, 5, 5, 5, 5, 5, 5, 5, 9]}).status_code == 422
     assert root.put(f"/admin/panels/{room['id']}/teams/{team['id']}/scores/expert@kiet.edu", body).status_code == 422
-    edited = root.put(path, body)
+    by_dept = judging["cse"].put(path, body)
+    assert by_dept.status_code == 200 and (by_dept.json()["total"], by_dept.json()["edit_count"]) == (48, 2)
+    edited = root.put(path, body | {"marks": [5, 5, 5, 5, 5, 5, 5, 5, 9], "reason": ""})
     assert edited.status_code == 200 and (edited.json()["total"], edited.json()["edited_by"]) == (49, "root@kiet.edu")
     mine = judge.get("/judge").json()["panels"][0]["teams"]
     assert next(t for t in mine if t["id"] == team["id"])["my_score"]["total"] == 49
     log = root.get("/admin/activity", params={"kind": "judging", "page_size": 100}).json()["items"]
-    entry = next(e for e in log if e["action"] == "judging.score_edited")
-    assert "was: 32/50 [4, 3, 5, 2, 1, 0, 5, 5, 7]" in entry["detail"] and "correct a typo" in entry["detail"]
+    entries = [e["detail"] for e in log if e["action"] == "judging.score_edited"]
+    assert any("was: 32/50 [4, 3, 5, 2, 1, 0, 5, 5, 7]" in d and "I mis-typed" in d for d in entries)
+    assert any("was: 49/50" in d and "correct a typo" in d for d in entries)
+    assert any("was: 48/50" in d and "no reason given" in d for d in entries)
     # The super admin can also enter marks for a judge who has none yet (e.g. from a paper sheet).
     entered = root.put(f"/admin/panels/{room['id']}/teams/{judging['teams']['cse_b']['id']}/scores/cse.prof@kiet.edu", body)
     assert entered.status_code == 200
@@ -323,7 +343,10 @@ def test_scores_are_validated_and_scoped(judging):
     row = next(t for t in panel["teams"] if t["id"] == team["id"])
     assert row["average"] == 49 and [s["total"] for s in row["judge_scores"]] == [49]
     cse_row = next(t for t in judging["cse"].get("/admin/judging/department").json()["panels"][0]["teams"] if t["id"] == team["id"])
-    assert cse_row["average"] == 49 and cse_row["judge_scores"] is None
+    # A department's own admin sees each judge's marks in its rooms, to be able to correct them; other departments' admins do not.
+    assert cse_row["average"] == 49 and [x["total"] for x in cse_row["judge_scores"]] == [49]
+    it_panels = judging["it"].get("/admin/judging/department").json()["panels"]
+    assert all(t["judge_scores"] is None for p in it_panels if p["id"] == room["id"] for t in p["teams"])
     other = judging["cse_prof"].get("/judge").json()["panels"][0]["teams"]
     assert next(t for t in other if t["id"] == team["id"])["my_score"] is None
 
@@ -415,6 +438,37 @@ def test_tents_for_the_finale(judging, settings):
     assert all(len(t["members"]) == 2 and t["members"][0]["role"] == "leader" for t in sheet["teams"])
 
 
+def test_other_colleges_are_awaiting_qualified_or_disqualified(judging, as_user):
+    import uuid
+
+    root = judging["root"]
+    college, school, cse_a = (judging["teams"][k] for k in ("college", "school", "cse_a"))
+    leader = as_user("r@gmail.com")
+    cards = lambda: [(c["round"], c["status"]) for c in leader.get("/me/results").json()["cards"]]  # noqa: E731
+    assert cards() == [("final", "awaiting")]
+    # Only a super admin or an admin of other colleges qualifies teams, and only other-college teams that are submitted.
+    ids = [college["id"], school["id"], cse_a["id"], str(uuid.uuid4())]
+    assert judging["cse"].post("/admin/teams/qualify", {"team_ids": ids, "qualified": True}).status_code == 403
+    out = root.post("/admin/teams/qualify", {"team_ids": ids, "qualified": True}).json()
+    assert (out["changed"], out["not_found"]) == (1, 1) and {s["code"] for s in out["skipped"]} == {school["code"], cse_a["code"]}
+    assert cards() == [("final", "qualified")]
+    assert root.post("/admin/teams/qualify", {"team_ids": ids, "qualified": True}).json()["changed"] == 0
+    found = root.get("/admin/teams", params={"type": "college", "result": "finalist"}).json()
+    assert [t["code"] for t in found["items"]] == [college["code"]]
+    assert root.get("/admin/teams", params={"type": "college", "result": "pending"}).json()["total"] == 0
+    # The department-round school and KIET teams are untouched.
+    assert root.get(f"/admin/teams/{school['id']}").json()["result"] == "pending"
+    # Back to awaiting, then disqualified.
+    assert root.post("/admin/teams/qualify", {"team_ids": [college["id"]], "qualified": False}).json()["changed"] == 1
+    assert cards() == [("final", "awaiting")]
+    assert root.post(f"/admin/teams/{college['id']}/disqualify", {"reason": "Not a genuine entry"}).status_code == 200
+    assert cards() == [("final", "disqualified")]
+    skipped = root.post("/admin/teams/qualify", {"team_ids": [college["id"]], "qualified": True}).json()
+    assert skipped["changed"] == 0 and "not a submitted team" in skipped["skipped"][0]["reason"]
+    log = root.get("/admin/activity", params={"kind": "team", "page_size": 100}).json()["items"]
+    assert {"team.qualified", "team.qualification_removed"} <= {e["action"] for e in log}
+
+
 def test_finale_rankings_group_schools_separately(judging, settings):
     root = judging["root"]
     panel = root.post("/admin/panels", {"round": "final", "name": "Panel A"}).json()
@@ -470,13 +524,12 @@ def test_the_department_timetable(judging):
     assert slots["CSE(AI)"] == ("2026-10-23T09:30:00+05:30", "2026-10-23T12:30:00+05:30")
     assert slots["CSE"] == ("2026-10-23T13:30:00+05:30", "2026-10-23T17:00:00+05:30")
     assert slots["KSOM"][0] == "2026-10-24T09:30:00+05:30" and slots["KSOP"][0] == "2026-10-24T13:30:00+05:30"
-    # The other branches share the Saturday afternoon slot; the relaxation time after each slot is an hour.
+    # The other branches share the Saturday afternoon slot.
     assert slots["CSE(DS)"] == slots["CSE(CS)"] == slots["MCA"] == ("2026-10-24T13:30:00+05:30", "2026-10-24T17:00:00+05:30")
-    assert "COE" not in slots and table["grace_minutes"] == 60
+    assert "COE" not in slots and "grace_minutes" not in table
     assert cse.get("/admin/judging/timetable").status_code == 200
     body = {
         "slots": [{"department": "CSE", "slot_start": "2026-10-23T14:00:00+05:30", "slot_end": "2026-10-23T17:30:00+05:30"}],
-        "grace_minutes": 45,
     }
     assert cse.put("/admin/judging/timetable", body).status_code == 403
     # A CSE room at the old time moves with the timetable; one at another time stays.
@@ -484,49 +537,73 @@ def test_the_department_timetable(judging):
         "/admin/panels", {**room_body("CSE", building="G Block", name="112"), "slot_start": None, "slot_end": None}
     ).json()
     saved = root.put("/admin/judging/timetable", body)
-    assert saved.status_code == 200 and saved.json()["grace_minutes"] == 45
+    assert saved.status_code == 200
     rooms = {p["id"]: p for p in root.get("/admin/judging/department").json()["panels"]}
     assert rooms[with_slot["id"]]["slot_start"].startswith("2026-10-23T08:30")
     assert rooms[judging["room"]["id"]]["slot_start"].startswith("2026-10-22T04:30")
-    assert rooms[judging["room"]["id"]]["scoring_until"].startswith("2026-10-22T08:15")
+    # Each room's scoring time runs 15 minutes (the default buffer) past its slot, which ends at 1:00 PM IST.
+    assert rooms[judging["room"]["id"]]["scoring_until"].startswith("2026-10-22T07:45")
+    assert rooms[judging["room"]["id"]]["buffer_minutes"] == 15
     for bad in (
-        {"slots": [{"department": "COE", "slot_start": None, "slot_end": None}], "grace_minutes": 30},
-        {
-            "slots": [{"department": "IT", "slot_start": "2026-10-24T12:00:00+05:30", "slot_end": "2026-10-24T11:00:00+05:30"}],
-            "grace_minutes": 30,
-        },
-        {"slots": [], "grace_minutes": 999},
+        {"slots": [{"department": "COE", "slot_start": None, "slot_end": None}]},
+        {"slots": [{"department": "IT", "slot_start": "2026-10-24T12:00:00+05:30", "slot_end": "2026-10-24T11:00:00+05:30"}]},
     ):
         assert root.put("/admin/judging/timetable", bad).status_code == 422, bad
     log = root.get("/admin/activity", params={"kind": "judging", "page_size": 100}).json()["items"]
     assert any(e["action"] == "judging.timetable_updated" and "1 rooms moved" in e["detail"] for e in log)
     # A department with no slot (cleared by the super admin) needs a time on each new room.
-    root.put("/admin/judging/timetable", {"slots": [{"department": "MCA", "slot_start": None, "slot_end": None}], "grace_minutes": 45})
+    root.put("/admin/judging/timetable", {"slots": [{"department": "MCA", "slot_start": None, "slot_end": None}]})
     assert root.post("/admin/panels", {**room_body("MCA"), "slot_start": None, "slot_end": None}).status_code == 422
 
 
-def test_marks_only_during_the_slot_and_the_extra_time(judging, monkeypatch):
-    root, room = judging["root"], judging["room"]
+def test_marks_only_during_the_slot_and_the_room_buffer(judging, monkeypatch):
+    root, cse, room = judging["root"], judging["cse"], judging["room"]
     set_room(judging)
     root.post("/admin/judging/department/open")
     a, b, c = (judging["teams"][k] for k in ("cse_a", "cse_b", "cse_c"))
     view = judging["it_prof"].get("/judge").json()
-    assert view["panels"][0]["scoring_from"].startswith("2026-10-22T04:30") and view["panels"][0]["scoring_until"].startswith(
-        "2026-10-22T08:30"
-    )
-    monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 9, 55, tzinfo=rules.IST))
+    panel = view["panels"][0]
+    assert panel["scoring_from"].startswith("2026-10-22T04:30") and panel["scoring_until"].startswith("2026-10-22T07:45")
+    assert panel["buffer_minutes"] == 15 and panel["locked"] is False
+    at = lambda *t: monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(*t, tzinfo=rules.IST))  # noqa: E731
+    at(2026, 10, 22, 9, 55)
     early = score(judging["it_prof"], room, a, FULL)
     assert early.status_code == 423 and "opens 22 Oct at 10:00 AM" in early.json()["detail"] and "1:" not in early.json()["detail"]
-    monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 13, 20, tzinfo=rules.IST))
-    assert score(judging["it_prof"], room, a, FULL).status_code == 200  # in the unannounced relaxation hour
-    monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 22, 14, 1, tzinfo=rules.IST))
+    # The slot ended at 1:00 PM; the room's buffer (15 minutes) is the judges' extra time to submit.
+    at(2026, 10, 22, 13, 10)
+    assert score(judging["it_prof"], room, a, FULL).status_code == 200
+    at(2026, 10, 22, 13, 14)
+    assert score(judging["cse_prof"], room, a, FULL).status_code == 200
+    at(2026, 10, 22, 13, 16)
     late = score(judging["it_prof"], room, b, FULL)
     assert late.status_code == 423 and "has closed" in late.json()["detail"]
+    # Marks lock themselves when the time is over: the judge sees them locked and cannot edit them either.
+    mine = judging["it_prof"].get("/judge").json()["panels"][0]
+    assert mine["locked"] is True and next(t for t in mine["teams"] if t["id"] == a["id"])["my_score"]["locked"] is True
+    change = {"marks": [4] * 8 + [9], "remarks": "", "edit_reason": "I want to be fairer to them"}
+    assert judging["it_prof"].put(f"/judge/panels/{room['id']}/teams/{a['id']}/score", change).status_code == 423
     # The judge still signs in and reads the room afterwards.
     assert judging["it_prof"].get("/judge").status_code == 200
-    # The super admin can still enter marks afterwards, and moving the room's time reopens it for the judges.
+    # After the buffer the department admin cannot change marks either; the super admin still can.
     fix = {"marks": FULL, "remarks": "", "reason": "Judge was delayed, marks from the paper sheet"}
-    assert root.put(f"/admin/panels/{room['id']}/teams/{b['id']}/scores/it.prof@kiet.edu", fix).status_code == 200
+    path = f"/admin/panels/{room['id']}/teams/{b['id']}/scores/it.prof@kiet.edu"
+    refused = cse.put(path, fix)
+    assert refused.status_code == 403 and "time slot" in refused.json()["detail"]
+    assert root.put(path, fix).status_code == 200
+    # More time for the judges: the department admin widens the buffer (up to an hour), and it reopens the room.
+    assert cse.put(f"/admin/panels/{room['id']}/buffer", {"buffer_minutes": 61}).status_code == 422
+    assert cse.put(f"/admin/panels/{room['id']}/buffer", {"buffer_minutes": -1}).status_code == 422
+    assert judging["it"].put(f"/admin/panels/{room['id']}/buffer", {"buffer_minutes": 30}).status_code == 403
+    widened = cse.put(f"/admin/panels/{room['id']}/buffer", {"buffer_minutes": 30})
+    assert widened.status_code == 200 and widened.json()["buffer_minutes"] == 30
+    assert judging["it_prof"].get("/judge").json()["panels"][0]["locked"] is False
+    assert score(judging["it_prof"], room, c, FULL).status_code == 200
+    # Within the slot and buffer the department admin may change a judge's marks, with a real reason.
+    assert cse.put(f"/admin/panels/{room['id']}/teams/{c['id']}/scores/it.prof@kiet.edu", fix | {"reason": "oops"}).status_code == 422
+    assert cse.put(f"/admin/panels/{room['id']}/teams/{c['id']}/scores/it.prof@kiet.edu", fix).status_code == 200
+    # Moving the room's time reopens it as well.
+    at(2026, 10, 22, 14, 0)
+    assert score(judging["cse_prof"], room, b, FULL).status_code == 423
     later = {
         "building": "CSIT Block",
         "name": "304",
@@ -534,8 +611,76 @@ def test_marks_only_during_the_slot_and_the_extra_time(judging, monkeypatch):
         "slot_start": "2026-10-22T12:00:00+05:30",
         "slot_end": "2026-10-22T14:00:00+05:30",
     }
-    assert judging["cse"].patch(f"/admin/panels/{room['id']}", later).status_code == 200
-    assert score(judging["it_prof"], room, c, FULL).status_code == 200
+    assert cse.patch(f"/admin/panels/{room['id']}", later).status_code == 200
+    assert score(judging["cse_prof"], room, b, FULL).status_code == 200
+
+
+def test_judges_lock_all_their_marks_and_organisers_can_unlock(judging, monkeypatch):
+    root, cse, room = judging["root"], judging["cse"], judging["room"]
+    set_room(judging)
+    a, b = judging["teams"]["cse_a"], judging["teams"]["cse_b"]
+    # Not before the round is open, not for someone else's room.
+    assert judging["it_prof"].post(f"/judge/panels/{room['id']}/lock").status_code == 423
+    root.post("/admin/judging/department/open")
+    assert judging["external"].post(f"/judge/panels/{room['id']}/lock").status_code == 403
+    assert score(judging["it_prof"], room, a, FULL).status_code == 200
+    assert score(judging["cse_prof"], room, a, FULL).status_code == 200
+    # Locking is per judge and covers all their marks; teams they have not marked stay unscored.
+    locked = judging["it_prof"].post(f"/judge/panels/{room['id']}/lock")
+    assert locked.json() == {"locked": 1, "unscored": 2}
+    assert score(judging["it_prof"], room, b, FULL).status_code == 409
+    assert score(judging["cse_prof"], room, b, FULL).status_code == 200
+    # The organisers see who has locked.
+    view = cse.get("/admin/judging/department").json()["panels"][0]
+    assert {j["email"]: j["locked"] for j in view["jurors"]} == {"it.prof@kiet.edu": True, "cse.prof@kiet.edu": False}
+    # Unlocking: needs the department's admin (or a super admin), and a clear reason from the former.
+    other = judging["it"].post(f"/admin/panels/{room['id']}/jurors/it.prof@kiet.edu/unlock", {"reason": "Judge locked too early"})
+    assert other.status_code == 403
+    assert cse.post(f"/admin/panels/{room['id']}/jurors/it.prof@kiet.edu/unlock", {"reason": "no"}).status_code == 422
+    assert cse.post(f"/admin/panels/{room['id']}/jurors/cse.prof@kiet.edu/unlock", {"reason": "Judge locked too early"}).status_code == 409
+    unlocked = cse.post(f"/admin/panels/{room['id']}/jurors/it.prof@kiet.edu/unlock", {"reason": "Judge locked too early"})
+    assert unlocked.status_code == 200
+    assert score(judging["it_prof"], room, b, FULL).status_code == 200
+    # A super admin needs no reason.
+    assert judging["it_prof"].post(f"/judge/panels/{room['id']}/lock").status_code == 200
+    assert root.post(f"/admin/panels/{room['id']}/jurors/it.prof@kiet.edu/unlock", {}).status_code == 200
+    log = root.get("/admin/activity", params={"kind": "judging", "page_size": 100}).json()["items"]
+    assert {"judging.marks_locked", "judging.marks_unlocked"} <= {e["action"] for e in log}
+
+
+def test_no_deadlock_between_the_slot_the_buffer_and_the_locks(judging, monkeypatch):
+    """Whatever happens, a team can always be marked by somebody: judges inside the window, the department admin
+    inside the window, and a super admin at any time."""
+    root, cse, room = judging["root"], judging["cse"], judging["room"]
+    set_room(judging)
+    root.post("/admin/judging/department/open")
+    a = judging["teams"]["cse_a"]
+    at = lambda *t: monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(*t, tzinfo=rules.IST))  # noqa: E731
+    path = f"/admin/panels/{room['id']}/teams/{a['id']}/scores/it.prof@kiet.edu"
+    fix = {"marks": FULL, "remarks": "", "reason": "Marks from the paper sheet"}
+    # A judge locks before marking anyone, then needs the room again: unlock works and so does the department admin.
+    assert judging["it_prof"].post(f"/judge/panels/{room['id']}/lock").json() == {"locked": 0, "unscored": 3}
+    assert cse.put(path, fix).status_code == 200
+    assert (
+        cse.post(f"/admin/panels/{room['id']}/jurors/it.prof@kiet.edu/unlock", {"reason": "Judge locked before marking"}).status_code == 200
+    )
+    # No buffer at all: the slot is the whole window; the department admin may set it back to zero.
+    assert cse.put(f"/admin/panels/{room['id']}/buffer", {"buffer_minutes": 0}).json()["buffer_minutes"] == 0
+    at(2026, 10, 22, 13, 1)
+    assert score(judging["cse_prof"], room, a, FULL).status_code == 423
+    # A round the organisers have shut locks the room at once, and opening it again reopens it.
+    at(2026, 10, 22, 11, 0)
+    root.post("/admin/judging/department/lock")
+    assert score(judging["cse_prof"], room, a, FULL).status_code == 423
+    assert judging["cse_prof"].get("/judge").json()["panels"][0]["locked"] is True
+    root.post("/admin/judging/department/open")
+    assert score(judging["cse_prof"], room, a, FULL).status_code == 200
+    # A room that has no slot never closes by itself: the judge locks it, or the super admin does the rest.
+    assert root.put(path, fix).status_code == 200
+    # Even after everything else, the super admin can mark days later.
+    at(2026, 10, 30, 9, 0)
+    assert root.put(path, fix | {"reason": ""}).status_code == 200
+    assert cse.put(path, fix).status_code == 403
 
 
 def test_scoring_opens_only_when_every_room_has_both_judges(judging):

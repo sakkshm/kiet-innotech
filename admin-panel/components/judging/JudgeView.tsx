@@ -1,15 +1,15 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ArrowRight, BookOpen, CalendarClock, CheckCircle2, Crown, FileDown, Lock, LockOpen, MapPin, QrCode, RefreshCw, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarClock, CheckCircle2, Crown, FileDown, Lock, LockOpen, MapPin, Pencil, QrCode, RefreshCw, ShieldCheck, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
-import type { JudgePanel, JudgeTeam } from "@/lib/admin-types";
+import type { JudgePanel, JudgeTeam, LockResult } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { judgeManualUrl } from "@/lib/content";
 import { categoryTitle, formatDateTime, plural, roundLabels } from "@/lib/format";
-import { roomLabel, scoringState, slotLabel, slotState, timeLabel } from "@/lib/rooms";
+import { roomClock, roomLabel, slotLabel, slotState, timeLabel, reasonProblem, MIN_REASON_LENGTH, type RoomClock } from "@/lib/rooms";
 import { attendanceEnabled } from "@/lib/features";
-import { useNow } from "@/lib/use-now";
+import { useServerNow } from "@/lib/use-room-now";
 import { yearLabel } from "@/lib/rules";
 import { useQuery } from "@/lib/use-query";
 import { Button, buttonClass } from "@/components/ui/Button";
@@ -21,52 +21,104 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Pill } from "@/components/ui/Pill";
 import { AttendanceDesk } from "@/components/attendance/AttendanceDesk";
 import { HiddenMarks, RevealButton, useHoldToReveal } from "./HiddenMarks";
+import { RoomTimer, TimeLeftPopup, type WarningItem } from "./RoomTimer";
 import { PARTS, RubricForm, RubricSummary, rubricFor, TOTAL } from "./RubricForm";
 
 type Draft = { marks: (number | null)[]; remarks: string };
 
 const dayLabel = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 
+type Scoring = { can: boolean; label: string; note: string | null; live: boolean; clock: RoomClock | null; locked: boolean };
+
 /**
- * Whether this judge can submit marks in this room now, and how to say so. The relaxation time after the slot is not
- * announced: during it the room simply stays "Scoring open". The server checks the same rules.
+ * Whether this judge can save marks in this room now, and how to say so. The server checks the same rules: the round
+ * must be open, the room's slot must have started and its buffer not run out, and the judge must not have locked.
  */
-function scoringFor(panel: JudgePanel, now: number): { can: boolean; label: string; note: string | null; live: boolean } {
-  if (!panel.open) return { can: false, label: "Scoring is locked", note: "You can read every team now. Marks can be submitted once the organisers open scoring for this round.", live: false };
-  const state = scoringState(panel.scoringFrom, panel.slotEnd, panel.scoringUntil, now);
-  if (state === null) return { can: true, label: "Scoring is open", note: null, live: true };
-  if (state === "before") {
+function scoringFor(panel: JudgePanel, now: number): Scoring {
+  const clock = roomClock(panel.slotStart, panel.slotEnd, panel.scoringUntil, now);
+  const over = clock?.phase === "over";
+  if (!panel.open) {
+    return { can: false, label: "Scoring is locked", note: "You can read every team now. Marks can be saved once the organisers open scoring for this round.", live: false, clock, locked: false };
+  }
+  if (clock?.phase === "before") {
     const when = `${dayLabel.format(new Date(panel.scoringFrom!))}, ${timeLabel(panel.scoringFrom!)}`;
     return {
       can: false,
       label: `Scoring opens ${when}`,
-      note: `Get familiar with your room: read every team and open the score sheet. Marks can be submitted from ${when}.`,
+      note: `Get familiar with your room: read every team and open the score sheet. Marks can be saved from ${when}.`,
       live: false,
+      clock,
+      locked: false,
     };
   }
-  if (state === "slot" || state === "extra") return { can: true, label: "Scoring is open", note: null, live: true };
-  return { can: false, label: "Scoring closed", note: "Scoring for this room has closed. If a team still needs marks, please contact the organisers.", live: false };
+  if (over) {
+    return {
+      can: false,
+      label: "Time is over: your marks are locked",
+      note: "Your saved marks were locked when the room's time ran out. If a team still needs marks, please contact the organisers.",
+      live: false,
+      clock,
+      locked: true,
+    };
+  }
+  if (panel.locked) {
+    return { can: false, label: "You locked your marks", note: "Your marks in this room are locked. Only a super admin or your department's admin can change them now.", live: false, clock, locked: true };
+  }
+  const buffer = clock?.phase === "buffer";
+  return {
+    can: true,
+    label: buffer ? "Extra time to submit" : "Scoring is open",
+    note: buffer ? "The slot is over. Finish saving your marks now, then lock them. They lock by themselves when the extra time ends." : null,
+    live: true,
+    clock,
+    locked: false,
+  };
 }
 
-/** A judge's page: their rooms, each team, and the rubric to score it. Submitted marks are final and stay hidden. */
+type Banner = { panelId: string; tone: "success" | "info"; title: string; text: string; next?: JudgeTeam | null };
+
+/** A judge's page: their rooms, each team, and the rubric to score it. Marks can be changed until locked, and stay hidden on screen. */
 export function JudgeView() {
   const me = useAdmin();
-  const now = useNow(15_000);
   const view = useQuery("judge", () => api.judgeView());
+  // The server's clock, so a device with a wrong time still counts down to the moment the server enforces.
+  const now = useServerNow(view.data?.serverTime);
   const [scoring, setScoring] = useState<{ panel: JudgePanel; team: JudgeTeam } | null>(null);
   const [desk, setDesk] = useState<JudgePanel | null>(null);
+  const [locking, setLocking] = useState<JudgePanel | null>(null);
   // Marks being entered survive closing the sheet by mistake (until the page is reloaded).
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [submitted, setSubmitted] = useState<{ panelId: string; teamName: string } | null>(null);
+  const [notice, setNotice] = useState<Banner | null>(null);
 
-  const nextFor = (panel: JudgePanel) => panel.teams.find((t) => !t.myScore && t.status === "submitted") ?? null;
+  const panels = view.data?.panels ?? [];
+  // The "15 minutes left" popup: for each room of this judge whose slot is about to end while they can still save marks.
+  const warnings: WarningItem[] = panels.flatMap((panel) => {
+    const status = scoringFor(panel, now);
+    if (!status.can || status.clock?.phase !== "slot" || !status.clock.warn) return [];
+    const unmarked = panel.teams.filter((t) => !t.myScore && t.status === "submitted").length;
+    return [
+      {
+        id: panel.id,
+        room: roomLabel(panel),
+        slotEnd: panel.slotEnd!,
+        msLeft: status.clock.msLeft,
+        detail: unmarked
+          ? `Finish scoring your teams, check your marks, then lock them. ${plural(unmarked, "team")} still ${unmarked === 1 ? "has" : "have"} no marks from you.`
+          : "All your teams have marks. Check them, then lock your marks.",
+        note:
+          panel.bufferMinutes > 0
+            ? `When the slot ends you get ${panel.bufferMinutes} extra minutes to submit. After that your saved marks lock by themselves.`
+            : "When the slot ends your saved marks lock by themselves.",
+      },
+    ];
+  });
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Judge"
         title="My judging"
-        description={`Signed in as ${me.name}. You see only the teams of your own rooms. Once you submit a team's marks they are final, and they stay hidden on screen: hover over or hold the eye button to see them.`}
+        description={`Signed in as ${me.name}. You see only the teams of your own rooms. Save marks for each team and change them, with a reason, until you lock them all in one go. Marks stay hidden on screen: hover over or hold the eye button to see them.`}
         actions={
           // w-max: the header would otherwise squeeze the two buttons into a column.
           <div className="flex w-max gap-2">
@@ -96,25 +148,28 @@ export function JudgeView() {
           The organisers have not put you in a room yet. This page shows your room and teams as soon as they do.
         </EmptyState>
       )}
-      {view.data?.panels.map((panel) => {
-        const next = nextFor(panel);
+      {panels.map((panel) => {
+        const status = scoringFor(panel, now);
+        const next = notice?.panelId === panel.id ? notice.next : null;
         return (
           <RoomSection
             key={panel.id}
             panel={panel}
             now={now}
+            status={status}
             onScore={(team) => {
-              setSubmitted(null);
+              setNotice(null);
               setScoring({ panel, team });
             }}
             onAttendance={() => setDesk(panel)}
+            onLock={() => setLocking(panel)}
             banner={
-              submitted?.panelId === panel.id ? (
+              notice?.panelId === panel.id ? (
                 <Notice
-                  tone="success"
-                  title={`Marks submitted for ${submitted.teamName}`}
+                  tone={notice.tone}
+                  title={notice.title}
                   action={
-                    next && scoringFor(panel, now).can ? (
+                    next && status.can ? (
                       <Button size="sm" onClick={() => setScoring({ panel, team: next })}>
                         Score {next.name}
                         <ArrowRight aria-hidden="true" className="size-3.5" />
@@ -122,13 +177,14 @@ export function JudgeView() {
                     ) : undefined
                   }
                 >
-                  {next ? "They are final now. The next team is ready." : "Every team in this room is scored. Thank you!"}
+                  {notice.text}
                 </Notice>
               ) : null
             }
           />
         );
       })}
+      <TimeLeftPopup items={warnings} />
       {scoring && (
         <ScoreSheet
           key={scoring.team.id}
@@ -138,14 +194,39 @@ export function JudgeView() {
           draft={drafts[`${scoring.panel.id}:${scoring.team.id}`]}
           onDraft={(draft) => setDrafts((all) => ({ ...all, [`${scoring.panel.id}:${scoring.team.id}`]: draft }))}
           onClose={() => setScoring(null)}
-          onSubmitted={() => {
+          onSaved={(changed) => {
             setDrafts((all) => {
               const rest = { ...all };
               delete rest[`${scoring.panel.id}:${scoring.team.id}`];
               return rest;
             });
-            setSubmitted({ panelId: scoring.panel.id, teamName: scoring.team.name });
+            const rest = scoring.panel.teams.filter((t) => t.id !== scoring.team.id && !t.myScore && t.status === "submitted");
+            setNotice({
+              panelId: scoring.panel.id,
+              tone: "success",
+              title: changed ? `Marks changed for ${scoring.team.name}` : `Marks saved for ${scoring.team.name}`,
+              text: rest.length
+                ? "Saved. You can still change them until you lock your marks. The next team is ready."
+                : "Saved. Every team in this room has your marks. Check them, then lock your marks when you are done.",
+              next: rest[0] ?? null,
+            });
             setScoring(null);
+            view.reload();
+          }}
+        />
+      )}
+      {locking && (
+        <LockDialog
+          panel={locking}
+          onClose={() => setLocking(null)}
+          onLocked={(result) => {
+            setNotice({
+              panelId: locking.id,
+              tone: "info",
+              title: "Your marks are locked",
+              text: `${plural(result.locked, "team")} locked.${result.unscored ? ` ${plural(result.unscored, "team")} had no marks from you and stay unscored.` : ""} Only a super admin or your department's admin can change them now.`,
+            });
+            setLocking(null);
             view.reload();
           }}
         />
@@ -169,12 +250,27 @@ export function JudgeView() {
   );
 }
 
-function RoomSection({ panel, now, onScore, onAttendance, banner }: { panel: JudgePanel; now: number; onScore: (team: JudgeTeam) => void; onAttendance: () => void; banner: ReactNode }) {
-  const status = scoringFor(panel, now);
+function RoomSection({
+  panel,
+  now,
+  status,
+  onScore,
+  onAttendance,
+  onLock,
+  banner,
+}: {
+  panel: JudgePanel;
+  now: number;
+  status: Scoring;
+  onScore: (team: JudgeTeam) => void;
+  onAttendance: () => void;
+  onLock: () => void;
+  banner: ReactNode;
+}) {
   const done = panel.teams.filter((t) => t.myScore).length;
   const students = panel.teams.reduce((sum, t) => sum + t.members.length, 0);
   const slot = slotLabel(panel.slotStart, panel.slotEnd);
-  const state = slotState(panel.slotStart, panel.slotEnd);
+  const state = slotState(panel.slotStart, panel.slotEnd, now);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -223,16 +319,19 @@ function RoomSection({ panel, now, onScore, onAttendance, banner }: { panel: Jud
               )}
             </div>
           </div>
-          <p className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${status.live ? "bg-emerald-400 text-navy-950" : "bg-white/10 text-white"}`}>
-            {status.live ? <LockOpen aria-hidden="true" className="size-4" /> : <Lock aria-hidden="true" className="size-4" />}
-            {status.label}
-          </p>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            {status.clock && <RoomTimer clock={status.clock} tone="dark" className="text-base" />}
+            <p className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${status.live ? "bg-emerald-400 text-navy-950" : "bg-white/10 text-white"}`}>
+              {status.live ? <LockOpen aria-hidden="true" className="size-4" /> : <Lock aria-hidden="true" className="size-4" />}
+              {status.label}
+            </p>
+          </div>
         </div>
         <div className="mt-5 grid grid-cols-3 gap-3">
           {[
             ["Teams", panel.teams.length],
             ["Students", students],
-            ["Submitted", `${done} / ${panel.teams.length}`],
+            ["Marks saved", `${done} / ${panel.teams.length}`],
           ].map(([label, value]) => (
             <div key={label as string} className="rounded-2xl bg-white/[0.07] px-3 py-2.5 ring-1 ring-inset ring-white/10">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-white/60">{label}</p>
@@ -240,10 +339,16 @@ function RoomSection({ panel, now, onScore, onAttendance, banner }: { panel: Jud
             </div>
           ))}
         </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label="Teams submitted" aria-valuemin={0} aria-valuemax={panel.teams.length} aria-valuenow={done}>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label="Teams with your marks" aria-valuemin={0} aria-valuemax={panel.teams.length} aria-valuenow={done}>
           <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${panel.teams.length ? (done / panel.teams.length) * 100 : 0}%` }} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
+          {status.can && done > 0 && (
+            <button type="button" onClick={onLock} className="inline-flex h-9 items-center gap-2 rounded-full bg-accent-500 px-4 text-sm font-semibold text-white transition hover:bg-accent-600">
+              <Lock aria-hidden="true" className="size-4" />
+              Lock all my marks
+            </button>
+          )}
           {attendanceEnabled && (
             <>
               <button type="button" onClick={onAttendance} className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-navy-900 transition hover:bg-brand-50">
@@ -273,17 +378,131 @@ function RoomSection({ panel, now, onScore, onAttendance, banner }: { panel: Jud
       {panel.teams.length === 0 ? (
         <p className="px-6 py-8 text-sm text-muted">No teams in this room yet.</p>
       ) : (
-        <ol className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
-          {panel.teams.map((team, index) => (
-            <TeamCard key={team.id} team={team} index={index} open={status.can} onScore={() => onScore(team)} />
-          ))}
-        </ol>
+        <>
+          <MarksOverview panel={panel} canEdit={status.can} locked={status.locked} onOpen={onScore} />
+          <ol className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5">
+            {panel.teams.map((team, index) => (
+              <TeamCard key={team.id} team={team} index={index} open={status.can} locked={status.locked} onScore={() => onScore(team)} />
+            ))}
+          </ol>
+        </>
       )}
     </section>
   );
 }
 
-function TeamCard({ team, index, open, onScore }: { team: JudgeTeam; index: number; open: boolean; onScore: () => void }) {
+/** Every mark the judge saved in this room on one screen: totals stay hidden until the eye is held; pick a team to look at it or change it. */
+function MarksOverview({ panel, canEdit, locked, onOpen }: { panel: JudgePanel; canEdit: boolean; locked: boolean; onOpen: (team: JudgeTeam) => void }) {
+  const reveal = useHoldToReveal();
+  const rows = panel.teams.filter((t) => t.myScore);
+  if (rows.length === 0) return null;
+  return (
+    <section aria-label="Your saved marks" className="mx-4 mt-4 overflow-hidden rounded-2xl ring-1 ring-line sm:mx-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 bg-surface px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="font-display text-base font-bold text-navy-900">My marks</h3>
+          <p className="text-xs text-muted">
+            {locked ? "Locked: you can look at your marks but not change them." : canEdit ? "Saved. You can change a team's marks (with a reason) until you lock them." : "Saved."}
+          </p>
+        </div>
+        <RevealButton shown={reveal.shown} bind={reveal.bind} label="all your marks">
+          Hold to show
+        </RevealButton>
+      </header>
+      <ul className="divide-y divide-line">
+        {rows.map((team) => {
+          const score = team.myScore!;
+          return (
+            <li key={team.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold text-navy-900">{team.name}</span>
+                <span className="font-mono text-xs text-muted">{team.code}</span>
+              </span>
+              <span className={`font-display text-lg font-bold tabular-nums ${reveal.shown ? "text-navy-900" : "tracking-[0.2em] text-muted"}`} aria-hidden={!reveal.shown}>
+                {reveal.shown ? `${score.total}/${TOTAL}` : "••/••"}
+              </span>
+              {score.editCount > 0 && <Pill tone="orange">Changed {score.editCount}×</Pill>}
+              {score.locked || locked ? <Pill tone="navy">Locked</Pill> : <Pill tone="green">Saved</Pill>}
+              <Button size="sm" variant="secondary" onClick={() => onOpen(team)}>
+                {canEdit && !locked ? (
+                  <>
+                    <Pencil aria-hidden="true" className="size-3.5" />
+                    Review / edit
+                  </>
+                ) : (
+                  "View"
+                )}
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function LockDialog({ panel, onClose, onLocked }: { panel: JudgePanel; onClose: () => void; onLocked: (result: LockResult) => void }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const saved = panel.teams.filter((t) => t.myScore).length;
+  const unscored = panel.teams.filter((t) => !t.myScore && t.status === "submitted");
+
+  async function lock() {
+    setPending(true);
+    setError(null);
+    try {
+      onLocked(await api.lockMarks(panel.id));
+    } catch (err) {
+      setError(errorMessage(err));
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title="Lock all my marks?"
+      description={roomLabel(panel)}
+      onClose={onClose}
+      busy={pending}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Not yet
+          </Button>
+          <Button onClick={lock} pending={pending}>
+            <Lock aria-hidden="true" className="size-4" />
+            Lock my marks
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm text-navy-800">
+        <Notice tone="warning" title="You cannot undo this yourself">
+          After locking, only a super admin or your department&apos;s admin can change your marks. If you are not sure about a team, open it and check first.
+        </Notice>
+        <p>
+          You have saved marks for <strong>{saved}</strong> of {plural(panel.teams.length, "team")} in this room.
+        </p>
+        {unscored.length > 0 && (
+          <div className="rounded-xl bg-accent-50 p-3 text-accent-600">
+            <p className="font-semibold">{plural(unscored.length, "team")} without your marks:</p>
+            <p className="mt-0.5 text-navy-900">
+              {unscored
+                .slice(0, 6)
+                .map((t) => t.name)
+                .join(", ")}
+              {unscored.length > 6 ? ` and ${unscored.length - 6} more` : ""}
+            </p>
+            <p className="mt-1 text-xs">They stay unscored by you. Go back if you still want to mark them.</p>
+          </div>
+        )}
+        {error && <Notice tone="error">{error}</Notice>}
+      </div>
+    </Dialog>
+  );
+}
+
+function TeamCard({ team, index, open, locked, onScore }: { team: JudgeTeam; index: number; open: boolean; locked: boolean; onScore: () => void }) {
   const leader = team.members.find((m) => m.role === "leader");
   const scored = !!team.myScore;
   const scorable = team.status === "submitted";
@@ -291,7 +510,7 @@ function TeamCard({ team, index, open, onScore }: { team: JudgeTeam; index: numb
     <li className={`flex min-w-0 flex-col rounded-2xl p-4 ring-1 ring-inset transition ${scored ? "bg-emerald-50/60 ring-emerald-200" : "bg-white ring-line hover:ring-navy-800/25"}`}>
       <div className="flex items-start gap-3">
         <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl font-display text-sm font-bold ${scored ? "bg-emerald-600 text-white" : "bg-surface text-navy-900 ring-1 ring-inset ring-line"}`}>
-          {scored ? <CheckCircle2 aria-label="Submitted" className="size-5" /> : index + 1}
+          {scored ? <CheckCircle2 aria-label="Marks saved" className="size-5" /> : index + 1}
         </span>
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-baseline gap-x-2">
@@ -306,6 +525,7 @@ function TeamCard({ team, index, open, onScore }: { team: JudgeTeam; index: numb
               Cat {team.category} · {categoryTitle(team.category)}
             </span>
             {!scorable && <Pill tone="red">{team.status}</Pill>}
+            {team.myScore && team.myScore.editCount > 0 && <Pill tone="orange">Changed {team.myScore.editCount}×</Pill>}
           </p>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
             <Users aria-hidden="true" className="size-3.5" />
@@ -316,19 +536,26 @@ function TeamCard({ team, index, open, onScore }: { team: JudgeTeam; index: numb
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
         {scored ? (
           <span className="flex items-center gap-2 text-xs text-emerald-800">
-            <span className="font-semibold">Submitted</span>
+            <span className="inline-flex items-center gap-1 font-semibold">
+              {(team.myScore!.locked || locked) && <Lock aria-hidden="true" className="size-3" />}
+              {team.myScore!.locked || locked ? "Locked" : "Saved"}
+            </span>
             <HiddenMarks value={<>{team.myScore!.total}<span className="text-xs text-muted">/{TOTAL}</span></>} label={`your marks for ${team.name}`} size="sm" />
           </span>
         ) : (
           <span className="text-xs font-semibold text-accent-600">{scorable ? (open ? "To score" : "Not scored yet") : "Not scored"}</span>
         )}
         <Button size="sm" variant={scored || !open || !scorable ? "secondary" : "primary"} onClick={onScore}>
-          {scored ? "View" : open && scorable ? "Score team" : "Read"}
+          {scored ? (open ? "Review / edit" : "View") : open && scorable ? "Score team" : "Read"}
           <ArrowRight aria-hidden="true" className="size-3.5" />
         </Button>
       </div>
     </li>
   );
+}
+
+function sameMarks(a: readonly (number | null)[], b: readonly number[]) {
+  return a.length === b.length && a.every((m, i) => m === b[i]);
 }
 
 function ScoreSheet({
@@ -338,7 +565,7 @@ function ScoreSheet({
   draft,
   onDraft,
   onClose,
-  onSubmitted,
+  onSaved,
 }: {
   panel: JudgePanel;
   team: JudgeTeam;
@@ -346,52 +573,67 @@ function ScoreSheet({
   draft: Draft | undefined;
   onDraft: (draft: Draft) => void;
   onClose: () => void;
-  onSubmitted: () => void;
+  /** `changed`: these were saved marks that were changed (not a first save). */
+  onSaved: (changed: boolean) => void;
 }) {
   const rubric = rubricFor(team.category);
-  const [marks, setMarks] = useState<(number | null)[]>(() => draft?.marks ?? PARTS.map(() => null));
-  const [remarks, setRemarks] = useState(draft?.remarks ?? "");
+  const scored = team.myScore;
+  const [marks, setMarks] = useState<(number | null)[]>(() => draft?.marks ?? scored?.marks ?? PARTS.map(() => null));
+  const [remarks, setRemarks] = useState(draft?.remarks ?? scored?.remarks ?? "");
+  const [reason, setReason] = useState("");
+  // Saved marks open for reading; changing them is a deliberate step.
+  const [editing, setEditing] = useState(!scored);
   const [step, setStep] = useState<"marks" | "review">("marks");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const reveal = useHoldToReveal();
-  const scored = team.myScore;
-  const editable = !scored && canScore && team.status === "submitted";
+  const savable = canScore && team.status === "submitted";
   const total = marks.reduce<number>((sum, m) => sum + (m ?? 0), 0);
   const missing = marks.filter((m) => m === null).length;
+  const unchanged = !!scored && sameMarks(marks, scored.marks) && remarks.trim() === scored.remarks;
+  const reasonError = scored && reason.trim() ? reasonProblem(reason) : null;
 
   const set = (index: number, value: number) => {
     const next = marks.map((m, i) => (i === index ? value : m));
     setMarks(next);
-    onDraft({ marks: next, remarks });
+    if (!scored) onDraft({ marks: next, remarks });
   };
 
-  async function submit() {
+  async function save() {
+    if (scored) {
+      const problem = reasonProblem(reason);
+      if (problem) return setError(problem);
+    }
     setPending(true);
     setError(null);
     try {
-      await api.saveScore(panel.id, team.id, marks as number[], remarks.trim());
-      onSubmitted();
+      await api.saveScore(panel.id, team.id, marks as number[], remarks.trim(), scored ? reason.trim() : "");
+      onSaved(!!scored);
     } catch (err) {
       setError(errorMessage(err));
       setPending(false);
     }
   }
 
-  const footer = scored ? (
+  const footer = !savable || (scored && !editing) ? (
     <>
-      <span className="mr-auto flex items-center gap-2 text-sm text-muted">
-        <ShieldCheck aria-hidden="true" className="size-4 text-emerald-600" />
-        Submitted {formatDateTime(scored.updatedAt)}
-      </span>
+      {scored && (
+        <span className="mr-auto flex items-center gap-2 text-sm text-muted">
+          <ShieldCheck aria-hidden="true" className="size-4 text-emerald-600" />
+          Saved {formatDateTime(scored.updatedAt)}
+          {(scored.locked || !canScore) && " · locked"}
+        </span>
+      )}
+      {scored && savable && (
+        <Button variant="secondary" onClick={() => setEditing(true)}>
+          <Pencil aria-hidden="true" className="size-4" />
+          Change marks
+        </Button>
+      )}
       <Button variant="secondary" onClick={onClose}>
         Close
       </Button>
     </>
-  ) : !editable ? (
-    <Button variant="secondary" onClick={onClose}>
-      Close
-    </Button>
   ) : step === "marks" ? (
     <>
       <span className="mr-auto self-center font-display text-xl font-bold tabular-nums text-navy-900">
@@ -400,7 +642,7 @@ function ScoreSheet({
         {missing > 0 && <span className="ml-2 align-middle font-sans text-xs font-semibold text-accent-600">{missing} left</span>}
       </span>
       <Button variant="secondary" onClick={onClose}>
-        Later
+        {scored ? "Cancel" : "Later"}
       </Button>
       <Button onClick={() => (missing ? setError(`Give a mark for every part (${missing} left).`) : (setError(null), setStep("review")))}>
         Review marks
@@ -412,8 +654,8 @@ function ScoreSheet({
       <Button variant="secondary" onClick={() => setStep("marks")} disabled={pending} className="mr-auto">
         Back to edit
       </Button>
-      <Button onClick={submit} pending={pending}>
-        Submit final marks
+      <Button onClick={save} pending={pending} disabled={unchanged}>
+        {scored ? "Save changes" : "Save marks"}
       </Button>
     </>
   );
@@ -428,15 +670,17 @@ function ScoreSheet({
       footer={footer}
     >
       <div className="space-y-5">
-        {step === "marks" && <TeamBrief team={team} />}
+        {(step === "marks" || (scored && !editing)) && <TeamBrief team={team} />}
 
-        {!canScore && !scored && <Notice tone="info">Practice view: read the team and the rubric to get familiar. Marks can be submitted once scoring opens for your room.</Notice>}
+        {!canScore && !scored && <Notice tone="info">Practice view: read the team and the rubric to get familiar. Marks can be saved once scoring opens for your room.</Notice>}
         {canScore && !scored && team.status !== "submitted" && <Notice tone="warning">This team has been {team.status}, so it is not scored.</Notice>}
 
-        {scored ? (
+        {scored && !editing ? (
           <section className="space-y-3 rounded-2xl bg-surface p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-navy-900">Your marks are submitted and final.</p>
+              <p className="text-sm font-semibold text-navy-900">
+                {savable ? "Your marks are saved. You can change them until you lock your marks." : "Your marks are saved and locked."}
+              </p>
               <RevealButton shown={reveal.shown} bind={reveal.bind} label="your marks">
                 Hold to show
               </RevealButton>
@@ -448,30 +692,42 @@ function ScoreSheet({
               </p>
               {scored.remarks && <p className="mt-2 text-sm text-navy-800">Remarks: {scored.remarks}</p>}
             </div>
+            {scored.editCount > 0 && <p className="text-xs font-semibold text-accent-600">These marks were changed {plural(scored.editCount, "time")} after they were first saved.</p>}
             {scored.editedBy && <p className="text-xs text-muted">Changed by an organiser ({scored.editedBy}).</p>}
-            <p className="text-xs text-muted">Need a correction? Ask a super admin; only they can change submitted marks.</p>
+            {!savable && <p className="text-xs text-muted">Need a correction? Ask a super admin or your department&apos;s admin.</p>}
           </section>
         ) : step === "marks" ? (
           <>
-            <RubricForm category={team.category} marks={marks} onChange={set} disabled={!editable || pending} />
+            {scored && (
+              <Notice tone="warning" title="You are changing saved marks">
+                You will be asked for a clear reason before they are saved. The organisers see the reason and that the marks were changed.
+              </Notice>
+            )}
+            <RubricForm category={team.category} marks={marks} onChange={set} disabled={!savable || pending} />
             <Field label="Remarks (optional)" htmlFor="score-remarks" hint="Only the organisers see these.">
               <Textarea
                 id="score-remarks"
                 value={remarks}
                 onChange={(e) => {
                   setRemarks(e.target.value);
-                  onDraft({ marks, remarks: e.target.value });
+                  if (!scored) onDraft({ marks, remarks: e.target.value });
                 }}
                 maxLength={1000}
-                disabled={!editable || pending}
+                disabled={!savable || pending}
               />
             </Field>
           </>
         ) : (
           <section className="space-y-4">
-            <Notice tone="warning" title="Check before you submit">
-              Once submitted, your marks for {team.name} are final. You cannot change them; only a super admin can.
-            </Notice>
+            {scored ? (
+              <Notice tone="warning" title="Why are you changing these marks?">
+                Your reason is kept with the change, and the organisers see it. Marks saved before: {scored.total} / {TOTAL}.
+              </Notice>
+            ) : (
+              <Notice tone="info" title="Check before you save">
+                You can still change saved marks until you lock all your marks in this room (a reason is needed). They lock by themselves when the room&apos;s time ends.
+              </Notice>
+            )}
             <div className="rounded-2xl p-4 ring-1 ring-line">
               <RubricSummary category={team.category} marks={marks as number[]} />
               <p className="mt-3 flex items-baseline justify-between border-t border-line pt-3">
@@ -482,6 +738,17 @@ function ScoreSheet({
               </p>
               {remarks.trim() && <p className="mt-2 text-sm text-navy-800">Remarks: {remarks.trim()}</p>}
             </div>
+            {scored && (
+              <Field
+                label="Reason for the change"
+                htmlFor="edit-reason"
+                hint={`Say what you got wrong, in a sentence (at least ${MIN_REASON_LENGTH} characters).`}
+                error={reasonError ?? undefined}
+              >
+                <Textarea id="edit-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} disabled={pending} placeholder="For example: I entered the innovation mark in the wrong box." />
+              </Field>
+            )}
+            {unchanged && <Notice tone="info">Nothing has changed from your saved marks.</Notice>}
           </section>
         )}
         {error && <Notice tone="error">{error}</Notice>}

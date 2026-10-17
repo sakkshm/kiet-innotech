@@ -145,7 +145,7 @@ export type EventPass = {
 /** One announced (or awaited) result for the student's team. */
 export type ResultCard = {
   round: "department" | "final";
-  status: "awaiting" | "finalist" | "not_selected" | "winner" | "participated";
+  status: "awaiting" | "finalist" | "not_selected" | "winner" | "participated" | "qualified" | "disqualified";
   title: string;
   message: string;
   place: number | null;

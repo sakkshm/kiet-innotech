@@ -1,4 +1,4 @@
-import type { ActivityQuery, AdminInput, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
+import type { ActivityQuery, AdminInput, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QualifyResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -24,6 +24,8 @@ export interface AdminApi {
   submitTeam(id: string, reason: string): Promise<AdminTeam>;
   /** Super admin: archives draft teams whose registration has closed; the rest are skipped and listed. */
   archiveTeams(ids: string[], reason: string): Promise<ArchiveResult>;
+  /** Other-college teams: qualified for the Grand Finale (true), or back to awaiting (false). */
+  qualifyTeams(ids: string[], qualified: boolean): Promise<QualifyResult>;
   /** Super admin: deletes a team and frees its members. The history stays in the audit log. */
   dissolveTeam(id: string, reason: string): Promise<void>;
   /** Accepts a submitted startup or COE KIET entry as a legal entry for the Grand Finale. */
@@ -81,11 +83,7 @@ export interface AdminApi {
   /** Every department's progress setting up its rooms, ranked (super admins and department admins). */
   readiness(): Promise<Readiness>;
   /** The department round timetable; only a super admin can change it. `moveRooms` moves rooms still at a department's old time. */
-  saveTimetable(
-    slots: { department: string; slotStart: string | null; slotEnd: string | null }[],
-    graceMinutes: number,
-    moveRooms: boolean,
-  ): Promise<Timetable>;
+  saveTimetable(slots: { department: string; slotStart: string | null; slotEnd: string | null }[], moveRooms: boolean): Promise<Timetable>;
   /** Gives a fully scored team a prize place (department round: department admins for their department, and super admins). */
   declareAward(round: JudgingRound, teamId: string, place: number): Promise<void>;
   removeAward(round: JudgingRound, teamId: string): Promise<void>;
@@ -99,14 +97,21 @@ export interface AdminApi {
   setTents(tents: { teamId: string; tent: string | null }[]): Promise<Judging>;
   createPanel(input: PanelInput): Promise<Panel>;
   updatePanel(id: string, input: PanelPlace): Promise<Panel>;
+  /** Sets a department room's buffer: the extra minutes after its slot in which its judges can still submit marks (0 to 60). */
+  setPanelBuffer(id: string, bufferMinutes: number): Promise<Panel>;
   deletePanel(id: string): Promise<void>;
   setPanelTeams(id: string, teamIds: string[]): Promise<Panel>;
   setPanelJurors(id: string, jurors: { email: string; chair: boolean }[]): Promise<Panel>;
   listJurors(): Promise<Juror[]>;
   addJuror(input: JurorInput): Promise<Juror>;
   removeJuror(email: string): Promise<void>;
-  /** Super admin: changes (or enters) a judge's marks; the reason goes into the activity log. */
+  /**
+   * Changes (or enters) a judge's marks, and keeps the reason in the activity log. A super admin at any time, without
+   * a reason; the department's own admin during the room's slot and buffer, with a clear reason.
+   */
   editScore(panelId: string, teamId: string, jurorEmail: string, marks: number[], remarks: string, reason: string): Promise<Score>;
+  /** Lets a judge change their marks again after locking them. A super admin, or the department's admin during the slot and buffer. */
+  unlockJudge(panelId: string, jurorEmail: string, reason: string): Promise<Panel>;
 
   /** Marks the student behind a scanned event pass present. Organisers, and judges for their own rooms. */
   scanPass(code: string, round: JudgingRound, panelId?: string): Promise<ScanResult>;
@@ -115,8 +120,13 @@ export interface AdminApi {
 
   /** A judge's own panels and scores. */
   judgeView(): Promise<JudgeView>;
-  /** Submits a judge's marks. Final: a second submission is refused (only a super admin can change them). */
-  saveScore(panelId: string, teamId: string, marks: number[], remarks: string): Promise<Score>;
+  /**
+   * Saves a judge's marks for a team. Saved marks can be changed (with a clear `editReason`) until the judge locks
+   * them or the room's time runs out.
+   */
+  saveScore(panelId: string, teamId: string, marks: number[], remarks: string, editReason?: string): Promise<Score>;
+  /** Locks all the judge's saved marks in a room. */
+  lockMarks(panelId: string): Promise<LockResult>;
   /** A judge's own room: its teams and who is present. */
   judgeAttendance(panelId: string): Promise<AttendanceSheet>;
 }

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..auth import CurrentJuror
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..schemas import AttendanceSheet, JudgeOut, ScoreInput, ScoreOut
+from ..schemas import AttendanceSheet, JudgeOut, JudgeScoreInput, LockOut, ScoreOut
 from ..services import attendance, judging
 
 router = APIRouter(prefix="/judge", tags=["judge"])
@@ -24,8 +24,13 @@ def my_panels(juror: CurrentJuror, db: Db) -> JudgeOut:
 
 
 @router.put("/panels/{panel_id}/teams/{team_id}/score")
-def save_score(panel_id: uuid.UUID, team_id: uuid.UUID, data: ScoreInput, juror: CurrentJuror, db: Db) -> ScoreOut:
+def save_score(panel_id: uuid.UUID, team_id: uuid.UUID, data: JudgeScoreInput, juror: CurrentJuror, db: Db) -> ScoreOut:
     return judging.save_score(db, juror, panel_id, team_id, data)
+
+
+@router.post("/panels/{panel_id}/lock")
+def lock_scores(panel_id: uuid.UUID, juror: CurrentJuror, db: Db) -> LockOut:
+    return judging.lock_scores(db, juror, panel_id)
 
 
 @router.get("/panels/{panel_id}/attendance")

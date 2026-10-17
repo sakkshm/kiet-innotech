@@ -64,6 +64,19 @@ export const resultLabels: Record<TeamResult, string> = {
   not_selected: "Not selected",
 };
 
+/**
+ * Where a team stands, in words. KIET teams: their department round result. Teams from other colleges: awaiting,
+ * qualified for the Grand Finale, or disqualified. Null when there is nothing to say yet (drafts, withdrawn, pending).
+ */
+export function standingLabel(team: { participantType: string; status: TeamStatus; result: TeamResult }): string | null {
+  if (team.participantType === "college") {
+    if (team.status === "disqualified") return "Disqualified";
+    if (team.status !== "submitted") return null;
+    return team.result === "finalist" ? "Qualified for final" : "Awaiting";
+  }
+  return team.result === "pending" ? null : resultLabels[team.result];
+}
+
 export const routeLabels: Record<TeamRoute, string> = {
   department: "Department round",
   finale: "Direct to finale",
@@ -126,7 +139,12 @@ export const auditLabels: Record<AuditAction, string> = {
   "judging.panel_deleted": "Room / panel deleted",
   "judging.teams_allotted": "Teams allotted",
   "judging.judges_assigned": "Judges assigned",
-  "judging.score_edited": "Score changed by a super admin",
+  "judging.score_edited": "Marks changed after saving",
+  "judging.marks_locked": "Judge locked their marks",
+  "judging.marks_unlocked": "Judge's marks unlocked",
+  "judging.buffer_changed": "Room buffer changed",
+  "team.qualified": "Qualified for the final",
+  "team.qualification_removed": "Back to awaiting",
   "judging.timetable_updated": "Timetable changed",
   "judging.award_declared": "Winner declared",
   "judging.award_removed": "Winner removed",

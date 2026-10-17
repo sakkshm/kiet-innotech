@@ -26,6 +26,7 @@ from ..schemas import (
     AuditOut,
     AuditPage,
     AwardInput,
+    BufferInput,
     FinalistBoardOut,
     FinalistSummaryOut,
     JudgingOut,
@@ -41,6 +42,8 @@ from ..schemas import (
     PanelUpdateInput,
     PublishInput,
     PublishOut,
+    QualifyInput,
+    QualifyOut,
     QuotasInput,
     RankingsOut,
     ReadinessOut,
@@ -63,6 +66,7 @@ from ..schemas import (
     TentsInput,
     TimetableInput,
     TimetableOut,
+    UnlockInput,
     UnpublishInput,
 )
 from ..services import admin as service
@@ -149,6 +153,12 @@ def set_team_leader(team_id: uuid.UUID, data: TeamLeaderInput, admin: CurrentAdm
 def archive_teams(data: ArchiveInput, admin: CurrentAdmin, db: Db, settings: AppSettings) -> ArchiveOut:
     """Super admin: archives draft teams whose registration has closed (others are skipped and listed)."""
     return service.archive_teams(db, admin, settings, data.team_ids, data.reason)
+
+
+@router.post("/teams/qualify")
+def qualify_teams(data: QualifyInput, admin: CurrentAdmin, db: Db) -> QualifyOut:
+    """Marks submitted teams from other colleges qualified for the Grand Finale, or back to awaiting."""
+    return service.set_qualified(db, admin, data.team_ids, data.qualified)
 
 
 @router.post("/teams/{team_id}/submit")
@@ -448,6 +458,11 @@ def delete_panel(panel_id: uuid.UUID, admin: CurrentAdmin, db: Db) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.put("/panels/{panel_id}/buffer")
+def set_panel_buffer(panel_id: uuid.UUID, data: BufferInput, admin: CurrentAdmin, db: Db) -> PanelOut:
+    return judging.set_buffer(db, admin, panel_id, data)
+
+
 @router.put("/panels/{panel_id}/teams")
 def set_panel_teams(panel_id: uuid.UUID, data: PanelTeamsInput, admin: CurrentAdmin, db: Db) -> PanelOut:
     return judging.set_panel_teams(db, admin, panel_id, data)
@@ -463,6 +478,17 @@ def edit_score(
     db: Db,
 ) -> ScoreOut:
     return judging.edit_score(db, admin, panel_id, team_id, juror_email, data)
+
+
+@router.post("/panels/{panel_id}/jurors/{juror_email}/unlock")
+def unlock_judge(
+    panel_id: uuid.UUID,
+    juror_email: Annotated[str, Path(max_length=320)],
+    data: UnlockInput,
+    admin: CurrentAdmin,
+    db: Db,
+) -> PanelOut:
+    return judging.unlock_judge(db, admin, panel_id, juror_email, data)
 
 
 @router.put("/panels/{panel_id}/jurors")

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, CalendarClock, Clock, Frown, Hourglass, MapPin, PartyPopper, QrCode, Trophy } from "lucide-react";
+import { ArrowRight, Ban, CalendarClock, Clock, Frown, Hourglass, MapPin, PartyPopper, QrCode, Trophy } from "lucide-react";
 import { api } from "@/lib/api";
 import { attendanceEnabled } from "@/lib/features";
 import type { EventPass, ResultCard } from "@/lib/types";
@@ -16,11 +16,13 @@ const looks: Record<ResultCard["status"], { box: string; Icon: typeof Trophy }> 
   awaiting: { box: "bg-white text-ink ring-line", Icon: Clock },
   not_selected: { box: "bg-white text-ink ring-line", Icon: Frown },
   participated: { box: "bg-white text-ink ring-line", Icon: Frown },
+  qualified: { box: "bg-emerald-600 text-white ring-emerald-500", Icon: PartyPopper },
+  disqualified: { box: "bg-red-50 text-red-900 ring-red-200", Icon: Ban },
 };
 
 /**
  * Where the student is judged (room, building and time, or the finale stall) and the team's results as they are
- * announced: awaiting, finalist, better luck next time, or a prize with its amount.
+ * announced: awaiting, finalist or qualified, better luck next time, disqualified, or a prize with its amount.
  */
 export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean }) {
   const [pass, setPass] = useState<EventPass | null>(null);
@@ -42,7 +44,7 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
     <div className="space-y-4">
       {results.map((card) => {
         const { box, Icon } = looks[card.status];
-        const bright = card.status === "winner" || card.status === "finalist";
+        const bright = card.status === "winner" || card.status === "finalist" || card.status === "qualified";
         return (
           <section key={`${card.round}-${card.status}`} aria-label={card.title} className={`flex items-start gap-4 rounded-3xl p-5 ring-1 sm:p-6 ${box}`}>
             <span className={`flex size-12 shrink-0 items-center justify-center rounded-2xl ${bright ? "bg-white/20" : "bg-surface text-accent-500"}`}>
@@ -54,7 +56,7 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
               </p>
               <h2 className="mt-1 font-display text-xl font-bold">{card.title}</h2>
               {card.amount !== null && <p className="mt-1 font-display text-3xl font-bold">₹{card.amount.toLocaleString("en-IN")}</p>}
-              <p className={`mt-1 text-sm ${bright ? "text-white/90" : "text-muted"}`}>{card.message}</p>
+              <p className={`mt-1 text-sm ${bright ? "text-white/90" : card.status === "disqualified" ? "text-red-800" : "text-muted"}`}>{card.message}</p>
             </div>
           </section>
         );

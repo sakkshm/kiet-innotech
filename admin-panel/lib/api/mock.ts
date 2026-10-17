@@ -12,6 +12,7 @@ import {
   type AdminTeam,
   type AdminUser,
   type ArchiveResult,
+  type QualifyResult,
   type AuditEntry,
   type FinalistBoard,
   type FinalistSummary,
@@ -180,6 +181,7 @@ function filterTeams(db: MockDb, admin: AdminUser, query: TeamQuery) {
     if (query.status && team.status !== query.status) return false;
     if (query.type && team.participantType !== query.type) return false;
     if (query.route && team.route !== query.route) return false;
+    if (query.result && team.result !== query.result) return false;
     if (query.year && !team.members.some((m) => m.year === query.year)) return false;
     if (query.leaderYear && leaderYear(team) !== query.leaderYear) return false;
     if (q) {
@@ -744,6 +746,36 @@ export const mockApi: AdminApi = {
     return clone(team);
   },
 
+  async qualifyTeams(ids, qualified) {
+    await delay();
+    const db = load();
+    const admin = actor(db);
+    if (admin.role !== "super_admin" && admin.role !== "outside_admin" && admin.role !== "college_admin") {
+      throw new ApiError(403, "Only a super admin or an admin of other colleges can qualify teams for the Grand Finale.");
+    }
+    const result: QualifyResult = { changed: 0, skipped: [], notFound: 0 };
+    for (const id of new Set(ids)) {
+      const team = db.teams.find((t) => t.id === id && canSeeTeam(admin, t));
+      if (!team) result.notFound += 1;
+      else if (team.participantType !== "college") result.skipped.push({ code: team.code, name: team.name, reason: "not a team from another college" });
+      else if (team.status !== "submitted") result.skipped.push({ code: team.code, name: team.name, reason: `not a submitted team (${team.status})` });
+      else if ((team.result === "finalist") !== qualified) {
+        team.result = qualified ? "finalist" : "pending";
+        log(db, {
+          actorEmail: admin.email,
+          action: qualified ? "team.qualified" : "team.qualification_removed",
+          teamId: team.id,
+          teamCode: team.code,
+          department: team.department,
+          detail: qualified ? "Qualified for the Grand Finale" : "Back to awaiting",
+        });
+        result.changed += 1;
+      }
+    }
+    save(db);
+    return result;
+  },
+
   async archiveTeams(ids, reason) {
     await delay();
     const db = load();
@@ -1288,6 +1320,9 @@ export const mockApi: AdminApi = {
   judging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   readiness: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   saveTimetable: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  setPanelBuffer: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  unlockJudge: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  lockMarks: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   declareAward: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   removeAward: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   publishAwards: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),

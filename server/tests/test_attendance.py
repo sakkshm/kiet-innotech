@@ -200,9 +200,11 @@ def test_races_never_leave_a_score_or_mark_inconsistent(judging, as_user):  # no
     root.post("/admin/judging/department/open")
     path = lambda key: f"/judge/panels/{room['id']}/teams/{judging['teams'][key]['id']}/score"  # noqa: E731
     full = {"marks": [5, 5, 5, 5, 5, 5, 5, 5, 10], "remarks": ""}
-    # A double tap on "Submit": one score, the other refused as final.
+    # A double tap on "Save": one score, the other a harmless repeat.
     codes = parallel(lambda: judging["it_prof"].put(path("cse_a"), full), lambda: judging["it_prof"].put(path("cse_a"), full))
-    assert sorted(codes) == [200, 409]
+    assert sorted(codes) == [200, 200]
+    with get_sessionmaker()() as db:
+        assert len(list(db.scalars(select(Score).where(Score.juror_email == "it.prof@kiet.edu")))) == 1
     # A judge submits while the room's admin removes them: the score is never left behind without its judge.
     keep_chair = {"jurors": [{"email": "it.prof@kiet.edu", "chair": True}]}
     codes = parallel(

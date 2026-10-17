@@ -290,6 +290,7 @@ export const participantTracks = [
       "Register with any valid email address",
       "Choose any one of the eight categories",
       "Teams go directly to the institute level finale",
+      "Any number of teams from one college can enter",
     ],
   },
   {
@@ -555,6 +556,11 @@ export const faqs = [
     question: "Who can still register after 15 October?",
     answer:
       "Students of other colleges and schools can register and submit until 21 October 2026, 11:59 PM. Registration for KIET students (COE KIET included) and startups closes on 15 October 2026.",
+  },
+  {
+    question: "Can a college send more than one team?",
+    answer:
+      "Yes. There is no limit on the number of teams from one college or school. Every team registers on its own, with its own members, category and project.",
   },
   {
     question: "How do I join my friend's team?",

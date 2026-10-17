@@ -25,6 +25,13 @@ const tones: Partial<Record<string, PillTone>> = {
   "judging.opened": "green",
   "judging.locked": "orange",
   "judging.scored": "cyan",
+  // Changed marks stand out: they are what the super admins look for.
+  "judging.score_edited": "orange",
+  "judging.marks_locked": "navy",
+  "judging.marks_unlocked": "orange",
+  "judging.buffer_changed": "cyan",
+  "team.qualified": "green",
+  "team.qualification_removed": "slate",
   "student.banned": "red",
   "student.unbanned": "cyan",
   "student.deleted": "red",

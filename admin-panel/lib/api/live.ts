@@ -130,6 +130,8 @@
  *          (same institution, category eligibility, 1-5 members or 2-5 to submit, unique name); the leader must be in the
  *          caller's scope. → AdminTeam (201)
  *
+ *   POST   /admin/teams/qualify  body { team_ids, qualified } → { changed, skipped, not_found }   (super admin, other-college admins):
+ *          submitted other-college teams qualified for the Grand Finale (result = finalist), or back to awaiting (pending)
  *   POST   /admin/teams/{id}/reopen    (super_admin) body { reason } → AdminTeam (draft). 409 unless submitted and registration is
  *          open, once KIET results are published, or when the team is allotted to a room/panel, scored or has a tent.
  *   POST   /admin/teams/{id}/dissolve  (super_admin) body { reason } → 204. Deletes the team and frees its members; 409 for a
@@ -152,25 +154,32 @@
  *   Judging (super admins: everything; department admins: their own department's rooms and judges; outside admins
  *   read the finale)
  *   GET    /admin/judging/{round}                 → Judging        round: department | final
- *   GET|PUT /admin/judging/timetable  (PUT: super admin) body { slots: [{ department, slot_start, slot_end }], grace_minutes,
+ *   GET|PUT /admin/judging/timetable  (PUT: super admin) body { slots: [{ department, slot_start, slot_end }],
  *          move_rooms } → Timetable. A department room has two judges (one from its department, one from another), a judge
- *          sits in one room per round, and judges submit marks only from the slot's start to its end + grace_minutes.
+ *          sits in one room per round, and judges submit marks only from the slot's start to its end + the room's buffer.
  *   POST   /admin/judging/{round}/open | /lock    → RoundState     409 with the reason when it cannot open (super admin)
  *   GET    /admin/judging/{round}/rankings?department=   → Rankings
  *   GET    /admin/judging/{round}/attendance?panel_id=&department=   → AttendanceSheet (a room, a department, or the finale)
  *   PUT    /admin/judging/final/tents   body { tents: [{ team_id, tent | null }] } → Judging
  *   POST   /admin/panels   body { round, department, building, name, location, slot_start, slot_end } → Panel
  *          A department room needs a building and a slot; 409 when the same room is booked at an overlapping time.
- *   PATCH  /admin/panels/{id}   body { building, name, location, slot_start, slot_end } → Panel;  DELETE /admin/panels/{id} → 204
+ *   PATCH  /admin/panels/{id}   body { building, name, location, slot_start, slot_end, buffer_minutes } → Panel;  DELETE /admin/panels/{id} → 204
+ *   PUT    /admin/panels/{id}/buffer   body { buffer_minutes: 0-60 } → Panel   (super admin; the department's admin)
  *   PUT    /admin/panels/{id}/teams    body { team_ids }  → Panel
  *   PUT    /admin/panels/{id}/jurors   body { jurors: [{ email, chair }] } → Panel
- *   PUT    /admin/panels/{id}/teams/{team}/scores/{juror_email}  (super admin) body { marks, remarks, reason } → Score
+ *   PUT    /admin/panels/{id}/teams/{team}/scores/{juror_email}  body { marks, remarks, reason } → Score
+ *          Super admin any time (reason optional); the department's own admin during the room's slot and buffer, with a
+ *          clear reason (at least 15 characters). 403 otherwise.
+ *   POST   /admin/panels/{id}/jurors/{juror_email}/unlock  body { reason } → Panel   (same people; lets a judge change their marks again)
  *   GET    /admin/jurors → Juror[];  POST /admin/jurors body JurorInput → Juror;  DELETE /admin/jurors/{email} → 204
  *   PUT    /admin/finalists/quotas  (super admin) body { quotas: [{ department, category, quota }] } → FinalistSummary
  *   POST   /admin/attendance/scan   body { code, round, panel_id? } → ScanResult  (organisers; judges for their rooms)
  *   POST   /admin/attendance/mark | /unmark   body { user_id, round, note } → ScanResult | 204
  *   GET    /judge  → JudgeView (the signed-in judge's panels);  PUT /judge/panels/{panel}/teams/{team}/score
- *          body { marks: number[9], remarks } → Score. 423 while the round is locked; 409 once submitted (final).
+ *          body { marks: number[9], remarks, edit_reason } → Score. edit_reason is needed to change marks saved before.
+ *          423 while the round is locked or outside the room's time; 409 once the judge locked their marks.
+ *   POST   /judge/panels/{panel}/lock → { locked, unscored }   locks all the judge's marks in the room (they also lock by
+ *          themselves when the room's slot and buffer are over)
  *   GET    /judge/panels/{panel}/attendance → AttendanceSheet
  *
  *   GET    /admin/audit?team_id=&limit=
@@ -183,7 +192,7 @@
  *                  member.removed | invitation.sent | invitation.cancelled | invitation.declined.
  *          Unknown future actions render with their raw action string.
  */
-import type { AdminInput, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
+import type { AdminInput, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, QualifyResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 import { getSession } from "../auth/session";
 import { ApiError, type AdminApi } from "./contract";
 
@@ -309,6 +318,7 @@ export const liveApi: AdminApi = {
   disqualifyTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/disqualify`, { reason }),
   restoreTeam: (teamId, reason, unbanMembers = false) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/restore`, { reason, unbanMembers }),
   archiveTeams: (teamIds, reason) => request<ArchiveResult>("POST", "/admin/teams/archive", { teamIds, reason }),
+  qualifyTeams: (teamIds, qualified) => request<QualifyResult>("POST", "/admin/teams/qualify", { teamIds, qualified }),
   submitTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/submit`, { reason }),
   reopenTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/reopen`, { reason }),
   dissolveTeam: (teamId, reason) => request<void>("POST", `/admin/teams/${id(teamId)}/dissolve`, { reason }),
@@ -353,7 +363,7 @@ export const liveApi: AdminApi = {
 
   judging: (round) => request<Judging>("GET", `/admin/judging/${round}`),
   readiness: () => request<Readiness>("GET", "/admin/judging/department/readiness"),
-  saveTimetable: (slots, graceMinutes, moveRooms) => request<Timetable>("PUT", "/admin/judging/timetable", { slots, graceMinutes, moveRooms }),
+  saveTimetable: (slots, moveRooms) => request<Timetable>("PUT", "/admin/judging/timetable", { slots, moveRooms }),
   declareAward: (round, teamId, place) => request<void>("POST", `/admin/judging/${round}/awards`, { teamId, place }),
   removeAward: (round, teamId) => request<void>("DELETE", `/admin/judging/${round}/awards/${id(teamId)}`),
   publishAwards: (round, publish) => request<void>("POST", `/admin/judging/${round}/awards/${publish ? "publish" : "withdraw"}`),
@@ -364,9 +374,12 @@ export const liveApi: AdminApi = {
   setTents: (tents) => request<Judging>("PUT", "/admin/judging/final/tents", { tents }),
   createPanel: (input) => request<Panel>("POST", "/admin/panels", input),
   updatePanel: (panelId, input) => request<Panel>("PATCH", `/admin/panels/${id(panelId)}`, input),
+  setPanelBuffer: (panelId, bufferMinutes) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/buffer`, { bufferMinutes }),
   deletePanel: (panelId) => request<void>("DELETE", `/admin/panels/${id(panelId)}`),
   setPanelTeams: (panelId, teamIds) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/teams`, { teamIds }),
   setPanelJurors: (panelId, jurors) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/jurors`, { jurors }),
+  unlockJudge: (panelId, jurorEmail, reason) =>
+    request<Panel>("POST", `/admin/panels/${id(panelId)}/jurors/${id(jurorEmail)}/unlock`, { reason }),
   listJurors: () => request<Juror[]>("GET", "/admin/jurors"),
   addJuror: (input) => request<Juror>("POST", "/admin/jurors", input),
   removeJuror: (email) => request<void>("DELETE", `/admin/jurors/${id(email)}`),
@@ -378,7 +391,8 @@ export const liveApi: AdminApi = {
   unmarkPresent: (userId, round, note) => request<void>("POST", "/admin/attendance/unmark", { userId, round, note }),
 
   judgeView: () => request<JudgeView>("GET", "/judge"),
-  saveScore: (panelId, teamId, marks, remarks) =>
-    request<Score>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/score`, { marks, remarks }),
+  saveScore: (panelId, teamId, marks, remarks, editReason = "") =>
+    request<Score>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/score`, { marks, remarks, editReason }),
+  lockMarks: (panelId) => request<LockResult>("POST", `/judge/panels/${id(panelId)}/lock`),
   judgeAttendance: (panelId) => request<AttendanceSheet>("GET", `/judge/panels/${id(panelId)}/attendance`),
 };

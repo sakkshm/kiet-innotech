@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, Download, Plus, X } from "lucide-react";
+import { Archive, BadgeCheck, Download, Plus, Undo2, X } from "lucide-react";
 import { api, errorMessage, MAX_SEARCH_LENGTH } from "@/lib/api";
-import type { AdminTeam, ArchiveResult, TeamQuery, TeamSort } from "@/lib/admin-types";
+import type { AdminTeam, ArchiveResult, QualifyResult, TeamQuery, TeamSort } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { downloadTeams, downloadTeamsExcel } from "@/lib/export";
-import { formatDate, otherMemberDepartments, plural, routeLabels, statusLabels, typeShortLabels, typeTones } from "@/lib/format";
-import type { ParticipantType, TeamRoute, TeamStatus } from "@/lib/types";
+import { formatDate, otherMemberDepartments, plural, routeLabels, standingLabel, statusLabels, typeShortLabels, typeTones } from "@/lib/format";
+import type { ParticipantType, TeamResult, TeamRoute, TeamStatus } from "@/lib/types";
 import { useQuery } from "@/lib/use-query";
 import { intParam, pageSizeParam, pickParam, useUrlParams } from "@/lib/use-url-params";
 import { useSelection } from "@/lib/use-selection";
@@ -25,7 +25,7 @@ import { Loading, Notice } from "@/components/ui/Notice";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { lastPage, PageSizeSelect, Pagination } from "@/components/ui/Pagination";
 import { SelectionBar } from "@/components/ui/SelectionBar";
-import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
+import { Pill, StandingPill, StatusPill } from "@/components/ui/Pill";
 import { yearLabel } from "@/lib/rules";
 import { isOutsideAdmin, scopedTypes, scopeName } from "@/lib/scope";
 import { CreateTeamDialog } from "./CreateTeamDialog";
@@ -37,6 +37,7 @@ const statuses: TeamStatus[] = ["draft", "submitted", "withdrawn", "disqualified
 const types: ParticipantType[] = ["kiet", "college", "school", "startup"];
 const routes: TeamRoute[] = ["department", "finale"];
 const approvals = ["pending", "approved"] as const;
+const results: TeamResult[] = ["pending", "finalist", "not_selected"];
 const sorts: TeamSort[] = ["code", "name", "category", "department", "status", "members", "submitted_at", "leader_year"];
 const memberYears = (team: AdminTeam) =>
   [...team.members].sort((a, b) => Number(b.role === "leader") - Number(a.role === "leader") || a.year - b.year).map((m) => m.year);
@@ -63,6 +64,9 @@ export function TeamsView() {
   const selection = useSelection(teamKey);
   const [archiving, setArchiving] = useState(false);
   const [archived, setArchived] = useState<ArchiveResult | null>(null);
+  // Other colleges: qualify the selected teams for the Grand Finale (true) or send them back to awaiting (false).
+  const [qualifying, setQualifying] = useState<boolean | null>(null);
+  const [qualified, setQualified] = useState<(QualifyResult & { qualified: boolean }) | null>(null);
 
   const query: TeamQuery = {
     department: isSuper ? pickParam(params, "department", departments) : undefined,
@@ -71,6 +75,7 @@ export function TeamsView() {
     type: typeChoices.length ? pickParam(params, "type", typeChoices) : undefined,
     route: isSuper ? pickParam(params, "route", routes) : undefined,
     approval: seesApprovals ? pickParam(params, "approval", approvals) : undefined,
+    result: pickParam(params, "result", results),
     year: intParam(params, "year", 1, 12),
     leaderYear: intParam(params, "leader_year", 1, 12),
     q: params.get("q")?.trim().slice(0, MAX_SEARCH_LENGTH) || undefined,
@@ -81,7 +86,7 @@ export function TeamsView() {
   };
   const key = JSON.stringify(query);
   const { data, error, loading, reload } = useQuery(key, () => api.listTeams(query));
-  const filtered = Boolean(query.department || query.category || query.status || query.type || query.route || query.approval || query.year || query.leaderYear || query.q);
+  const filtered = Boolean(query.department || query.category || query.status || query.type || query.route || query.approval || query.result || query.year || query.leaderYear || query.q);
   const yearChoices = [
     // A school admin sees school classes only; a college admin college years only.
     ...(query.type === "school" || admin.role === "school_admin" ? [] : [1, 2, 3, 4].map((y) => ({ value: y, label: yearLabel(y) }))),
@@ -227,6 +232,14 @@ export function TeamsView() {
               </Select>
             </Field>
           )}
+          <Field label="Result" htmlFor="filter-result">
+            <Select id="filter-result" value={query.result ?? ""} onChange={(e) => update({ result: e.target.value })}>
+              <option value="">Any</option>
+              <option value="pending">Pending / awaiting</option>
+              <option value="finalist">Finalist / qualified</option>
+              {!outside && <option value="not_selected">Not selected</option>}
+            </Select>
+          </Field>
           {isSuper && (
             <Field label="Route" htmlFor="filter-route">
               <Select id="filter-route" value={query.route ?? ""} onChange={(e) => update({ route: e.target.value })}>
@@ -278,14 +291,65 @@ export function TeamsView() {
         onClear={selection.clear}
         onExport={() => setExportOpen(true)}
         actions={
-          isSuper && (
-            <Button size="sm" variant="secondary" onClick={() => setArchiving(true)}>
-              <Archive aria-hidden="true" className="size-3.5" />
-              Archive drafts
-            </Button>
-          )
+          <>
+            {(isSuper || admin.role === "outside_admin" || admin.role === "college_admin") && (
+              <>
+                <Button size="sm" variant="secondary" onClick={() => setQualifying(true)}>
+                  <BadgeCheck aria-hidden="true" className="size-3.5" />
+                  Qualify for final
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setQualifying(false)}>
+                  <Undo2 aria-hidden="true" className="size-3.5" />
+                  Back to awaiting
+                </Button>
+              </>
+            )}
+            {isSuper && (
+              <Button size="sm" variant="secondary" onClick={() => setArchiving(true)}>
+                <Archive aria-hidden="true" className="size-3.5" />
+                Archive drafts
+              </Button>
+            )}
+          </>
         }
       />
+      {qualified && (
+        <Notice tone={qualified.skipped.length ? "warning" : "success"} title={`${plural(qualified.changed, "team")} ${qualified.qualified ? "qualified for the final" : "back to awaiting"}`}>
+          {qualified.skipped.length > 0 && (
+            <>
+              {plural(qualified.skipped.length, "team")} skipped:{" "}
+              {qualified.skipped
+                .slice(0, 8)
+                .map((s) => `${s.code} (${s.reason})`)
+                .join(", ")}
+              {qualified.skipped.length > 8 ? ` and ${qualified.skipped.length - 8} more` : ""}.
+            </>
+          )}
+        </Notice>
+      )}
+      {qualifying !== null && (
+        <ConfirmDialog
+          title={qualifying ? `Qualify ${plural(selection.size, "selected team")} for the Grand Finale?` : `Send ${plural(selection.size, "selected team")} back to awaiting?`}
+          description={
+            <>
+              Only <strong className="text-navy-900">submitted teams from other colleges</strong> change. Others in the selection are skipped and listed.
+              Their students see {qualifying ? "that they have qualified for the Grand Finale" : "that they are awaiting the organisers' decision"}.
+            </>
+          }
+          confirmLabel={qualifying ? "Qualify for final" : "Back to awaiting"}
+          onClose={() => setQualifying(null)}
+          onConfirm={async () => {
+            const result = await api.qualifyTeams(
+              selection.rows.map((t) => t.id),
+              qualifying,
+            );
+            setQualifying(null);
+            setQualified({ ...result, qualified: qualifying });
+            selection.clear();
+            reload();
+          }}
+        />
+      )}
       {archived && (
         <Notice tone={archived.skipped.length ? "warning" : "success"} title={`${plural(archived.archived, "team")} archived`}>
           {archived.skipped.length > 0 && (
@@ -429,7 +493,7 @@ export function TeamsView() {
                         )}
                       </td>
                       <td className={`${tdClass} whitespace-nowrap text-muted`}>{formatDate(team.submittedAt)}</td>
-                      <td className={tdClass}>{team.result !== "pending" ? <ResultPill result={team.result} /> : <span className="text-muted">—</span>}</td>
+                      <td className={tdClass}>{standingLabel(team) ? <StandingPill team={team} /> : <span className="text-muted">—</span>}</td>
                     </tr>
                   );
                 })}

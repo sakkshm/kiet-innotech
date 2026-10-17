@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { CalendarClock, ChevronDown, Crown, MapPin, Pencil, Plus, Trash2, UserCog, UserPlus, Users } from "lucide-react";
+import { AlarmClock, CalendarClock, ChevronDown, Crown, Lock, LockOpen, MapPin, Pencil, Plus, Trash2, TriangleAlert, UserCog, UserPlus, Users } from "lucide-react";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import type { Judging, Juror, Panel, PanelJuror, PanelScore, PanelTeam, TeamSummary, Timetable } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { attendanceEnabled } from "@/lib/features";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { categoryTitle, formatDateTime, plural } from "@/lib/format";
-import { roomLabel, slotLabel, slotState, timeLabel } from "@/lib/rooms";
+import { DEFAULT_BUFFER_MINUTES, MAX_BUFFER_MINUTES, MIN_REASON_LENGTH, reasonProblem, roomClock, roomLabel, slotLabel, timeLabel } from "@/lib/rooms";
 import { teamHref } from "@/lib/routes";
+import { useServerNow } from "@/lib/use-room-now";
 import { useQuery } from "@/lib/use-query";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -23,6 +24,7 @@ import { numClass, TableFrame, tdClass, Th } from "@/components/ui/Table";
 import { YearChips } from "@/components/teams/YearChips";
 import { AttendanceButtons } from "./AttendanceButtons";
 import { HiddenMarks } from "./HiddenMarks";
+import { RoomTimer, TimeLeftPopup, type WarningItem } from "./RoomTimer";
 import { PARTS, RubricForm, TOTAL } from "./RubricForm";
 import { TimetableStrip } from "./TimetableStrip";
 
@@ -44,7 +46,11 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
   const [staffing, setStaffing] = useState<Panel | null>(null);
   const [deleting, setDeleting] = useState<Panel | null>(null);
   const [changing, setChanging] = useState<{ panel: Panel; team: PanelTeam } | null>(null);
+  const [buffering, setBuffering] = useState<Panel | null>(null);
+  const [unlocking, setUnlocking] = useState<{ panel: Panel; juror: PanelJuror } | null>(null);
   const [gone, setGone] = useState<string | null>(null);
+  // The server's clock, ticking every second, for each room's timer and the "15 minutes left" popup.
+  const now = useServerNow(judging.serverTime);
   // A room another organiser removed: close whatever was open on it and show the current list.
   const roomGone = () => {
     setCreating(false);
@@ -52,6 +58,8 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
     setAllotting(null);
     setStaffing(null);
     setChanging(null);
+    setBuffering(null);
+    setUnlocking(null);
     setDeleting(null);
     setGone(GONE_MESSAGE);
     reload();
@@ -63,6 +71,22 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
     judging.unallotted.reduce<Record<string, number>>((acc, t) => ({ ...acc, [t.department ?? "Other"]: (acc[t.department ?? "Other"] ?? 0) + 1 }), {}),
   ).sort((a, b) => b[1] - a[1]);
   const buildings = [...new Set(judging.panels.map((p) => p.building).filter(Boolean))].sort();
+  // "15 minutes left": the rooms this organiser looks after whose slot is about to end.
+  const warnings: WarningItem[] = judging.panels.flatMap((panel) => {
+    const clock = roomClock(panel.slotStart, panel.slotEnd, panel.scoringUntil, now);
+    if (!panel.canEdit || clock?.phase !== "slot" || !clock.warn) return [];
+    const open = panel.jurors.filter((j) => !j.locked).length;
+    return [
+      {
+        id: panel.id,
+        room: roomLabel(panel),
+        slotEnd: panel.slotEnd!,
+        msLeft: clock.msLeft,
+        detail: panel.jurors.length ? `${open} of ${plural(panel.jurors.length, "judge")} still ${open === 1 ? "has" : "have"} to lock their marks.` : "This room has no judges yet.",
+        note: panel.bufferMinutes > 0 ? `Judges get ${panel.bufferMinutes} extra minutes after the slot, then their marks lock by themselves.` : "Judges' marks lock by themselves when the slot ends.",
+      },
+    ];
+  });
 
   return (
     <div className="space-y-5">
@@ -132,7 +156,10 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
             <PanelCard
               key={panel.id}
               panel={panel}
-              showMarks={judging.canManage}
+              now={now}
+              showMarks={panel.teams.some((t) => t.judgeScores !== null)}
+              onBuffer={() => setBuffering(panel)}
+              onUnlock={(juror) => setUnlocking({ panel, juror })}
               onEdit={() => setEditing(panel)}
               onAllot={() => setAllotting(panel)}
               onStaff={() => setStaffing(panel)}
@@ -143,6 +170,7 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
         </div>
       )}
 
+      <TimeLeftPopup items={warnings} />
       {gone && (
         <div className="mb-4">
           <Notice tone="info">{gone}</Notice>
@@ -192,6 +220,29 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
           }}
         />
       )}
+      {buffering && (
+        <BufferDialog
+          panel={buffering}
+          onClose={() => setBuffering(null)}
+          onGone={roomGone}
+          onSaved={() => {
+            setBuffering(null);
+            reload();
+          }}
+        />
+      )}
+      {unlocking && (
+        <UnlockDialog
+          panel={unlocking.panel}
+          juror={unlocking.juror}
+          onClose={() => setUnlocking(null)}
+          onGone={roomGone}
+          onSaved={() => {
+            setUnlocking(null);
+            reload();
+          }}
+        />
+      )}
       {changing && (
         <ChangeScoreDialog
           panel={changing.panel}
@@ -230,7 +281,10 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
 
 function PanelCard({
   panel,
+  now,
   showMarks,
+  onBuffer,
+  onUnlock,
   onEdit,
   onAllot,
   onStaff,
@@ -238,7 +292,10 @@ function PanelCard({
   onChangeScore,
 }: {
   panel: Panel;
+  now: number;
   showMarks: boolean;
+  onBuffer: () => void;
+  onUnlock: (juror: PanelJuror) => void;
   onEdit: () => void;
   onAllot: () => void;
   onStaff: () => void;
@@ -252,8 +309,10 @@ function PanelCard({
   const students = panel.teams.reduce((sum, t) => sum + t.memberCount, 0);
   const present = panel.teams.reduce((sum, t) => sum + t.present, 0);
   const slot = slotLabel(panel.slotStart, panel.slotEnd);
-  const state = slotState(panel.slotStart, panel.slotEnd);
+  const clock = roomClock(panel.slotStart, panel.slotEnd, panel.scoringUntil, now);
   const label = roomLabel(panel);
+  // Marks that were changed after the judge saved them: what a super admin looks for.
+  const changed = panel.teams.flatMap((t) => t.judgeScores ?? []).filter((x) => x.editCount > 0 || x.editedBy);
 
   return (
     <article aria-labelledby={`panel-${panel.id}`} className="overflow-hidden rounded-3xl bg-white ring-1 ring-line">
@@ -263,8 +322,13 @@ function PanelCard({
             <h3 id={`panel-${panel.id}`} className="flex flex-wrap items-center gap-2 font-display text-xl font-bold text-navy-900">
               {label}
               {panel.department && <Pill tone="navy">{panel.department} teams</Pill>}
-              {state === "now" && <Pill tone="green">In progress</Pill>}
-              {state === "over" && <Pill tone="slate">Slot over</Pill>}
+              {clock && <RoomTimer clock={clock} />}
+              {changed.length > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-accent-500 px-2.5 py-0.5 text-[11px] font-bold text-white" title="Marks changed after the judge saved them">
+                  <TriangleAlert aria-hidden="true" className="size-3" />
+                  {plural(changed.length, "changed mark")}
+                </span>
+              )}
             </h3>
             <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
               {slot && (
@@ -281,8 +345,17 @@ function PanelCard({
               )}
             </p>
             {panel.slotStart && panel.scoringUntil && (
-              <p className="mt-1 text-xs text-muted">
-                Judges can submit marks {timeLabel(panel.slotStart)} – {timeLabel(panel.scoringUntil)} (the slot plus the relaxation time).
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted">
+                <span>
+                  Judges can save marks {timeLabel(panel.slotStart)} – {timeLabel(panel.scoringUntil)}: the slot plus a buffer of{" "}
+                  <strong className="text-navy-900">{panel.bufferMinutes} min</strong>.
+                </span>
+                {panel.canEdit && (
+                  <button type="button" onClick={onBuffer} className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline">
+                    <AlarmClock aria-hidden="true" className="size-3.5" />
+                    Change buffer
+                  </button>
+                )}
               </p>
             )}
           </div>
@@ -298,8 +371,8 @@ function PanelCard({
 
         {panel.round === "department" ? (
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <JudgeSeat label={`Judge from ${panel.department}`} juror={panel.jurors.find((j) => j.department === panel.department)} />
-            <JudgeSeat label="Judge from another department" juror={panel.jurors.find((j) => j.department !== panel.department)} />
+            <JudgeSeat label={`Judge from ${panel.department}`} juror={panel.jurors.find((j) => j.department === panel.department)} canUnlock={panel.canEditMarks} onUnlock={onUnlock} />
+            <JudgeSeat label="Judge from another department" juror={panel.jurors.find((j) => j.department !== panel.department)} canUnlock={panel.canEditMarks} onUnlock={onUnlock} />
           </div>
         ) : (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -362,6 +435,7 @@ function PanelCard({
                   final={final}
                   judges={panel.jurors.length}
                   showMarks={showMarks}
+                  canEditMarks={panel.canEditMarks}
                   open={open === team.id}
                   onToggle={() => setOpen(open === team.id ? null : team.id)}
                   onChange={() => onChangeScore(team)}
@@ -375,7 +449,17 @@ function PanelCard({
   );
 }
 
-function JudgeSeat({ label, juror }: { label: string; juror: PanelJuror | undefined }) {
+function JudgeSeat({
+  label,
+  juror,
+  canUnlock,
+  onUnlock,
+}: {
+  label: string;
+  juror: PanelJuror | undefined;
+  canUnlock: boolean;
+  onUnlock: (juror: PanelJuror) => void;
+}) {
   return (
     <div className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ring-1 ring-inset ${juror ? "bg-white ring-line" : "bg-accent-50 ring-accent-100"}`}>
       <span className={`flex size-9 shrink-0 items-center justify-center rounded-full ${juror ? "bg-navy-900 text-white" : "bg-white text-accent-600 ring-1 ring-inset ring-accent-100"}`}>
@@ -391,6 +475,18 @@ function JudgeSeat({ label, juror }: { label: string; juror: PanelJuror | undefi
           </span>
         ) : (
           <span className="block text-sm font-semibold text-accent-600">Not chosen yet</span>
+        )}
+        {juror?.locked && (
+          <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-navy-800">
+            <Lock aria-hidden="true" className="size-3" />
+            Marks locked
+            {canUnlock && (
+              <button type="button" onClick={() => onUnlock(juror)} className="ml-1 inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline">
+                <LockOpen aria-hidden="true" className="size-3" />
+                Unlock
+              </button>
+            )}
+          </span>
         )}
       </span>
     </div>
@@ -416,6 +512,7 @@ function TeamRows({
   final,
   judges,
   showMarks,
+  canEditMarks,
   open,
   onToggle,
   onChange,
@@ -424,6 +521,8 @@ function TeamRows({
   final: boolean;
   judges: number;
   showMarks: boolean;
+  /** The viewer may change the judges' marks right now. */
+  canEditMarks: boolean;
   open: boolean;
   onToggle: () => void;
   onChange: () => void;
@@ -461,6 +560,11 @@ function TeamRows({
         )}
         <td className={`${tdClass} ${numClass}`}>
           {team.scores} / {judges}
+          {team.judgeScores?.some((x) => x.editCount > 0 || x.editedBy) && (
+            <span title="Marks were changed after the judge saved them" className="ml-1.5 inline-flex align-middle text-accent-500">
+              <TriangleAlert aria-label="Marks were changed after saving" className="size-3.5" />
+            </span>
+          )}
         </td>
         <td className={`${tdClass} ${numClass}`}>
           <span className="inline-flex items-center justify-end gap-1">
@@ -486,10 +590,14 @@ function TeamRows({
               ) : (
                 <p className="text-sm text-muted">No marks submitted yet.</p>
               )}
-              <Button size="sm" variant="secondary" onClick={onChange}>
-                <Pencil aria-hidden="true" className="size-3.5" />
-                Change or enter marks
-              </Button>
+              {canEditMarks ? (
+                <Button size="sm" variant="secondary" onClick={onChange}>
+                  <Pencil aria-hidden="true" className="size-3.5" />
+                  Change or enter marks
+                </Button>
+              ) : (
+                <p className="max-w-xs text-xs text-muted">Marks can be changed during this room&apos;s slot and its buffer, or by a super admin.</p>
+              )}
             </div>
           </td>
         </tr>
@@ -499,14 +607,25 @@ function TeamRows({
 }
 
 function JudgeScoreChip({ score, team }: { score: PanelScore; team: string }) {
+  const changed = score.editCount > 0 || !!score.editedBy;
   return (
-    <li className="flex items-center gap-2 rounded-xl bg-white px-3 py-1.5 ring-1 ring-line">
+    <li className={`flex max-w-sm items-center gap-2 rounded-xl px-3 py-1.5 ring-1 ${changed ? "bg-accent-50 ring-2 ring-accent-500" : "bg-white ring-line"}`}>
       <span className="min-w-0">
-        <span className="block text-xs font-semibold text-navy-900">{score.jurorName}</span>
+        <span className="flex items-center gap-1 text-xs font-semibold text-navy-900">
+          {score.jurorName}
+          {score.locked && <Lock aria-label="Locked" className="size-3 text-muted" />}
+        </span>
         <span className="block text-[11px] text-muted">
           {formatDateTime(score.updatedAt)}
           {score.editedBy && ` · changed by ${score.editedBy}`}
         </span>
+        {changed && (
+          <span className="mt-0.5 block text-[11px] font-semibold text-accent-600">
+            <TriangleAlert aria-hidden="true" className="mr-1 inline size-3 align-[-1px]" />
+            Changed {score.editCount > 0 ? `${score.editCount}×` : "by an organiser"}
+            {score.editReason ? `: “${score.editReason}”` : ""}
+          </span>
+        )}
       </span>
       <HiddenMarks value={score.total} label={`${score.jurorName}'s marks for ${team}`} size="sm" />
     </li>
@@ -558,6 +677,7 @@ function PanelFormDialog({
   const [date, setDate] = useState(start.date);
   const [from, setFrom] = useState(start.time);
   const [to, setTo] = useState(end.time);
+  const [buffer, setBuffer] = useState(String(panel?.bufferMinutes ?? DEFAULT_BUFFER_MINUTES));
   const [department, setDepartment] = useState(panel?.department ?? defaultDepartment);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -569,12 +689,17 @@ function PanelFormDialog({
     if (wantsSlot && (!date || !from || !to)) return setError("Give the date and the start and end time.");
     if (wantsSlot && to <= from) return setError("The slot must end after it starts.");
     if (isRoom && !panel && !department) return setError("Choose the department whose teams are judged here.");
+    const bufferMinutes = Number(buffer);
+    if (isRoom && (!Number.isInteger(bufferMinutes) || bufferMinutes < 0 || bufferMinutes > MAX_BUFFER_MINUTES)) {
+      return setError(`The buffer is a whole number of minutes from 0 to ${MAX_BUFFER_MINUTES}.`);
+    }
     const place = {
       building: building.trim(),
       name: name.trim(),
       location: location.trim(),
       slotStart: wantsSlot ? `${date}T${from}:00+05:30` : null,
       slotEnd: wantsSlot ? `${date}T${to}:00+05:30` : null,
+      bufferMinutes: isRoom ? bufferMinutes : DEFAULT_BUFFER_MINUTES,
     };
     setPending(true);
     setError(null);
@@ -634,6 +759,16 @@ function PanelFormDialog({
             <Input id="panel-to" type="time" value={to} onChange={(e) => setTo(e.target.value)} step={300} />
           </Field>
         </div>
+        {isRoom && (
+          <Field
+            label="Buffer after the slot (minutes)"
+            htmlFor="panel-buffer"
+            hint={`Extra time for the judges to submit their marks once the slot ends. ${DEFAULT_BUFFER_MINUTES} by default, at most ${MAX_BUFFER_MINUTES}.`}
+            className="sm:col-span-2"
+          >
+            <Input id="panel-buffer" type="number" inputMode="numeric" min={0} max={MAX_BUFFER_MINUTES} step={5} value={buffer} onChange={(e) => setBuffer(e.target.value)} />
+          </Field>
+        )}
         <Field label="Directions (optional)" htmlFor="panel-location" hint="Printed on the room's roster and shown to students with their room." className="sm:col-span-2">
           <Input id="panel-location" value={location} onChange={(e) => setLocation(e.target.value)} maxLength={120} placeholder="2nd floor, next to the lift" />
         </Field>
@@ -1090,8 +1225,13 @@ function NewJudgeForm({ panel, onCancel, onAdded }: { panel: Panel; onCancel: ()
   );
 }
 
-/** Super admin: changes a judge's submitted marks, or enters them for a judge (e.g. from a paper sheet). Logged with a reason. */
+/**
+ * Changes a judge's saved marks, or enters them for a judge (e.g. from a paper sheet). A super admin any time and
+ * without a reason; the department's own admin during the room's slot and buffer, with a clear reason. Both are logged.
+ */
 function ChangeScoreDialog({ panel, team, onClose, onSaved }: { panel: Panel; team: PanelTeam; onClose: () => void; onSaved: () => void }) {
+  const admin = useAdmin();
+  const isSuper = admin.role === "super_admin";
   const scores = team.judgeScores ?? [];
   const [juror, setJuror] = useState(panel.jurors[0]?.email ?? "");
   const current = scores.find((s) => s.jurorEmail === juror);
@@ -1101,6 +1241,7 @@ function ChangeScoreDialog({ panel, team, onClose, onSaved }: { panel: Panel; te
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const total = marks.reduce<number>((sum, m) => sum + (m ?? 0), 0);
+  const reasonError = !isSuper && reason.trim() ? reasonProblem(reason) : null;
 
   function pick(email: string) {
     const existing = scores.find((s) => s.jurorEmail === email);
@@ -1111,7 +1252,10 @@ function ChangeScoreDialog({ panel, team, onClose, onSaved }: { panel: Panel; te
 
   async function save() {
     if (marks.some((m) => m === null)) return setError("Give a mark for every part.");
-    if (reason.trim().length < 5) return setError("Write why the marks change (at least 5 characters). It goes into the activity log.");
+    if (!isSuper) {
+      const problem = reasonProblem(reason);
+      if (problem) return setError(problem);
+    }
     setPending(true);
     setError(null);
     try {
@@ -1126,7 +1270,11 @@ function ChangeScoreDialog({ panel, team, onClose, onSaved }: { panel: Panel; te
   return (
     <Dialog
       title={`Marks for ${team.name}`}
-      description={`${roomLabel(panel)} · Category ${team.category}: ${categoryTitle(team.category)}. Judges cannot change submitted marks; you can, and the old marks stay in the activity log.`}
+      description={`${roomLabel(panel)} · Category ${team.category}: ${categoryTitle(team.category)}. ${
+        isSuper
+          ? "You can change or enter marks at any time. The old marks stay in the activity log."
+          : "You can change marks during this room's slot and buffer. Your reason is shown to the super admins with the old marks."
+      }`}
       onClose={onClose}
       busy={pending}
       size="xl"
@@ -1153,7 +1301,7 @@ function ChangeScoreDialog({ panel, team, onClose, onSaved }: { panel: Panel; te
             <Select id="change-judge" value={juror} onChange={(e) => pick(e.target.value)}>
               {panel.jurors.map((j) => (
                 <option key={j.email} value={j.email}>
-                  {j.name} · {scores.some((s) => s.jurorEmail === j.email) ? "submitted" : "no marks yet"}
+                  {j.name} · {scores.some((s) => s.jurorEmail === j.email) ? "marks saved" : "no marks yet"}
                 </option>
               ))}
             </Select>
@@ -1163,8 +1311,143 @@ function ChangeScoreDialog({ panel, team, onClose, onSaved }: { panel: Panel; te
         <Field label="Remarks" htmlFor="change-remarks">
           <Textarea id="change-remarks" value={remarks} onChange={(e) => setRemarks(e.target.value)} maxLength={1000} />
         </Field>
-        <Field label="Reason for the change" htmlFor="change-reason" hint="Required. Shown in the activity log with the old and new marks.">
-          <Input id="change-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Judge wrote 3 instead of 5 for Ease of Use" />
+        <Field
+          label={isSuper ? "Reason (optional)" : "Reason for the change"}
+          htmlFor="change-reason"
+          hint={
+            isSuper
+              ? "Not needed for a super admin. The change is logged either way."
+              : `Required: say what was wrong, in a sentence (at least ${MIN_REASON_LENGTH} characters). Shown in the activity log with the old and new marks.`
+          }
+          error={reasonError ?? undefined}
+        >
+          <Textarea id="change-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder="e.g. The judge wrote 3 instead of 5 for Ease of Use on the paper sheet" />
+        </Field>
+        {error && <Notice tone="error">{error}</Notice>}
+      </div>
+    </Dialog>
+  );
+}
+
+/** The extra minutes after a room's slot in which its judges can still submit marks. Super admins and the department's admin. */
+function BufferDialog({ panel, onClose, onSaved, onGone }: { panel: Panel; onClose: () => void; onSaved: () => void; onGone: () => void }) {
+  const [value, setValue] = useState(String(panel.bufferMinutes));
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const minutes = Number(value);
+  const valid = value.trim() !== "" && Number.isInteger(minutes) && minutes >= 0 && minutes <= MAX_BUFFER_MINUTES;
+  const until = valid && panel.slotEnd ? timeLabel(new Date(new Date(panel.slotEnd).getTime() + minutes * 60_000).toISOString()) : null;
+
+  async function save() {
+    if (!valid) return setError(`The buffer is a whole number of minutes from 0 to ${MAX_BUFFER_MINUTES}.`);
+    setPending(true);
+    setError(null);
+    try {
+      await api.setPanelBuffer(panel.id, minutes);
+      onSaved();
+    } catch (err) {
+      if (isGone(err)) return onGone();
+      setError(errorMessage(err));
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title={`Buffer for ${roomLabel(panel)}`}
+      description="Extra time after the slot in which this room's judges can still submit their marks. After it, their marks lock by themselves."
+      onClose={onClose}
+      busy={pending}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={save} pending={pending} disabled={!valid || minutes === panel.bufferMinutes}>
+            Save buffer
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Field label="Buffer (minutes)" htmlFor="buffer-minutes" hint={`From 0 to ${MAX_BUFFER_MINUTES}. The default is ${DEFAULT_BUFFER_MINUTES}.`}>
+          <Input id="buffer-minutes" type="number" inputMode="numeric" min={0} max={MAX_BUFFER_MINUTES} step={5} value={value} onChange={(e) => setValue(e.target.value)} />
+        </Field>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Common buffers">
+          {[0, 15, 30, 45, 60].map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={minutes === m}
+              onClick={() => setValue(String(m))}
+              className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset transition ${minutes === m ? "bg-navy-900 text-white ring-navy-900" : "bg-white text-navy-800 ring-line hover:bg-surface"}`}
+            >
+              {m === 0 ? "None" : `${m} min`}
+            </button>
+          ))}
+        </div>
+        {until && <p className="text-sm text-navy-800">Judges can then submit marks until <strong>{until}</strong>.</p>}
+        {error && <Notice tone="error">{error}</Notice>}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Lets a judge change their marks again after locking them. Super admins, and the department's admin during the slot and buffer. */
+function UnlockDialog({ panel, juror, onClose, onSaved, onGone }: { panel: Panel; juror: PanelJuror; onClose: () => void; onSaved: () => void; onGone: () => void }) {
+  const admin = useAdmin();
+  const isSuper = admin.role === "super_admin";
+  const [reason, setReason] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const reasonError = !isSuper && reason.trim() ? reasonProblem(reason) : null;
+
+  async function save() {
+    if (!isSuper) {
+      const problem = reasonProblem(reason);
+      if (problem) return setError(problem);
+    }
+    setPending(true);
+    setError(null);
+    try {
+      await api.unlockJudge(panel.id, juror.email, reason.trim());
+      onSaved();
+    } catch (err) {
+      if (isGone(err)) return onGone();
+      setError(errorMessage(err));
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title={`Unlock ${juror.name}'s marks?`}
+      description={roomLabel(panel)}
+      onClose={onClose}
+      busy={pending}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button onClick={save} pending={pending}>
+            <LockOpen aria-hidden="true" className="size-4" />
+            Unlock
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-navy-800">
+          The judge can save and change their marks again while the room&apos;s time (the slot and its buffer) runs. They lock again when the judge locks them or the time ends.
+        </p>
+        <Field
+          label={isSuper ? "Reason (optional)" : "Reason"}
+          htmlFor="unlock-reason"
+          hint={isSuper ? "Not needed for a super admin. The change is logged either way." : `Required, at least ${MIN_REASON_LENGTH} characters. It goes into the activity log.`}
+          error={reasonError ?? undefined}
+        >
+          <Textarea id="unlock-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder="e.g. The judge locked before marking the last team" />
         </Field>
         {error && <Notice tone="error">{error}</Notice>}
       </div>

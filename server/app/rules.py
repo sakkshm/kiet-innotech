@@ -260,10 +260,11 @@ DEFAULT_TIMETABLE: list[tuple[str, str, list[str]]] = [
         ["EN", "EC", "ELCE", "ME", "VLSI", "AMIA", "KSOP", "CSE(DS)", "CSE(CS)", "MCA"],
     ),
 ]
-# Judges submit marks during their room's slot and, quietly, this many minutes after it (judges are not told about the
-# extra time; it absorbs delays on the day).
-DEFAULT_GRACE_MINUTES = 60
-MAX_GRACE_MINUTES = 240
+# A room's buffer: judges can submit marks for this many minutes after its slot ends. Department admins set it per room.
+DEFAULT_BUFFER_MINUTES = 15
+MAX_BUFFER_MINUTES = 60
+# A change to marks already saved needs a real reason: at least this many characters.
+MIN_REASON_LENGTH = 15
 
 # Cash prizes (event document). Department round: 1st place in each category in every department. Grand Finale: 1st and
 # 2nd in each category, and the Best School Project.
