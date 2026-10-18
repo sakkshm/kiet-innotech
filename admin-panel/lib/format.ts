@@ -143,6 +143,8 @@ export const auditLabels: Record<AuditAction, string> = {
   "judging.marks_locked": "Judge locked their marks",
   "judging.marks_unlocked": "Judge's marks unlocked",
   "judging.buffer_changed": "Room buffer changed",
+  "judging.judge_present": "Judge marked present",
+  "judging.judge_unmarked": "Judge attendance undone",
   "team.qualified": "Qualified for the final",
   "team.qualification_removed": "Back to awaiting",
   "judging.timetable_updated": "Timetable changed",

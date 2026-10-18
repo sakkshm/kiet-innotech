@@ -29,11 +29,11 @@ const roundRules: Record<JudgingRound, string[]> = {
   department: [
     "23 and 24 October, by the department timetable. Each room (a building, a room and a time slot) takes one department's teams.",
     "Department admins set up their own rooms, add judges (KIET emails only) and allot teams; super admins can do this for every department.",
-    "Two judges per room: one from the room's own department and one from another department. A judge sits in one room only; one of the two chairs.",
+    "Two judges per room: the parent department judge (from the room's own department) and one from another department. A judge sits in one room only. Organisers mark each judge present in the room.",
     "Judges can sign in and read their room any time; they save marks during the room's slot and its buffer, the extra minutes after the slot (15 by default, at most 60). Each room's timer counts down to the end of the slot, a popup warns 15 minutes before, and the buffer is the judges' extra time to finish. Department admins set the buffer of their rooms; super admins change the timetable.",
     "Every category is marked out of 50 on its common rubric: four criteria of 10 (two parts of 5), then Query Addressing out of 10.",
     "A judge saves each team's marks, can change them (with a clear reason) and then locks all their marks in the room in one go. Marks also lock by themselves when the slot and buffer end. Marks stay hidden on screen. After locking, only a super admin, or the department's own admin during the room's slot and buffer, can change marks or unlock a judge; the department admin must give a clear reason, a super admin need not. Every change is logged and highlighted for the super admins.",
-    "Ties: higher Innovation / Originality score, then Query Addressing, then the room's chair decides. No shared positions.",
+    "Ties: higher Innovation / Originality score, then Query Addressing, then the parent department judge decides. No shared positions.",
     "Each department nominates its finalists per category by 24 October, 6:00 PM, within the quota a super admin sets on the Finalists page.",
   ],
   final: [

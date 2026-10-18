@@ -101,7 +101,9 @@ export interface AdminApi {
   setPanelBuffer(id: string, bufferMinutes: number): Promise<Panel>;
   deletePanel(id: string): Promise<void>;
   setPanelTeams(id: string, teamIds: string[]): Promise<Panel>;
-  setPanelJurors(id: string, jurors: { email: string; chair: boolean }[]): Promise<Panel>;
+  setPanelJurors(id: string, jurors: { email: string }[]): Promise<Panel>;
+  /** Marks a judge present in their room, or takes the mark back. Super admins, and a department's admin for their own rooms. */
+  setJudgePresent(panelId: string, jurorEmail: string, present: boolean): Promise<Panel>;
   listJurors(): Promise<Juror[]>;
   addJuror(input: JurorInput): Promise<Juror>;
   removeJuror(email: string): Promise<void>;

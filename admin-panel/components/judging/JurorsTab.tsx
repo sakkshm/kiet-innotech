@@ -71,7 +71,7 @@ export function JurorsTab({ onChange }: { onChange: () => void }) {
                       <ul className="space-y-0.5 text-xs">
                         {j.panels.map((p) => (
                           <li key={p.id}>
-                            <span className="font-semibold text-navy-900">{p.name}</span> <span className="text-muted">({roundLabels[p.round]}{p.chair ? ", chair" : ""})</span>
+                            <span className="font-semibold text-navy-900">{p.name}</span> <span className="text-muted">({roundLabels[p.round]}{p.parentDepartment ? ", parent department judge" : ""})</span>
                           </li>
                         ))}
                       </ul>

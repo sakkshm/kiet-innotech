@@ -108,7 +108,7 @@ export default function DashboardPage() {
             <p className="text-sm leading-relaxed text-muted">
               {profile.participantType === "kiet"
                 ? `KIET teams are first evaluated at the department round (22 to 24 October). Each department nominates its best team in every category for the Grand Finale on 30 October.`
-                : "Teams from other colleges are reviewed by the organisers. Teams that qualify present at the Grand Finale on 30 October at KIET."}
+                : "The organisers allot stalls for the Grand Finale on 30 October at KIET. Your status is at the top of this page."}
             </p>
             {!startup && (
               <p className="mt-4 text-sm text-muted">

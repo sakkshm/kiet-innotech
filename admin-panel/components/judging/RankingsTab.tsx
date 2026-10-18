@@ -50,7 +50,7 @@ export function RankingsTab({ round }: { round: JudgingRound }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-2xl text-sm text-muted">
           A team&apos;s mark is the <strong className="text-navy-900">average of both judges&apos; totals</strong> (out of 50), and it gets a place only once both
-          have scored. Level teams are split by Innovation / Originality, then Query Addressing; if still level, the room&apos;s chair decides.
+          have scored. Level teams are split by Innovation / Originality, then Query Addressing; if still level, the parent department judge decides (the organisers at the Grand Finale).
         </p>
         {admin.role === "super_admin" && (
           <Field label={round === "department" ? "Department" : "Finalists from"} htmlFor="rank-department" className="w-52">
@@ -106,6 +106,7 @@ export function RankingsTab({ round }: { round: JudgingRound }) {
                     taken={taken}
                     canAward={data.canAward && !data.awardsPublished}
                     busy={busy}
+                    tieBreaker={round === "department" ? "the parent department judge decides" : "the organisers decide"}
                     onDeclare={(place) => act(`${row.team.id}:${place}`, () => api.declareAward(round, row.team.id, place))}
                     onRemove={() => act(`${row.team.id}:remove`, () => api.removeAward(round, row.team.id))}
                   />
@@ -171,6 +172,7 @@ function Row({
   taken,
   canAward,
   busy,
+  tieBreaker,
   onDeclare,
   onRemove,
 }: {
@@ -179,6 +181,8 @@ function Row({
   taken: Set<number>;
   canAward: boolean;
   busy: string | null;
+  /** Who settles a team that is level with the one above it. */
+  tieBreaker: string;
   onDeclare: (place: number) => void;
   onRemove: () => void;
 }) {
@@ -202,7 +206,7 @@ function Row({
         <span className="block text-xs text-muted">
           {row.team.code} · {row.team.department ?? row.team.institution} · {row.panel}
         </span>
-        {row.tied && <Pill tone="orange">Level with the team above: chair decides</Pill>}
+        {row.tied && <Pill tone="orange">Level with the team above: {tieBreaker}</Pill>}
       </td>
       <td className={tdClass}>
         <YearChips years={row.team.memberYears} type={row.team.participantType} />

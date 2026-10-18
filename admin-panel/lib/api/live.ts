@@ -166,7 +166,9 @@
  *   PATCH  /admin/panels/{id}   body { building, name, location, slot_start, slot_end, buffer_minutes } → Panel;  DELETE /admin/panels/{id} → 204
  *   PUT    /admin/panels/{id}/buffer   body { buffer_minutes: 0-60 } → Panel   (super admin; the department's admin)
  *   PUT    /admin/panels/{id}/teams    body { team_ids }  → Panel
- *   PUT    /admin/panels/{id}/jurors   body { jurors: [{ email, chair }] } → Panel
+ *   PUT    /admin/panels/{id}/jurors   body { jurors: [{ email }] } → Panel  (a department room's parent department judge is
+ *          the one from its own department; there is no chair)
+ *   PUT    /admin/panels/{id}/jurors/{juror_email}/present   body { present } → Panel   (super admin; the department's admin)
  *   PUT    /admin/panels/{id}/teams/{team}/scores/{juror_email}  body { marks, remarks, reason } → Score
  *          Super admin any time (reason optional); the department's own admin during the room's slot and buffer, with a
  *          clear reason (at least 15 characters). 403 otherwise.
@@ -378,6 +380,8 @@ export const liveApi: AdminApi = {
   deletePanel: (panelId) => request<void>("DELETE", `/admin/panels/${id(panelId)}`),
   setPanelTeams: (panelId, teamIds) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/teams`, { teamIds }),
   setPanelJurors: (panelId, jurors) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/jurors`, { jurors }),
+  setJudgePresent: (panelId, jurorEmail, present) =>
+    request<Panel>("PUT", `/admin/panels/${id(panelId)}/jurors/${id(jurorEmail)}/present`, { present }),
   unlockJudge: (panelId, jurorEmail, reason) =>
     request<Panel>("POST", `/admin/panels/${id(panelId)}/jurors/${id(jurorEmail)}/unlock`, { reason }),
   listJurors: () => request<Juror[]>("GET", "/admin/jurors"),

@@ -5,14 +5,15 @@ What a student sees about their team's results, round by round, only once the or
   time". A department prize (1st place in the category) shows once that round's winners are published.
 - Grand Finale (finalists, and teams that go straight to the finale): awaiting until the finale's winners are
   published; then the prize and amount, or "better luck next time".
-- Teams from other colleges: awaiting until the organisers qualify them for the Grand Finale (or disqualify them).
+- Teams from other colleges and schools: in the queue to be accepted until the organisers allot them a stall (they
+  are not told they are accepted before that); a disqualified college team is told so.
 """
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import rules
-from ..models import AppState, Award, Team, TeamMember, User
+from ..models import AppState, Award, FinalTent, Team, TeamMember, User
 from ..schemas import ResultCard, ResultsOut
 from . import admin as admin_service
 from . import judging
@@ -69,24 +70,27 @@ def my_results(db: Session, user: User) -> ResultsOut:
                     message="Better luck next time! Thank you for taking part in the Grand Finale.",
                 )
             )
-        elif team.participant_type == "college" and team.result != "finalist":
-            cards.append(
-                ResultCard(
-                    round="final",
-                    status="awaiting",
-                    title="Awaiting your Grand Finale status",
-                    message="The organisers are reviewing entries from other colleges. Your status appears here once you qualify.",
+        elif team.participant_type in ("college", "school"):
+            tent = db.get(FinalTent, team.id)
+            if tent is not None:
+                cards.append(
+                    ResultCard(
+                        round="final",
+                        status="qualified",
+                        title="Your team is accepted for the Grand Finale",
+                        message=f"Your stall is {tent.tent}. See you at KIET on 30 October.",
+                    )
                 )
-            )
-        elif team.participant_type == "college":
-            cards.append(
-                ResultCard(
-                    round="final",
-                    status="qualified",
-                    title="You have qualified for the Grand Finale!",
-                    message="Your team goes to the Grand Finale on 30 October at KIET. Watch this page for your stall number.",
+            else:
+                cards.append(
+                    ResultCard(
+                        round="final",
+                        status="awaiting",
+                        title="You are in the queue to be accepted",
+                        message="No stall has been allotted yet. Your team will be accepted soon and stalls are allotted after that. "
+                        "Your stall appears on this page once it is allotted.",
+                    )
                 )
-            )
         else:
             cards.append(
                 ResultCard(

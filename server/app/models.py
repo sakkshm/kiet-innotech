@@ -307,7 +307,8 @@ class Panel(Base):
 class PanelJuror(Base):
     __tablename__ = "panel_jurors"
     __table_args__ = (
-        # One chair per panel; the chair settles ties (event document: tie-breaker rules).
+        # Legacy: rooms used to have one chair. The flag is no longer set or shown; a department room's parent
+        # department judge (the one from the room's own department) takes that role.
         Index("uq_panel_jurors_chair", "panel_id", unique=True, postgresql_where=text("chair"), sqlite_where=text("chair")),
     )
 
@@ -316,6 +317,9 @@ class PanelJuror(Base):
     chair: Mapped[bool] = mapped_column(Boolean, default=False)
     # Set when the judge locks all their marks in this room; an organiser can unlock them.
     locked_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    # When an organiser marked the judge present in this room, and who.
+    present_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    present_by: Mapped[str | None] = mapped_column(String(320))
 
 
 class PanelTeam(Base):

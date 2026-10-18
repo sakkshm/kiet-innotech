@@ -40,6 +40,7 @@ from ..schemas import (
     PanelOut,
     PanelTeamsInput,
     PanelUpdateInput,
+    PresentInput,
     PublishInput,
     PublishOut,
     QualifyInput,
@@ -489,6 +490,18 @@ def unlock_judge(
     db: Db,
 ) -> PanelOut:
     return judging.unlock_judge(db, admin, panel_id, juror_email, data)
+
+
+@router.put("/panels/{panel_id}/jurors/{juror_email}/present")
+def set_juror_present(
+    panel_id: uuid.UUID,
+    juror_email: Annotated[str, Path(max_length=320)],
+    data: PresentInput,
+    admin: CurrentAdmin,
+    db: Db,
+) -> PanelOut:
+    """Marks a judge present in the room, or takes the mark back."""
+    return judging.set_juror_present(db, admin, panel_id, juror_email, data)
 
 
 @router.put("/panels/{panel_id}/jurors")

@@ -72,6 +72,8 @@ export type AuditAction =
   | "judging.marks_locked"
   | "judging.marks_unlocked"
   | "judging.buffer_changed"
+  | "judging.judge_present"
+  | "judging.judge_unmarked"
   | "team.qualified"
   | "team.qualification_removed"
   | "judging.timetable_updated"
@@ -385,7 +387,7 @@ export type Juror = {
   organisation: string;
   phone: string;
   /** Rooms and panels the judge sits in (one per round). */
-  panels: { id: string; round: JudgingRound; building: string; name: string; department: string | null; slotStart: string | null; chair: boolean }[];
+  panels: { id: string; round: JudgingRound; building: string; name: string; department: string | null; slotStart: string | null; parentDepartment: boolean }[];
   scores: number;
   addedAt: string | null;
   addedBy: string | null;
@@ -394,9 +396,13 @@ export type Juror = {
 export type JurorInput = Pick<Juror, "email" | "name" | "kind" | "department" | "organisation" | "phone">;
 
 export type PanelJuror = Pick<Juror, "email" | "name" | "kind" | "department" | "organisation"> & {
-  chair: boolean;
+  /** A department room's parent department judge: the one from the room's own department. */
+  parentDepartment: boolean;
   /** The judge locked all their marks in this room (or its time is over). */
   locked: boolean;
+  /** When an organiser marked the judge present in this room, and who. */
+  presentAt: string | null;
+  presentBy: string | null;
 };
 
 /** One judge's submitted marks for a team (super admins only). */
@@ -563,7 +569,7 @@ export type RankedTeam = {
   average: number | null;
   innovation: number | null;
   query: number | null;
-  /** Level with the team above on total, innovation and query addressing: the panel chair decides. */
+  /** Level with the team above on total, innovation and query addressing: the parent department judge (the organisers at the finale) decide. */
   tied: boolean;
   /** Every judge of the room has scored the team; only complete teams get a place. */
   complete: boolean;
@@ -629,7 +635,10 @@ export type JudgePanel = {
   slotStart: string | null;
   slotEnd: string | null;
   department: string | null;
-  chair: boolean;
+  /** The judge is this department room's parent department judge (from the room's own department). */
+  parentDepartment: boolean;
+  /** When an organiser marked the judge present in this room. */
+  presentAt: string | null;
   /** Scores can be saved only while organisers keep the round open... */
   open: boolean;
   /** ...and, for a department room, between these moments (its slot plus the room's buffer). */

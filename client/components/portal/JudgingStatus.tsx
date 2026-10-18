@@ -113,7 +113,7 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
                   Your stall: <span className="font-display text-2xl font-bold text-ink">{round.tent}</span>
                 </>
               ) : (
-                "Your stall number will appear here before the Grand Finale on 30 October."
+                "No stall has been allotted yet. Your stall number appears here once the organisers allot it, before the Grand Finale on 30 October."
               )}
             </p>
           )}

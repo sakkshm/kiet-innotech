@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ArrowRight, BookOpen, CalendarClock, CheckCircle2, Crown, FileDown, Lock, LockOpen, MapPin, Pencil, QrCode, RefreshCw, ShieldCheck, Users } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarClock, CheckCircle2, Crown, FileDown, Lock, LockOpen, MapPin, Pencil, QrCode, RefreshCw, ShieldCheck, UserCheck, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import type { JudgePanel, JudgeTeam, LockResult } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -311,10 +311,16 @@ function RoomSection({
                 </span>
               )}
               {panel.department && <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold">{panel.department} teams</span>}
-              {panel.chair && (
+              {panel.parentDepartment && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-accent-500 px-2.5 py-0.5 text-xs font-semibold">
-                  <Crown aria-hidden="true" className="size-3" />
-                  You chair this room
+                  <UserCheck aria-hidden="true" className="size-3" />
+                  Parent department judge
+                </span>
+              )}
+              {panel.presentAt && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400 px-2.5 py-0.5 text-xs font-bold text-navy-950">
+                  <CheckCircle2 aria-hidden="true" className="size-3" />
+                  Marked present · {timeLabel(panel.presentAt)}
                 </span>
               )}
             </div>

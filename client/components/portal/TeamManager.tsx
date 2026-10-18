@@ -32,7 +32,8 @@ export function TeamStatusNotice({ team }: { team: Team }) {
       </Notice>
     );
   }
-  if (team.result === "finalist") {
+  // Only KIET teams are told they are selected here. Other colleges and schools are in the queue until a stall is allotted.
+  if (team.result === "finalist" && team.route === "department") {
     return (
       <Notice tone="success" title="Selected for the Grand Finale">
         Congratulations. Your team presents at the institute level Grand Finale on 30 October 2026 at KIET.
@@ -55,9 +56,7 @@ export function TeamStatusNotice({ team }: { team: Team }) {
         {!team.approvalRequired &&
           (team.route === "department"
             ? ` Your team will be evaluated at the ${team.department} department round on 22 to 24 October.`
-            : team.participantType === "college"
-              ? " The organisers review entries from other colleges. Your status appears on your dashboard."
-              : team.participantType !== "school" && " Your team goes straight to the Grand Finale on 30 October 2026.")}
+            : "")}
       </Notice>
     );
   }
@@ -651,10 +650,13 @@ function TeamFacts({ team }: { team: Team }) {
     ["Status", statusLabels[team.status]],
     ...(team.approvalRequired ? ([["Approval", team.approvedAt ? "Accepted by an admin" : "Waiting for an admin"]] as [string, string][]) : []),
     [team.participantType === "kiet" ? "Department" : startup ? "Startup" : "Institution", team.department ? departmentLabel(team.department) : team.institution],
-    // Startups and COE KIET teams see their route only once an admin has accepted them.
-    ...(directFinaleKind(team.participantType, team.department) !== null && !team.approvedAt
-      ? []
-      : ([["Route", team.route === "department" ? "Department round, then Grand Finale" : "Directly to the Grand Finale"]] as [string, string][])),
+    // Startups and COE KIET teams see their route only once an admin has accepted them; other colleges and schools are told
+    // nothing about a route (their queue or stall status is the card at the top of the dashboard).
+    ...(team.route === "department"
+      ? ([["Route", "Department round, then Grand Finale"]] as [string, string][])
+      : directFinaleKind(team.participantType, team.department) !== null && team.approvedAt
+        ? ([["Route", "Directly to the Grand Finale"]] as [string, string][])
+        : []),
     ["Created", formatDate(team.createdAt)],
   ];
   return (

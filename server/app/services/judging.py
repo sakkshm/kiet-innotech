@@ -6,7 +6,8 @@ Judging, following the event document:
 - Grand Finale (30 October): finalists and teams from other colleges and schools exhibit in numbered tents and are
   judged by panels of external judges.
 - Every category is scored out of 50 on its common rubric (rules.RUBRIC_PARTS). Ties are broken by the
-  innovation/originality criterion, then Query Addressing, then the panel chair decides. No shared positions.
+  innovation/originality criterion, then Query Addressing, then the parent department judge decides (the organisers
+  at the Grand Finale). No shared positions.
 
 Super admins set up everything and open or lock each round; judging is locked until they open it. Department admins
 set up their own department's rooms (building, room and time slot), appoint judges for them and allot their teams.
@@ -77,6 +78,7 @@ from ..schemas import (
     PanelTeamOut,
     PanelTeamsInput,
     PanelUpdateInput,
+    PresentInput,
     PrizeOut,
     RankedTeam,
     RankingGroup,
@@ -141,6 +143,11 @@ def _may_edit_marks(admin: Admin, panel: Panel, now: datetime) -> bool:
         return False
     opens, closes = scoring_window(panel)
     return opens is not None and closes is not None and opens <= now <= closes
+
+
+def _is_parent(panel: Panel, juror: Juror) -> bool:
+    """A department room's parent department judge: the judge from the room's own department."""
+    return panel.round == "department" and juror.department is not None and juror.department == panel.department
 
 
 def _require_editor(admin: Admin, panel: Panel) -> None:
@@ -357,8 +364,10 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
                 kind=juror.kind,
                 department=juror.department,
                 organisation=juror.organisation,
-                chair=link.chair,
+                parent_department=_is_parent(panel_of[link.panel_id], juror),
                 locked=_locked(panel_of[link.panel_id], link, open_rounds, now),
+                present_at=link.present_at,
+                present_by=link.present_by,
             )
         )
     links = (
@@ -445,7 +454,7 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
             slot_start=p.slot_start,
             slot_end=p.slot_end,
             department=p.department,
-            jurors=sorted(jurors[p.id], key=lambda j: not j.chair),
+            jurors=sorted(jurors[p.id], key=lambda j: not j.parent_department),
             teams=by_panel[p.id],
             can_edit=viewer is not None and _can_edit(viewer, p),
             scoring_until=scoring_window(p)[1],
@@ -592,6 +601,7 @@ def _juror_out(db: Session, jurors: list[Juror]) -> list[JurorOut]:
     panels: dict[str, list[JurorPanelRef]] = defaultdict(list)
     scores: dict[str, int] = {}
     if emails:
+        by_email = {j.email: j for j in jurors}
         for link, panel in db.execute(
             select(PanelJuror, Panel)
             .join(Panel, Panel.id == PanelJuror.panel_id)
@@ -606,7 +616,7 @@ def _juror_out(db: Session, jurors: list[Juror]) -> list[JurorOut]:
                     name=panel.name,
                     department=panel.department,
                     slot_start=panel.slot_start,
-                    chair=link.chair,
+                    parent_department=_is_parent(panel, by_email[link.juror_email]),
                 )
             )
         scores = dict(
@@ -853,24 +863,24 @@ def set_panel_teams(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelT
 
 
 def set_panel_jurors(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelJurorsInput) -> PanelOut:
-    """Replaces a room's or panel's judges. At most one is the chair, who settles ties."""
+    """Replaces a room's or panel's judges. Judges who stay keep their lock and attendance."""
     panel = _lock_panel(db, panel_id)
     _require_editor(admin, panel)
     emails = [j.email for j in data.jurors]
     if len(set(emails)) != len(emails):
         raise ApiError("A judge is listed more than once.", 422)
-    if sum(1 for j in data.jurors if j.chair) > 1:
-        raise ApiError("Only one judge can chair a panel.", 422)
     # Locks these judges (in a fixed order), so two rooms saved at once cannot both take the same judge.
     jurors = {j.email: j for j in db.scalars(select(Juror).where(Juror.email.in_(emails)).order_by(Juror.email).with_for_update())}
     for email in emails:
         if email not in jurors:
             raise ApiError(f"{email} is not an appointed judge. Add them under Judges first.", 422)
     if panel.round == "department":
-        # Two judges per room: one from the room's own department and one from another department.
+        # Two judges per room: the parent department judge (from the room's own department) and one from another department.
         own = [jurors[e] for e in emails if jurors[e].department == panel.department]
         if len(emails) > 2:
-            raise ApiError(f"A room has two judges: one from {panel.department} and one from another department.", 422)
+            raise ApiError(
+                f"A room has two judges: the parent department judge from {panel.department} and one from another department.", 422
+            )
         if len(own) > 1:
             raise ApiError(f"Only one of the two judges can be from {panel.department}; the other comes from another department.", 422)
         if len(emails) - len(own) > 1:
@@ -886,24 +896,56 @@ def set_panel_jurors(db: Session, admin: Admin, panel_id: uuid.UUID, data: Panel
         name, other = elsewhere
         where = ", ".join(p for p in (other.department and f"{other.department} teams", slot_label(other.slot_start, other.slot_end)) if p)
         raise ApiError(f"{name} already judges in {room_label(other)}{f' ({where})' if where else ''}. A judge sits in one room only.", 409)
-    current = set(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == panel.id)))
+    current = set(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == panel.id).with_for_update()))
     removed = [e for e in current if e not in emails]
     if removed and _scored(db, panel, juror_emails=removed):
         raise ApiError("A judge you removed has already scored teams in this room, so they must stay.", 409)
 
-    db.execute(delete(PanelJuror).where(PanelJuror.panel_id == panel.id))
-    db.flush()
-    for entry in data.jurors:
-        db.add(PanelJuror(panel_id=panel.id, juror_email=entry.email, chair=entry.chair))
-    chair = next((jurors[j.email].name for j in data.jurors if j.chair), "none")
+    # Only the changes: a judge who stays keeps their lock and attendance (saving the same list is harmless).
+    if removed:
+        db.execute(delete(PanelJuror).where(PanelJuror.panel_id == panel.id, PanelJuror.juror_email.in_(removed)))
+        db.flush()
+    for email in emails:
+        if email not in current:
+            db.add(PanelJuror(panel_id=panel.id, juror_email=email))
     audit.record(
         db,
         admin.email,
         "judging.judges_assigned",
-        detail=f"{room_label(panel)}: {', '.join(emails) or 'no judges'} (chair: {chair})",
+        detail=f"{room_label(panel)}: {', '.join(emails) or 'no judges'}",
         department=panel.department,
     )
     db.commit()
+    return _panels_out(db, [panel], admin)[0]
+
+
+def set_juror_present(db: Session, admin: Admin, panel_id: uuid.UUID, juror_email: str, data: PresentInput) -> PanelOut:
+    """
+    Marks a judge present in their room, or takes the mark back. A super admin for any room; a department's admin for
+    their own department's rooms. Any time, and the same request twice changes nothing.
+    """
+    panel = _lock_panel(db, panel_id)
+    _require_editor(admin, panel)
+    link = db.scalar(
+        select(PanelJuror)
+        .where(PanelJuror.panel_id == panel.id, PanelJuror.juror_email == juror_email.strip().lower())
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if link is None:
+        raise ApiError("This judge is not in this room.", 404)
+    if data.present and link.present_at is None:
+        link.present_at, link.present_by = utcnow(), admin.email
+        audit.record(
+            db, admin.email, "judging.judge_present", detail=f"{link.juror_email} in {room_label(panel)}", department=panel.department
+        )
+        db.commit()
+    elif not data.present and link.present_at is not None:
+        link.present_at = link.present_by = None
+        audit.record(
+            db, admin.email, "judging.judge_unmarked", detail=f"{link.juror_email} in {room_label(panel)}", department=panel.department
+        )
+        db.commit()
     return _panels_out(db, [panel], admin)[0]
 
 
@@ -1002,15 +1044,15 @@ def _sheet(db: Session, round_: str, teams: list[Team], *, panel: Panel | None =
     team_ids = [t.id for t in teams]
     jurors: list[str] = []
     if panel is not None:
-        jurors = [
-            f"{juror.name}{' (chair)' if link.chair else ''}"
-            for link, juror in db.execute(
-                select(PanelJuror, Juror)
-                .join(Juror, Juror.email == PanelJuror.juror_email)
-                .where(PanelJuror.panel_id == panel.id)
-                .order_by(PanelJuror.chair.desc(), Juror.name)
-            ).tuples()
-        ]
+        members = db.scalars(
+            select(Juror)
+            .join(PanelJuror, PanelJuror.juror_email == Juror.email)
+            .where(PanelJuror.panel_id == panel.id)
+            .order_by(Juror.name)
+        ).all()
+        # The parent department judge first.
+        members = sorted(members, key=lambda j: not _is_parent(panel, j))
+        jurors = [f"{j.name}{' (parent department)' if _is_parent(panel, j) else ''}" for j in members]
         title = f"{room_label(panel)}{' · ' + panel.department + ' teams' if panel.department else ''}"
     tents = _tents(db, team_ids)
     rooms: dict[uuid.UUID, Panel] = {}
@@ -1115,7 +1157,7 @@ def _can_award(admin: Admin, round_: str) -> bool:
 def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> RankingsOut:
     """
     The average of both judges' totals, ranked with the tie-breakers (innovation, then Query Addressing, then the
-    chair). A team gets a place only once every judge of its room has scored it.
+    parent department judge). A team gets a place only once every judge of its room has scored it.
     """
     _check_round(round_)
     if admin_service.is_type_admin(admin):
@@ -1422,7 +1464,8 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
                 slot_start=panel.slot_start,
                 slot_end=panel.slot_end,
                 department=panel.department,
-                chair=link.chair,
+                parent_department=_is_parent(panel, juror),
+                present_at=link.present_at,
                 locked=locked_of[panel.id],
                 buffer_minutes=panel.buffer_minutes,
                 open=panel.round in open_rounds,

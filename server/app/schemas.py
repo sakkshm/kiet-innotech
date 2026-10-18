@@ -703,7 +703,8 @@ class JurorPanelRef(BaseModel):
     name: str
     department: str | None = None
     slot_start: datetime | None = None
-    chair: bool
+    # A department room's parent department judge: the one from the room's own department.
+    parent_department: bool = False
 
 
 class JurorOut(BaseModel):
@@ -817,6 +818,7 @@ class PanelTeamsInput(Input):
 
 class PanelJurorInput(Input):
     email: str = Field(max_length=320)
+    # Ignored: rooms no longer have a chair. Still accepted so a page loaded before the change keeps working.
     chair: bool = False
 
     @field_validator("email")
@@ -835,9 +837,13 @@ class PanelJurorOut(BaseModel):
     kind: str
     department: str | None
     organisation: str
-    chair: bool
+    # A department room's parent department judge: the one from the room's own department.
+    parent_department: bool = False
     # The judge has locked all their marks in this room (or its time is over).
     locked: bool = False
+    # When an organiser marked the judge present in this room, and who.
+    present_at: datetime | None = None
+    present_by: str | None = None
 
 
 class PanelScoreOut(BaseModel):
@@ -1051,7 +1057,8 @@ class RankedTeam(BaseModel):
     average: float | None
     innovation: float | None
     query: float | None
-    # Level with the team ranked just above on total, innovation and query addressing: the panel chair decides.
+    # Level with the team ranked just above on total, innovation and query addressing: the parent department judge
+    # (department round) or the organisers (Grand Finale) decide.
     tied: bool
     # Every judge of the team's room has scored it; only complete teams get a place.
     complete: bool = True
@@ -1145,6 +1152,10 @@ class BufferInput(Input):
     buffer_minutes: int = Field(ge=0, le=rules.MAX_BUFFER_MINUTES)
 
 
+class PresentInput(Input):
+    present: bool
+
+
 class UnlockInput(Input):
     reason: str = Field(default="", max_length=500)
 
@@ -1198,7 +1209,10 @@ class JudgePanelOut(BaseModel):
     slot_start: datetime | None
     slot_end: datetime | None
     department: str | None
-    chair: bool
+    # The judge is this department room's parent department judge (from the room's own department).
+    parent_department: bool = False
+    # When an organiser marked the judge present in this room.
+    present_at: datetime | None = None
     # The judge has locked all their marks here, or the room's time is over: nothing more can be changed by the judge.
     locked: bool = False
     # Extra minutes after the slot in which marks can still be submitted.
