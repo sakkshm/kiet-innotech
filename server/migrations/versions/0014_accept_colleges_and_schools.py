@@ -19,17 +19,18 @@ down_revision: str | None = "0013"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-OTHERS = "participant_type IN ('college', 'school')"
-
 
 def upgrade() -> None:
-    op.execute(f"UPDATE teams SET approval_required = true WHERE {OTHERS} AND NOT approval_required")
+    op.execute("UPDATE teams SET approval_required = true WHERE participant_type IN ('college', 'school') AND NOT approval_required")
     op.execute(
-        f"UPDATE teams SET approved_at = now(), approved_by = 'migration' WHERE {OTHERS} AND approved_at IS NULL "
+        "UPDATE teams SET approved_at = now(), approved_by = 'migration' "
+        "WHERE participant_type IN ('college', 'school') AND approved_at IS NULL "
         "AND (result = 'finalist' OR id IN (SELECT team_id FROM final_tents))"
     )
-    op.execute(f"UPDATE teams SET result = 'pending' WHERE {OTHERS} AND result = 'finalist'")
+    op.execute("UPDATE teams SET result = 'pending' WHERE participant_type IN ('college', 'school') AND result = 'finalist'")
 
 
 def downgrade() -> None:
-    op.execute(f"UPDATE teams SET approval_required = false, approved_at = NULL, approved_by = NULL WHERE {OTHERS}")
+    op.execute(
+        "UPDATE teams SET approval_required = false, approved_at = NULL, approved_by = NULL WHERE participant_type IN ('college', 'school')"
+    )
