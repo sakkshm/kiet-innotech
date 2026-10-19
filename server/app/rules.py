@@ -55,10 +55,10 @@ NOMINATING_DEPARTMENTS = [d for d in DEPARTMENTS if d != CLUB_DEPARTMENT]
 
 def needs_approval(participant_type: str, department: str | None) -> bool:
     """
-    Startups and COE KIET teams go straight to the Grand Finale, but only once their admin has accepted the entry
-    as a legal one. Everyone else qualifies as before.
+    Everything that goes straight to the Grand Finale (startups, COE KIET, other colleges and schools) is accepted by
+    an admin first, and only accepted teams can be allotted a stall. KIET teams in a department qualify as before.
     """
-    return participant_type == "startup" or (participant_type == "kiet" and department == CLUB_DEPARTMENT)
+    return participant_type in ("startup", "college", "school") or (participant_type == "kiet" and department == CLUB_DEPARTMENT)
 
 
 def has_extended_deadline(participant_type: str, department: str | None) -> bool:

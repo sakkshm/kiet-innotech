@@ -12,7 +12,7 @@ import {
   type AdminTeam,
   type AdminUser,
   type ArchiveResult,
-  type QualifyResult,
+  type AcceptResult,
   type AuditEntry,
   type FinalistBoard,
   type FinalistSummary,
@@ -32,7 +32,7 @@ import {
 import { getMockEmail } from "../auth/session";
 import { formatIst } from "../format";
 import { categories, departments } from "../content";
-import { directFinaleKind, finalistQuota, NOMINATIONS_DEADLINE, normaliseInstitution, REGISTRATION_CLOSES, REGISTRATION_OPENS, routeFor, TEAM_MIN_SIZE } from "../rules";
+import { finalistQuota, NOMINATIONS_DEADLINE, normaliseInstitution, REGISTRATION_CLOSES, REGISTRATION_OPENS, routeFor, TEAM_MIN_SIZE, needsApproval } from "../rules";
 import type { ParticipantType, TeamStatus } from "../types";
 import { ApiError, DEFAULT_PAGE_SIZE, type AdminApi } from "./contract";
 import { createSeed, MOCK_DB_VERSION, type MockDb, type StudentRecord } from "./seed";
@@ -746,28 +746,26 @@ export const mockApi: AdminApi = {
     return clone(team);
   },
 
-  async qualifyTeams(ids, qualified) {
+  async acceptTeams(ids, accepted) {
     await delay();
     const db = load();
     const admin = actor(db);
-    if (admin.role !== "super_admin" && admin.role !== "outside_admin" && admin.role !== "college_admin") {
-      throw new ApiError(403, "Only a super admin or an admin of other colleges can qualify teams for the Grand Finale.");
-    }
-    const result: QualifyResult = { changed: 0, skipped: [], notFound: 0 };
+    if (admin.role === "admin" && admin.department !== "COE") throw new ApiError(403, "Only a super admin or the admin of startups, COE KIET, other colleges or schools can accept teams.");
+    const result: AcceptResult = { changed: 0, skipped: [], notFound: 0 };
     for (const id of new Set(ids)) {
       const team = db.teams.find((t) => t.id === id && canSeeTeam(admin, t));
       if (!team) result.notFound += 1;
-      else if (team.participantType !== "college") result.skipped.push({ code: team.code, name: team.name, reason: "not a team from another college" });
+      else if (!team.approvalRequired) result.skipped.push({ code: team.code, name: team.name, reason: "this team does not need acceptance" });
       else if (team.status !== "submitted") result.skipped.push({ code: team.code, name: team.name, reason: `not a submitted team (${team.status})` });
-      else if ((team.result === "finalist") !== qualified) {
-        team.result = qualified ? "finalist" : "pending";
+      else if (accepted !== !!team.approvedAt) {
+        team.approvedAt = accepted ? new Date().toISOString() : null;
         log(db, {
           actorEmail: admin.email,
-          action: qualified ? "team.qualified" : "team.qualification_removed",
+          action: accepted ? "team.approved" : "team.approval_revoked",
           teamId: team.id,
           teamCode: team.code,
           department: team.department,
-          detail: qualified ? "Qualified for the Grand Finale" : "Back to awaiting",
+          detail: accepted ? "Accepted for the Grand Finale" : "Back in the queue",
         });
         result.changed += 1;
       }
@@ -841,14 +839,13 @@ export const mockApi: AdminApi = {
     await delay();
     const db = load();
     const admin = actor(db);
-    if (admin.role === "admin" && admin.department !== "COE") throw new ApiError(403, "Only a super admin, the startups admin or the COE KIET admin can accept entries.");
-    if (isOutsideAdmin(admin)) throw new ApiError(403, "Only a super admin, the startups admin or the COE KIET admin can accept entries.");
+    if (admin.role === "admin" && admin.department !== "COE") throw new ApiError(403, "Only a super admin or the admin of startups, COE KIET, other colleges or schools can accept teams.");
     const team = findTeam(db, admin, id);
     if (!team.approvalRequired) throw new ApiError(409, "This team does not need approval.");
     if (team.status !== "submitted") throw new ApiError(409, "Only a submitted entry can be accepted.");
     if (team.approvedAt) throw new ApiError(409, "This entry has already been accepted.");
     team.approvedAt = new Date().toISOString();
-    log(db, { actorEmail: admin.email, action: "team.approved", teamId: team.id, teamCode: team.code, department: team.department, detail: "Accepted as a legal entry for the Grand Finale" });
+    log(db, { actorEmail: admin.email, action: "team.approved", teamId: team.id, teamCode: team.code, department: team.department, detail: "Accepted for the Grand Finale" });
     save(db);
     return clone(team);
   },
@@ -1169,8 +1166,8 @@ export const mockApi: AdminApi = {
       department: leader.department,
       route: routeFor(leader.participantType, leader.department),
       // An entry an organiser creates is accepted at once.
-      approvalRequired: directFinaleKind(leader.participantType, leader.department) !== null,
-      approvedAt: directFinaleKind(leader.participantType, leader.department) !== null ? at : null,
+      approvalRequired: needsApproval(leader.participantType, leader.department),
+      approvedAt: needsApproval(leader.participantType, leader.department) ? at : null,
       leaderId: leader.userId,
       members: people.map((p, index) => ({
         userId: p.userId,

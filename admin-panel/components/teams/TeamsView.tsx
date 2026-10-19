@@ -5,11 +5,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Archive, BadgeCheck, Download, Plus, Undo2, X } from "lucide-react";
 import { api, errorMessage, MAX_SEARCH_LENGTH } from "@/lib/api";
-import type { AdminTeam, ArchiveResult, QualifyResult, TeamQuery, TeamSort } from "@/lib/admin-types";
+import type { AcceptResult, AdminTeam, ArchiveResult, TeamQuery, TeamSort } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { downloadTeams, downloadTeamsExcel } from "@/lib/export";
-import { formatDate, otherMemberDepartments, plural, routeLabels, standingLabel, statusLabels, typeShortLabels, typeTones } from "@/lib/format";
+import { formatDate, otherMemberDepartments, plural, routeLabels, statusLabels, typeShortLabels, typeTones } from "@/lib/format";
 import type { ParticipantType, TeamResult, TeamRoute, TeamStatus } from "@/lib/types";
 import { useQuery } from "@/lib/use-query";
 import { intParam, pageSizeParam, pickParam, useUrlParams } from "@/lib/use-url-params";
@@ -25,7 +25,7 @@ import { Loading, Notice } from "@/components/ui/Notice";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { lastPage, PageSizeSelect, Pagination } from "@/components/ui/Pagination";
 import { SelectionBar } from "@/components/ui/SelectionBar";
-import { Pill, StandingPill, StatusPill } from "@/components/ui/Pill";
+import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
 import { yearLabel } from "@/lib/rules";
 import { isOutsideAdmin, scopedTypes, scopeName } from "@/lib/scope";
 import { CreateTeamDialog } from "./CreateTeamDialog";
@@ -49,8 +49,8 @@ export function TeamsView() {
   const outside = isOutsideAdmin(admin);
   // A startup has no year of study, so a startup admin sees no year filters or columns.
   const startupOnly = admin.role === "startup_admin";
-  // Startup and COE KIET entries wait for an admin to accept them; only their admins (and super admins) see those.
-  const seesApprovals = isSuper || startupOnly || (admin.role === "admin" && admin.department === clubDepartment);
+  // Startups, COE KIET, other colleges and schools wait for an admin to accept them; only their admins (and super admins) see those.
+  const seesApprovals = isSuper || startupOnly || outside || (admin.role === "admin" && admin.department === clubDepartment);
   // Super admins filter by every type; outside admins between colleges and schools; startup admins see one type only.
   const scoped = scopedTypes(admin) ?? [];
   const typeChoices = isSuper ? types : scoped.length > 1 ? types.filter((t) => scoped.includes(t)) : [];
@@ -64,9 +64,9 @@ export function TeamsView() {
   const selection = useSelection(teamKey);
   const [archiving, setArchiving] = useState(false);
   const [archived, setArchived] = useState<ArchiveResult | null>(null);
-  // Other colleges: qualify the selected teams for the Grand Finale (true) or send them back to awaiting (false).
-  const [qualifying, setQualifying] = useState<boolean | null>(null);
-  const [qualified, setQualified] = useState<(QualifyResult & { qualified: boolean }) | null>(null);
+  // Teams that wait for acceptance: accept the selected teams (true) or put them back in the queue (false).
+  const [accepting, setAccepting] = useState<boolean | null>(null);
+  const [acceptedResult, setAcceptedResult] = useState<(AcceptResult & { accepted: boolean }) | null>(null);
 
   const query: TeamQuery = {
     department: isSuper ? pickParam(params, "department", departments) : undefined,
@@ -232,14 +232,16 @@ export function TeamsView() {
               </Select>
             </Field>
           )}
-          <Field label="Result" htmlFor="filter-result">
-            <Select id="filter-result" value={query.result ?? ""} onChange={(e) => update({ result: e.target.value })}>
-              <option value="">Any</option>
-              <option value="pending">Pending / awaiting</option>
-              <option value="finalist">Finalist / qualified</option>
-              {!outside && <option value="not_selected">Not selected</option>}
-            </Select>
-          </Field>
+          {(isSuper || admin.role === "admin") && (
+            <Field label="Result" htmlFor="filter-result">
+              <Select id="filter-result" value={query.result ?? ""} onChange={(e) => update({ result: e.target.value })}>
+                <option value="">Any</option>
+                <option value="pending">Pending</option>
+                <option value="finalist">Finalist</option>
+                <option value="not_selected">Not selected</option>
+              </Select>
+            </Field>
+          )}
           {isSuper && (
             <Field label="Route" htmlFor="filter-route">
               <Select id="filter-route" value={query.route ?? ""} onChange={(e) => update({ route: e.target.value })}>
@@ -292,15 +294,15 @@ export function TeamsView() {
         onExport={() => setExportOpen(true)}
         actions={
           <>
-            {(isSuper || admin.role === "outside_admin" || admin.role === "college_admin") && (
+            {seesApprovals && (
               <>
-                <Button size="sm" variant="secondary" onClick={() => setQualifying(true)}>
+                <Button size="sm" variant="secondary" onClick={() => setAccepting(true)}>
                   <BadgeCheck aria-hidden="true" className="size-3.5" />
-                  Qualify for final
+                  Accept teams
                 </Button>
-                <Button size="sm" variant="secondary" onClick={() => setQualifying(false)}>
+                <Button size="sm" variant="secondary" onClick={() => setAccepting(false)}>
                   <Undo2 aria-hidden="true" className="size-3.5" />
-                  Back to awaiting
+                  Back to queue
                 </Button>
               </>
             )}
@@ -313,38 +315,38 @@ export function TeamsView() {
           </>
         }
       />
-      {qualified && (
-        <Notice tone={qualified.skipped.length ? "warning" : "success"} title={`${plural(qualified.changed, "team")} ${qualified.qualified ? "qualified for the final" : "back to awaiting"}`}>
-          {qualified.skipped.length > 0 && (
+      {acceptedResult && (
+        <Notice tone={acceptedResult.skipped.length ? "warning" : "success"} title={`${plural(acceptedResult.changed, "team")} ${acceptedResult.accepted ? "accepted" : "back in the queue"}`}>
+          {acceptedResult.skipped.length > 0 && (
             <>
-              {plural(qualified.skipped.length, "team")} skipped:{" "}
-              {qualified.skipped
+              {plural(acceptedResult.skipped.length, "team")} skipped:{" "}
+              {acceptedResult.skipped
                 .slice(0, 8)
-                .map((s) => `${s.code} (${s.reason})`)
+                .map((x) => `${x.code} (${x.reason})`)
                 .join(", ")}
-              {qualified.skipped.length > 8 ? ` and ${qualified.skipped.length - 8} more` : ""}.
+              {acceptedResult.skipped.length > 8 ? ` and ${acceptedResult.skipped.length - 8} more` : ""}.
             </>
           )}
         </Notice>
       )}
-      {qualifying !== null && (
+      {accepting !== null && (
         <ConfirmDialog
-          title={qualifying ? `Qualify ${plural(selection.size, "selected team")} for the Grand Finale?` : `Send ${plural(selection.size, "selected team")} back to awaiting?`}
+          title={accepting ? `Accept ${plural(selection.size, "selected team")}?` : `Put ${plural(selection.size, "selected team")} back in the queue?`}
           description={
             <>
-              Only <strong className="text-navy-900">submitted teams from other colleges</strong> change. Others in the selection are skipped and listed.
-              Their students see {qualifying ? "that they have qualified for the Grand Finale" : "that they are awaiting the organisers' decision"}.
+              Only <strong className="text-navy-900">submitted</strong> startups, COE KIET, other-college and school teams change; the rest are skipped and
+              listed. {accepting ? "Accepted teams can be allotted stalls for the Grand Finale, and their students see that they are accepted." : "Teams that already have a judging panel or a stall stay accepted."}
             </>
           }
-          confirmLabel={qualifying ? "Qualify for final" : "Back to awaiting"}
-          onClose={() => setQualifying(null)}
+          confirmLabel={accepting ? "Accept teams" : "Back to queue"}
+          onClose={() => setAccepting(null)}
           onConfirm={async () => {
-            const result = await api.qualifyTeams(
+            const result = await api.acceptTeams(
               selection.rows.map((t) => t.id),
-              qualifying,
+              accepting,
             );
-            setQualifying(null);
-            setQualified({ ...result, qualified: qualifying });
+            setAccepting(null);
+            setAcceptedResult({ ...result, accepted: accepting });
             selection.clear();
             reload();
           }}
@@ -493,7 +495,7 @@ export function TeamsView() {
                         )}
                       </td>
                       <td className={`${tdClass} whitespace-nowrap text-muted`}>{formatDate(team.submittedAt)}</td>
-                      <td className={tdClass}>{standingLabel(team) ? <StandingPill team={team} /> : <span className="text-muted">—</span>}</td>
+                      <td className={tdClass}>{team.result !== "pending" ? <ResultPill result={team.result} /> : <span className="text-muted">—</span>}</td>
                     </tr>
                   );
                 })}

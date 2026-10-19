@@ -147,8 +147,8 @@ export function OverviewView() {
       {data && (
         <>
           {data.awaitingApproval > 0 && (
-            <Notice tone="warning" title={`${data.awaitingApproval} ${data.awaitingApproval === 1 ? "entry is" : "entries are"} waiting for your approval`}>
-              Startup and COE KIET entries qualify for the Grand Finale only once they are accepted.{" "}
+            <Notice tone="warning" title={`${data.awaitingApproval} ${data.awaitingApproval === 1 ? "team is" : "teams are"} waiting to be accepted`}>
+              Startups, COE KIET, other colleges and schools can be allotted stalls for the Grand Finale only once they are accepted.{" "}
               <Link href="/teams?approval=pending" className="font-semibold underline">
                 Review them
               </Link>

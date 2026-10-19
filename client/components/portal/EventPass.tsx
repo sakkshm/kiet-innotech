@@ -159,7 +159,7 @@ export function EventPass() {
             : team.status === "draft"
               ? "Your team leader has not submitted the team yet."
               : startupOrCoe
-                ? "Your entry is waiting for the organisers to accept it."
+                ? "Your team is waiting for the organisers to accept it."
                 : "Your team is not taking part in a round right now."}{" "}
           On event day this page shows a QR code that the organisers scan to mark you present.
         </Notice>

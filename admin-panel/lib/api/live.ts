@@ -130,8 +130,8 @@
  *          (same institution, category eligibility, 1-5 members or 2-5 to submit, unique name); the leader must be in the
  *          caller's scope. → AdminTeam (201)
  *
- *   POST   /admin/teams/qualify  body { team_ids, qualified } → { changed, skipped, not_found }   (super admin, other-college admins):
- *          submitted other-college teams qualified for the Grand Finale (result = finalist), or back to awaiting (pending)
+ *   POST   /admin/teams/accept  body { team_ids, accepted } → { changed, skipped, not_found }   (super admin; admins of startups, COE KIET,
+ *          other colleges, schools): accepts submitted teams so they can be allotted stalls, or puts them back in the queue
  *   POST   /admin/teams/{id}/reopen    (super_admin) body { reason } → AdminTeam (draft). 409 unless submitted and registration is
  *          open, once KIET results are published, or when the team is allotted to a room/panel, scored or has a tent.
  *   POST   /admin/teams/{id}/dissolve  (super_admin) body { reason } → 204. Deletes the team and frees its members; 409 for a
@@ -194,7 +194,7 @@
  *                  member.removed | invitation.sent | invitation.cancelled | invitation.declined.
  *          Unknown future actions render with their raw action string.
  */
-import type { AdminInput, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, QualifyResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, AdminInput, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 import { getSession } from "../auth/session";
 import { ApiError, type AdminApi } from "./contract";
 
@@ -320,7 +320,7 @@ export const liveApi: AdminApi = {
   disqualifyTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/disqualify`, { reason }),
   restoreTeam: (teamId, reason, unbanMembers = false) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/restore`, { reason, unbanMembers }),
   archiveTeams: (teamIds, reason) => request<ArchiveResult>("POST", "/admin/teams/archive", { teamIds, reason }),
-  qualifyTeams: (teamIds, qualified) => request<QualifyResult>("POST", "/admin/teams/qualify", { teamIds, qualified }),
+  acceptTeams: (teamIds, accepted) => request<AcceptResult>("POST", "/admin/teams/accept", { teamIds, accepted }),
   submitTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/submit`, { reason }),
   reopenTeam: (teamId, reason) => request<AdminTeam>("POST", `/admin/teams/${id(teamId)}/reopen`, { reason }),
   dissolveTeam: (teamId, reason) => request<void>("POST", `/admin/teams/${id(teamId)}/dissolve`, { reason }),

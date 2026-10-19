@@ -74,8 +74,6 @@ export type AuditAction =
   | "judging.buffer_changed"
   | "judging.judge_present"
   | "judging.judge_unmarked"
-  | "team.qualified"
-  | "team.qualification_removed"
   | "judging.timetable_updated"
   | "judging.award_declared"
   | "judging.award_removed"
@@ -167,7 +165,7 @@ export type TeamQuery = {
   route?: TeamRoute;
   /** Startup and COE KIET entries: waiting for an admin to accept them, or already accepted. */
   approval?: "pending" | "approved";
-  /** Department round result; for other colleges: pending = awaiting, finalist = qualified for the final. */
+  /** Department round result (finalist, not selected). */
   result?: TeamResult;
   /** Teams with at least one member in this year (college) or class (school). */
   year?: number;
@@ -676,8 +674,8 @@ export type ArchiveResult = {
   notFound: number;
 };
 
-/** The outcome of qualifying teams from other colleges for the Grand Finale (or sending them back to awaiting). */
-export type QualifyResult = {
+/** The outcome of accepting teams for the Grand Finale (or putting them back in the queue): how many changed, and which were skipped and why. */
+export type AcceptResult = {
   changed: number;
   skipped: { code: string; name: string; reason: string }[];
   notFound: number;

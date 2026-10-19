@@ -285,21 +285,22 @@ export const participantTracks = [
   {
     title: "Other Colleges",
     audience: "Students from any college",
-    steps: ["Register", "Finale"],
+    steps: ["Register", "Accepted", "Finale"],
     points: [
       "Register with any valid email address",
       "Choose any one of the eight categories",
-      "Teams go directly to the institute level finale",
-      "Any number of teams from one college can enter",
+      "The organisers review and accept submitted teams",
+      "Accepted teams are allotted stalls at the institute level finale",
     ],
   },
   {
     title: "School Students",
     audience: "Budding Engineers",
-    steps: ["Register", "Finale"],
+    steps: ["Register", "Accepted", "Finale"],
     points: [
       "Choose any one of the eight categories",
-      "Teams go directly to the institute level finale",
+      "The organisers review and accept submitted teams",
+      "Accepted teams are allotted stalls at the institute level finale",
       "Compete for the Best School Project/Poster award",
     ],
   },
@@ -560,7 +561,7 @@ export const faqs = [
   {
     question: "Can a college send more than one team?",
     answer:
-      "Yes. There is no limit on the number of teams from one college or school. Every team registers on its own, with its own members, category and project.",
+      "Yes. There is no limit on how many teams a college or school can register. Every team registers on its own, with its own members, category and project. The organisers then review the submitted teams and accept them; accepted teams are allotted stalls for the Grand Finale.",
   },
   {
     question: "How do I join my friend's team?",

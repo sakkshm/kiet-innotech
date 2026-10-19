@@ -38,7 +38,9 @@ def test_the_pass_shows_once_the_team_is_submitted(judging, as_user):  # noqa: F
     room = as_user("a@kiet.edu").get("/me/pass").json()["rounds"][0]
     assert (room["building"], room["room"], room["location"]) == ("CSIT Block", "304", "2nd floor")
     assert room["slot_start"].startswith("2026-10-22T04:30") and room["planned_start"] is None
-    # Teams from other colleges have only the finale.
+    # Teams from other colleges have only the finale, and no pass until the organisers accept them.
+    assert as_user("r@gmail.com").get("/me/pass").json()["rounds"] == []
+    judging["root"].post("/admin/teams/accept", {"team_ids": [judging["teams"]["college"]["id"]], "accepted": True})
     assert [r["round"] for r in as_user("r@gmail.com").get("/me/pass").json()["rounds"]] == ["final"]
 
 
@@ -109,6 +111,7 @@ def test_students_who_cannot_be_marked(judging, as_user):  # noqa: F811
     withdrawn = scan(root, code_for(gamma))
     assert withdrawn.status_code == 409 and "withdrawn" in withdrawn.json()["detail"]
     # Not at the finale before results; a department admin never marks other colleges.
+    root.post("/admin/teams/accept", {"team_ids": [judging["teams"]["college"]["id"]], "accepted": True})
     college = as_user("r@gmail.com").get("/me/pass").json()
     assert scan(judging["cse"], code_for(college), "final").status_code == 403
     assert scan(root, code_for(college), "final").status_code == 200

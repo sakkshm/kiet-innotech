@@ -34,7 +34,7 @@ const eligibilityRows: { label: string; values: [string, string, string] }[] = [
   { label: "Sign in with", values: ["Official @kiet.edu Google account", "Any Google account", "Any Google account"] },
   { label: "Categories", values: ["Any one of the eight", "Any one of the eight", "Any one of the eight"] },
   { label: "Team", values: [`${TEAM_MIN_SIZE} to ${TEAM_MAX_SIZE} KIET students, any branch`, `${TEAM_MIN_SIZE} to ${TEAM_MAX_SIZE} students of the same college`, `${TEAM_MIN_SIZE} to ${TEAM_MAX_SIZE} students of the same school`] },
-  { label: "Route", values: ["Department round, then Grand Finale", "Directly to the Grand Finale", "Directly to the Grand Finale"] },
+  { label: "Route", values: ["Department round, then Grand Finale", "Accepted by the organisers, then the Grand Finale", "Accepted by the organisers, then the Grand Finale"] },
   { label: "Competes for", values: ["Department and institute prizes", "Institute level prizes", "Best School Project/Poster"] },
 ];
 
@@ -87,7 +87,7 @@ export default function GuidelinesPage() {
           <Block id="eligibility" title="Who can participate">
             <p>
               InnoTech26 is open to students of KIET, students of other colleges and school students. KIET teams compete at the department
-              level first; teams from other colleges and schools go straight to the Grand Finale on 30 October 2026.
+              level first; teams from other colleges and schools are accepted by the organisers, who then allot them stalls at the Grand Finale on 30 October 2026.
             </p>
             <div className="mt-6 overflow-x-auto rounded-2xl ring-1 ring-line">
               <table className="w-full min-w-[40rem] border-collapse text-left text-sm">

@@ -1,7 +1,7 @@
 import type { AdminStudent, AdminTeam, Stats, StatusCounts, TimelinePoint } from "./admin-types";
 import { asText, csvFilename, downloadCsv, toCsv } from "./csv";
 import { downloadWorkbook, sheet, type ExcelColumn } from "./excel";
-import { categoryTitle, formatCsvDateTime, resultLabels, routeLabels, standingLabel, statusLabels, typeShortLabels } from "./format";
+import { categoryTitle, formatCsvDateTime, resultLabels, routeLabels, statusLabels, typeShortLabels } from "./format";
 import { yearLabel } from "./rules";
 
 /**
@@ -20,7 +20,7 @@ export function teamsCsv(teams: AdminTeam[]) {
     const teamCells = [
       team.code, team.name, team.category, categoryTitle(team.category), team.domain, team.projectTitle,
       typeShortLabels[team.participantType], team.institution, team.department ?? "", routeLabels[team.route],
-      statusLabels[team.status], team.participantType === "college" ? (standingLabel(team) ?? "") : resultLabels[team.result], formatCsvDateTime(team.createdAt), formatCsvDateTime(team.submittedAt),
+      statusLabels[team.status], resultLabels[team.result], formatCsvDateTime(team.createdAt), formatCsvDateTime(team.submittedAt),
       team.approvalRequired ? (team.approvedAt ? "Accepted" : "Awaiting approval") : "Not needed",
       team.members.length,
     ];

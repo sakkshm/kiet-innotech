@@ -19,11 +19,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Input } from "@/components/ui/Field";
 import { Loading, Notice } from "@/components/ui/Notice";
 import { SectionTitle } from "@/components/ui/PageHeader";
-import { Pill, ResultPill, StandingPill, StatusPill } from "@/components/ui/Pill";
+import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
 import { TableFrame, tdClass, Th } from "@/components/ui/Table";
 import { EditTeamDialog } from "./EditTeamDialog";
 
-type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove" | "submit" | "qualify" | "unqualify";
+type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove" | "submit";
 
 const actionCopy: Record<Action, { title: string; confirm: string; tone: "primary" | "danger"; description: (team: AdminTeam) => ReactNode }> = {
   withdraw: {
@@ -91,33 +91,13 @@ const actionCopy: Record<Action, { title: string; confirm: string; tone: "primar
     ),
   },
   approve: {
-    title: "Accept this entry",
-    confirm: "Accept entry",
+    title: "Accept this team",
+    confirm: "Accept team",
     tone: "primary",
     description: (team) => (
       <>
-        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is accepted as a legal entry, so it qualifies for the Grand Finale and can be
-        allotted to a judging panel and a stall.
-      </>
-    ),
-  },
-  qualify: {
-    title: "Qualify for the Grand Finale",
-    confirm: "Qualify for final",
-    tone: "primary",
-    description: (team) => (
-      <>
-        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is shown to its students as qualified for the Grand Finale on 30 October.
-      </>
-    ),
-  },
-  unqualify: {
-    title: "Back to awaiting",
-    confirm: "Back to awaiting",
-    tone: "primary",
-    description: (team) => (
-      <>
-        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is shown to its students as awaiting the organisers&apos; decision again.
+        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is accepted for the Grand Finale, so it can be allotted a judging panel and a
+        stall. Its students see that it is accepted.
       </>
     ),
   },
@@ -127,8 +107,8 @@ const actionCopy: Record<Action, { title: string; confirm: string; tone: "primar
     tone: "danger",
     description: (team) => (
       <>
-        <strong className="text-navy-900">{team.name}</strong> ({team.code}) no longer qualifies for the Grand Finale until it is accepted again. This is
-        not possible once it has been allotted to a panel or scored.
+        <strong className="text-navy-900">{team.name}</strong> ({team.code}) goes back in the queue and cannot get a stall until it is accepted again. This is
+        not possible once it has been allotted to a panel or a stall, or scored.
       </>
     ),
   },
@@ -237,14 +217,17 @@ function TeamView({ id }: { id: string }) {
   const canEdit = isSuper;
   const canChangeMembers = isSuper && t.status !== "withdrawn" && t.status !== "disqualified";
   const canDissolve = isSuper;
-  // Startup and COE KIET entries qualify for the Grand Finale only once their admin has accepted them.
-  const isApprover = isSuper || admin.role === "startup_admin" || (admin.role === "admin" && admin.department === clubDepartment);
+  // Startups, COE KIET, other colleges and schools qualify for the Grand Finale only once their admin has accepted them.
+  const isApprover =
+    isSuper ||
+    admin.role === "startup_admin" ||
+    admin.role === "outside_admin" ||
+    admin.role === "college_admin" ||
+    admin.role === "school_admin" ||
+    (admin.role === "admin" && admin.department === clubDepartment);
   const awaitingApproval = t.approvalRequired && !t.approvedAt;
   const canApprove = isApprover && awaitingApproval && t.status === "submitted";
   const canUnapprove = isApprover && t.approvalRequired && !!t.approvedAt && t.status === "submitted";
-  // Teams from other colleges are awaiting until their admin (or a super admin) qualifies them for the Grand Finale.
-  const canQualify = (isSuper || admin.role === "outside_admin" || admin.role === "college_admin") && t.participantType === "college" && t.status === "submitted";
-  const qualified = t.result === "finalist";
 
   async function run(kind: Action, reason: string) {
     if (kind === "approve" || kind === "unapprove") {
@@ -252,16 +235,7 @@ function TeamView({ id }: { id: string }) {
       team.setData(updated);
       history.reload();
       setAction(null);
-      setDone(kind === "approve" ? `${updated.code} is accepted and now qualifies for the Grand Finale.` : `${updated.code} no longer qualifies until it is accepted again.`);
-      return;
-    }
-    if (kind === "qualify" || kind === "unqualify") {
-      const result = await api.qualifyTeams([t.id], kind === "qualify");
-      if (result.changed === 0) throw new Error(result.skipped[0]?.reason ? `Nothing changed: ${result.skipped[0].reason}.` : "Nothing changed.");
-      team.reload();
-      history.reload();
-      setAction(null);
-      setDone(kind === "qualify" ? `${t.code} is qualified for the Grand Finale.` : `${t.code} is back to awaiting.`);
+      setDone(kind === "approve" ? `${updated.code} is accepted. It can now be allotted a stall.` : `${updated.code} is back in the queue until it is accepted again.`);
       return;
     }
     if (kind === "dissolve") {
@@ -308,24 +282,18 @@ function TeamView({ id }: { id: string }) {
             <h1 className="mt-1 font-display text-2xl font-bold break-words text-navy-900 sm:text-3xl">{t.name}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusPill status={t.status} />
-              {t.participantType === "college" ? <StandingPill team={t} /> : <ResultPill result={t.result} />}
+              {t.route === "department" && <ResultPill result={t.result} />}
               <Pill tone={t.route === "finale" ? "orange" : "cyan"}>{routeLabels[t.route]}</Pill>
               {otherDepartments.length > 0 && <Pill tone="navy">Mixed departments</Pill>}
               {t.approvalRequired && <Pill tone={t.approvedAt ? "green" : "orange"}>{t.approvedAt ? "Accepted" : "Awaiting approval"}</Pill>}
             </div>
           </div>
-          {(canEdit || canApprove || canUnapprove || canQualify || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
+          {(canEdit || canApprove || canUnapprove || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
             <div className="flex flex-wrap gap-2">
               {canApprove && (
                 <Button onClick={() => setAction("approve")}>
                   <BadgeCheck aria-hidden="true" className="size-4" />
-                  Accept entry
-                </Button>
-              )}
-              {canQualify && (
-                <Button variant={qualified ? "secondary" : "primary"} onClick={() => setAction(qualified ? "unqualify" : "qualify")}>
-                  <BadgeCheck aria-hidden="true" className="size-4" />
-                  {qualified ? "Back to awaiting" : "Qualify for final"}
+                  Accept team
                 </Button>
               )}
               {canUnapprove && (
@@ -386,10 +354,12 @@ function TeamView({ id }: { id: string }) {
           )}
         </header>
         {awaitingApproval && t.status !== "withdrawn" && t.status !== "disqualified" && t.status !== "archived" && (
-          <Notice tone="warning" title="Waiting for approval">
-            {t.status === "submitted"
-              ? "This entry does not qualify for the Grand Finale until it is accepted as a legal entry. The students have been told to contact the coordinator or write to innotech@kiet.edu."
-              : "It has not been submitted yet. It can be accepted once its leader submits it."}
+          <Notice tone="warning" title="In the queue to be accepted">
+            {t.status !== "submitted"
+              ? "It has not been submitted yet. It can be accepted once its leader submits it."
+              : t.participantType === "college" || t.participantType === "school"
+                ? "This team cannot be allotted a stall until it is accepted. Its students see that they are in the queue and that no stall is allotted yet."
+                : "This entry does not qualify for the Grand Finale until it is accepted as a legal entry. The students have been told to contact the coordinator or write to innotech@kiet.edu."}
           </Notice>
         )}
         {done && <Notice tone="success">{done} The change is recorded in the history below.</Notice>}
@@ -632,7 +602,7 @@ function TeamView({ id }: { id: string }) {
           description={actionCopy[action].description(t)}
           confirmLabel={actionCopy[action].confirm}
           tone={actionCopy[action].tone}
-          reasonLabel={action === "approve" || action === "qualify" || action === "unqualify" ? undefined : "Reason"}
+          reasonLabel={action === "approve" ? undefined : "Reason"}
           typeToConfirm={action === "dissolve" ? t.name : undefined}
           onConfirm={(reason) => run(action, reason)}
           onClose={() => setAction(null)}

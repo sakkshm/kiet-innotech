@@ -26,8 +26,10 @@ export default function DashboardPage() {
   const startup = profile.participantType === "startup";
   const direct = directFinaleKind(profile.participantType, profile.department);
   const submitted = team !== null && team.status !== "draft";
-  // Startups and COE KIET teams are not finished until an admin has accepted them.
-  const accepted = submitted && (!team.approvalRequired || team.approvedAt !== null);
+  // Startups and COE KIET teams are not finished until an admin has accepted them. Other colleges and schools have done
+  // their part once the team is submitted; their queue / accepted status is the card below.
+  const otherInstitution = profile.participantType === "college" || profile.participantType === "school";
+  const accepted = submitted && (otherInstitution || !team.approvalRequired || team.approvedAt !== null);
   const submissionDetail = (noun: string) =>
     !submitted ? (noun === "Entry" ? "Submit your entry" : "Leader submits the team") : accepted ? `${noun} locked` : "Waiting for approval";
   const steps = startup

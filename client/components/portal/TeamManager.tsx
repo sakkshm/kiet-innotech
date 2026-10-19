@@ -615,7 +615,13 @@ function SubmitPanel({ team, isLeader, editable, registration }: { team: Team; i
               </li>
               <li>The team name, category, domain, project title and abstract can no longer be changed.</li>
               <li>If a member withdraws later, the team is not considered further.</li>
-              {team.approvalRequired && <li>An admin must accept your team as a legal entry before it counts.</li>}
+              {team.approvalRequired && (
+                <li>
+                  {team.participantType === "college" || team.participantType === "school"
+                    ? "The organisers review every submitted team and accept it before stalls are allotted for the Grand Finale."
+                    : "An admin must accept your team as a legal entry before it counts."}
+                </li>
+              )}
             </ul>
             <div className="mt-4 rounded-2xl bg-surface px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted">Members being locked</p>
@@ -648,7 +654,20 @@ function TeamFacts({ team }: { team: Team }) {
   const rows = [
     [startup ? "Entry ID" : "Team ID", team.code],
     ["Status", statusLabels[team.status]],
-    ...(team.approvalRequired ? ([["Approval", team.approvedAt ? "Accepted by an admin" : "Waiting for an admin"]] as [string, string][]) : []),
+    ...(team.approvalRequired
+      ? ([
+          [
+            "Approval",
+            team.participantType === "college" || team.participantType === "school"
+              ? team.approvedAt
+                ? "Accepted by the organisers"
+                : "In the queue to be accepted"
+              : team.approvedAt
+                ? "Accepted by an admin"
+                : "Waiting for an admin",
+          ],
+        ] as [string, string][])
+      : []),
     [team.participantType === "kiet" ? "Department" : startup ? "Startup" : "Institution", team.department ? departmentLabel(team.department) : team.institution],
     // Startups and COE KIET teams see their route only once an admin has accepted them; other colleges and schools are told
     // nothing about a route (their queue or stall status is the card at the top of the dashboard).

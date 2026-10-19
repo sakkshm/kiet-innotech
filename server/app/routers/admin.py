@@ -13,6 +13,8 @@ from ..errors import ApiError
 from ..models import Juror
 from ..rules import JudgingRound
 from ..schemas import (
+    AcceptInput,
+    AcceptOut,
     AdminInput,
     AdminOut,
     AdminScoreInput,
@@ -43,8 +45,6 @@ from ..schemas import (
     PresentInput,
     PublishInput,
     PublishOut,
-    QualifyInput,
-    QualifyOut,
     QuotasInput,
     RankingsOut,
     ReadinessOut,
@@ -156,10 +156,10 @@ def archive_teams(data: ArchiveInput, admin: CurrentAdmin, db: Db, settings: App
     return service.archive_teams(db, admin, settings, data.team_ids, data.reason)
 
 
-@router.post("/teams/qualify")
-def qualify_teams(data: QualifyInput, admin: CurrentAdmin, db: Db) -> QualifyOut:
-    """Marks submitted teams from other colleges qualified for the Grand Finale, or back to awaiting."""
-    return service.set_qualified(db, admin, data.team_ids, data.qualified)
+@router.post("/teams/accept")
+def accept_teams(data: AcceptInput, admin: CurrentAdmin, db: Db) -> AcceptOut:
+    """Accepts submitted teams (startups, COE KIET, other colleges, schools) so they can get stalls, or puts them back in the queue."""
+    return service.accept_teams(db, admin, data.team_ids, data.accepted)
 
 
 @router.post("/teams/{team_id}/submit")
@@ -170,7 +170,7 @@ def submit_team(team_id: uuid.UUID, data: ReasonInput, admin: CurrentAdmin, db: 
 
 @router.post("/teams/{team_id}/approve")
 def approve_team(team_id: uuid.UUID, admin: CurrentAdmin, db: Db) -> AdminTeamOut:
-    """Super admin, startups admin or COE KIET admin: accepts a submitted startup or COE KIET entry for the Grand Finale."""
+    """Super admin or the admin of startups, COE KIET, other colleges or schools: accepts a submitted team for the Grand Finale."""
     return service.approve_team(db, admin, team_id)
 
 

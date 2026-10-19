@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { draftKeys } from "@/lib/drafts";
 import { longDate } from "@/lib/format";
 import { useRegistrationDates, useRegistrationState } from "@/lib/registration";
-import { directFinaleKind, routeFor } from "@/lib/rules";
+import { routeFor } from "@/lib/rules";
 import type { TeamInput } from "@/lib/types";
 import { Notice, buttonStyles } from "@/components/ui/form";
 import { PageHeading, Panel } from "@/components/portal/PageHeading";
@@ -39,13 +39,8 @@ export default function NewTeamPage() {
   };
 
   const startup = profile.participantType === "startup";
-  // Startups and COE KIET teams are told nothing about a route until an admin has accepted them.
-  const route =
-    directFinaleKind(profile.participantType, profile.department) !== null
-      ? ""
-      : routeFor(profile.participantType, profile.department) === "department"
-        ? `the ${profile.department} department round`
-        : "the Grand Finale directly";
+  // Only KIET teams are told a route. Startups, COE KIET, other colleges and schools are told nothing until an admin accepts them.
+  const route = routeFor(profile.participantType, profile.department) === "department" ? `the ${profile.department} department round` : "";
 
   return (
     <div className="mx-auto max-w-3xl">

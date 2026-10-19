@@ -40,6 +40,7 @@ from ..models import (
     utcnow,
 )
 from ..schemas import (
+    AcceptOut,
     AdminInput,
     AdminMemberOut,
     AdminOut,
@@ -61,7 +62,6 @@ from ..schemas import (
     NominationsInput,
     PublishInput,
     PublishOut,
-    QualifyOut,
     QuotasInput,
     SizeStats,
     SkippedTeam,
@@ -332,7 +332,7 @@ class TeamFilters(Paging):
     route: Literal["department", "finale"] | None = None
     # Startup and COE KIET entries: waiting for an admin to accept them, or already accepted.
     approval: Literal["pending", "approved"] | None = None
-    # Department round result, or (other colleges) awaiting / qualified for the Grand Finale.
+    # Department round result (finalist, not selected).
     result: Literal["pending", "finalist", "not_selected"] | None = None
     # Teams with at least one member in this year (college) or class (school).
     year: int | None = Field(default=None, ge=1, le=12)
@@ -618,14 +618,18 @@ def create_team(db: Session, admin: Admin, data: AdminTeamInput, settings: Setti
 
 
 def _require_approver(admin: Admin) -> None:
-    """Super admins, the startup admin and the COE KIET admin accept the entries they are responsible for."""
-    if _is_super(admin) or admin.role == "startup_admin" or (admin.role == "admin" and admin.department == rules.CLUB_DEPARTMENT):
+    """Super admins and the admins of startups, COE KIET, other colleges and schools accept the entries they are responsible for."""
+    if (
+        _is_super(admin)
+        or admin.role in ("startup_admin", "outside_admin", "college_admin", "school_admin")
+        or (admin.role == "admin" and admin.department == rules.CLUB_DEPARTMENT)
+    ):
         return
-    raise ApiError("Only a super admin, the startups admin or the COE KIET admin can accept entries.", 403)
+    raise ApiError("Only a super admin or the admin of startups, COE KIET, other colleges or schools can accept teams.", 403)
 
 
 def approve_team(db: Session, admin: Admin, team_id: uuid.UUID) -> AdminTeamOut:
-    """Accepts a submitted startup or COE KIET entry as a legal entry, so it qualifies for the Grand Finale."""
+    """Accepts a submitted startup, COE KIET, other-college or school team, so it can be allotted a stall at the Grand Finale."""
     _require_approver(admin)
     team = _visible_team(db, admin, team_id, lock=True)
     if not team.approval_required:
@@ -635,7 +639,7 @@ def approve_team(db: Session, admin: Admin, team_id: uuid.UUID) -> AdminTeamOut:
     if team.approved_at is not None:
         raise ApiError("This entry has already been accepted.", 409)
     team.approved_at, team.approved_by = utcnow(), admin.email
-    audit.record(db, admin.email, "team.approved", team, "Accepted as a legal entry for the Grand Finale")
+    audit.record(db, admin.email, "team.approved", team, "Accepted for the Grand Finale")
     db.commit()
     return admin_teams(db, [team])[0]
 
@@ -989,32 +993,33 @@ def archive_teams(db: Session, admin: Admin, settings: Settings, team_ids: list[
     return ArchiveOut(archived=len(archived), skipped=skipped, not_found=missing)
 
 
-def set_qualified(db: Session, admin: Admin, team_ids: list[uuid.UUID], qualified: bool) -> QualifyOut:
+def accept_teams(db: Session, admin: Admin, team_ids: list[uuid.UUID], accepted: bool) -> AcceptOut:
     """
-    Marks submitted teams from other colleges as qualified for the Grand Finale, or back to awaiting. Super admins and
-    the admins of other colleges. Other teams in the selection are skipped and listed; the rest is recorded in the log.
+    Accepts submitted teams that need it (startups, COE KIET, other colleges, schools) so they can be allotted stalls, or
+    puts them back in the queue. Teams outside the admin's scope are not found; others that cannot change are skipped
+    and listed (not submitted, no acceptance needed, or already in a room or with a stall, which blocks taking it back).
     """
-    if not (_is_super(admin) or admin.role in ("outside_admin", "college_admin")):
-        raise ApiError("Only a super admin or an admin of other colleges can qualify teams for the Grand Finale.", 403)
+    _require_approver(admin)
     teams = list(db.scalars(select(Team).where(Team.id.in_(set(team_ids)), team_scope(admin)).order_by(Team.id).with_for_update()))
     changed, skipped = 0, []
     for team in teams:
-        if team.participant_type != "college":
-            skipped.append(SkippedTeam(code=team.code, name=team.name, reason="not a team from another college"))
+        if not team.approval_required:
+            skipped.append(SkippedTeam(code=team.code, name=team.name, reason="this team does not need acceptance"))
         elif team.status != "submitted":
             skipped.append(SkippedTeam(code=team.code, name=team.name, reason=f"not a submitted team ({team.status})"))
-        elif (team.result == "finalist") != qualified:
-            team.result = "finalist" if qualified else "pending"
-            audit.record(
-                db,
-                admin.email,
-                "team.qualified" if qualified else "team.qualification_removed",
-                team,
-                "Qualified for the Grand Finale" if qualified else "Back to awaiting",
-            )
+        elif accepted and team.approved_at is None:
+            team.approved_at, team.approved_by = utcnow(), admin.email
+            audit.record(db, admin.email, "team.approved", team, "Accepted for the Grand Finale")
+            changed += 1
+        elif not accepted and team.approved_at is not None:
+            if blocked := _judging_blocker(db, team):
+                skipped.append(SkippedTeam(code=team.code, name=team.name, reason=blocked))
+                continue
+            team.approved_at = team.approved_by = None
+            audit.record(db, admin.email, "team.approval_revoked", team, "Back in the queue")
             changed += 1
     db.commit()
-    return QualifyOut(changed=changed, skipped=skipped, not_found=len(set(team_ids)) - len(teams))
+    return AcceptOut(changed=changed, skipped=skipped, not_found=len(set(team_ids)) - len(teams))
 
 
 def dissolve_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> None:
@@ -1022,9 +1027,7 @@ def dissolve_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) ->
     _require_super(admin, "dissolve teams")
     team = _visible_team(db, admin, team_id, lock=True)
     if team.result == "finalist":
-        raise ApiError(
-            "This team is a finalist (or qualified for the Grand Finale), so it cannot be dissolved. Disqualify it instead.", 409
-        )
+        raise ApiError("This team is a finalist, so it cannot be dissolved. Disqualify it instead.", 409)
     if blocked := _judging_blocker(db, team):
         raise ApiError(blocked, 409)
     members = db.scalars(select(User.email).join(TeamMember, TeamMember.user_id == User.id).where(TeamMember.team_id == team.id)).all()
@@ -1103,9 +1106,7 @@ def delete_student(db: Session, admin: Admin, user_id: uuid.UUID, reason: str) -
         mates = db.scalars(select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.user_id != user.id)).all()
         if team.leader_id == user.id and not mates:
             if team.result == "finalist":
-                raise ApiError(
-                    "This student's team is a finalist (or qualified for the Grand Finale), so it cannot be deleted. Disqualify it.", 409
-                )
+                raise ApiError("This student's team is a finalist, so it cannot be deleted. Disqualify it.", 409)
             if blocked := _judging_blocker(db, team):
                 raise ApiError(blocked, 409)
             audit.record(db, admin.email, "team.dissolved", team, f"{team.name} deleted with its only member {user.email}. {reason}")

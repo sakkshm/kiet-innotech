@@ -1,4 +1,4 @@
-import type { ActivityQuery, AdminInput, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QualifyResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, ActivityQuery, AdminInput, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -24,11 +24,14 @@ export interface AdminApi {
   submitTeam(id: string, reason: string): Promise<AdminTeam>;
   /** Super admin: archives draft teams whose registration has closed; the rest are skipped and listed. */
   archiveTeams(ids: string[], reason: string): Promise<ArchiveResult>;
-  /** Other-college teams: qualified for the Grand Finale (true), or back to awaiting (false). */
-  qualifyTeams(ids: string[], qualified: boolean): Promise<QualifyResult>;
+  /**
+   * Startups, COE KIET, other colleges and schools: accepts the teams (true) so they can be allotted stalls, or puts them
+   * back in the queue (false). Teams that cannot change are skipped and listed.
+   */
+  acceptTeams(ids: string[], accepted: boolean): Promise<AcceptResult>;
   /** Super admin: deletes a team and frees its members. The history stays in the audit log. */
   dissolveTeam(id: string, reason: string): Promise<void>;
-  /** Accepts a submitted startup or COE KIET entry as a legal entry for the Grand Finale. */
+  /** Accepts a submitted startup, COE KIET, other-college or school team for the Grand Finale. */
   approveTeam(id: string): Promise<AdminTeam>;
   /** Takes that acceptance back. */
   revokeApproval(id: string, reason: string): Promise<AdminTeam>;

@@ -1096,8 +1096,9 @@ class AwardInput(Input):
 
 class ResultCard(BaseModel):
     round: str
-    # awaiting: not announced yet; finalist / not_selected: department round outcome; winner: a cash prize;
-    # participated: took part in the finale without a prize; qualified / disqualified: an other-college team's standing.
+    # awaiting: not announced yet (or, for other colleges and schools, in the queue to be accepted); finalist / not_selected:
+    # department round outcome; winner: a cash prize; participated: took part in the finale without a prize;
+    # qualified: an other-college or school team that was accepted; disqualified: an other-college or school team that is out.
     status: Literal["awaiting", "finalist", "not_selected", "winner", "participated", "qualified", "disqualified"]
     title: str
     message: str
@@ -1238,10 +1239,10 @@ class ArchiveInput(Input):
     reason: str = Field(min_length=5, max_length=500)
 
 
-class QualifyInput(Input):
+class AcceptInput(Input):
     team_ids: list[uuid.UUID] = Field(min_length=1, max_length=5000)
-    # True: qualified for the Grand Finale. False: back to awaiting.
-    qualified: bool
+    # True: accepted, so it can be allotted a stall. False: back in the queue.
+    accepted: bool
 
 
 class SkippedTeam(BaseModel):
@@ -1250,7 +1251,7 @@ class SkippedTeam(BaseModel):
     reason: str
 
 
-class QualifyOut(BaseModel):
+class AcceptOut(BaseModel):
     changed: int
     skipped: list["SkippedTeam"]
     not_found: int

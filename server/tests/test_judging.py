@@ -68,6 +68,13 @@ def set_room(j, teams=("cse_a", "cse_b", "cse_c"), jurors=(("it.prof@kiet.edu", 
     return response.json()
 
 
+def accept_direct(j):
+    """Teams from other colleges and schools get stalls only once the organisers have accepted them."""
+    ids = [j["teams"][k]["id"] for k in ("college", "school")]
+    response = j["root"].post("/admin/teams/accept", {"team_ids": ids, "accepted": True})
+    assert response.status_code == 200 and response.json()["changed"] == 2, response.text
+
+
 def score(judge, room, team, parts):
     return judge.put(f"/judge/panels/{room['id']}/teams/{team['id']}/score", marks(parts))
 
@@ -414,6 +421,7 @@ def test_rankings_use_the_tie_breakers(judging):
 
 
 def test_tents_for_the_finale(judging, settings):
+    accept_direct(judging)
     root = judging["root"]
     college, school, cse_a = (judging["teams"][k] for k in ("college", "school", "cse_a"))
     # Before results, only the direct teams go to the finale.
@@ -442,50 +450,57 @@ def test_tents_for_the_finale(judging, settings):
     assert all(len(t["members"]) == 2 and t["members"][0]["role"] == "leader" for t in sheet["teams"])
 
 
-def test_other_colleges_are_awaiting_qualified_or_disqualified(judging, as_user):
+def test_other_colleges_and_schools_are_accepted_before_they_get_stalls(judging, as_user):
     import uuid
 
     root = judging["root"]
     college, school, cse_a = (judging["teams"][k] for k in ("college", "school", "cse_a"))
-    leader = as_user("r@gmail.com")
-    cards = lambda: [(c["round"], c["status"]) for c in leader.get("/me/results").json()["cards"]]  # noqa: E731
-    assert cards() == [("final", "awaiting")]
+    # Teams from other colleges and schools wait for the organisers; KIET department teams do not.
+    assert root.get(f"/admin/teams/{college['id']}").json()["approval_required"] is True
+    assert root.get(f"/admin/teams/{college['id']}").json()["approved_at"] is None
+    assert root.get(f"/admin/teams/{cse_a['id']}").json()["approval_required"] is False
+    leader, pupil = as_user("r@gmail.com"), as_user("k@gmail.com")
+    cards = lambda who: [(c["round"], c["status"]) for c in who.get("/me/results").json()["cards"]]  # noqa: E731
     queue = leader.get("/me/results").json()["cards"][0]
+    assert cards(leader) == [("final", "awaiting")] == cards(pupil)
     assert "queue" in queue["title"] and "No stall has been allotted yet" in queue["message"]
-    # Only a super admin or an admin of other colleges qualifies teams, and only other-college teams that are submitted.
+    # Not accepted: no stall can be given, and the finale list does not show the team.
+    assert {r["team"]["name"] for r in root.get("/admin/judging/final").json()["tents"]} == set()
+    refused = root.put("/admin/judging/final/tents", {"tents": [{"team_id": college["id"], "tent": "S-1"}]})
+    assert refused.status_code == 422
+    # Who may accept: the super admin and the admins of other colleges and schools, not a department admin.
     ids = [college["id"], school["id"], cse_a["id"], str(uuid.uuid4())]
-    assert judging["cse"].post("/admin/teams/qualify", {"team_ids": ids, "qualified": True}).status_code == 403
-    out = root.post("/admin/teams/qualify", {"team_ids": ids, "qualified": True}).json()
-    assert (out["changed"], out["not_found"]) == (1, 1) and {s["code"] for s in out["skipped"]} == {school["code"], cse_a["code"]}
-    # Qualifying is for the organisers: students are told they are accepted only once a stall is allotted to them.
-    assert cards() == [("final", "awaiting")]
-    assert root.post("/admin/teams/qualify", {"team_ids": ids, "qualified": True}).json()["changed"] == 0
-    found = root.get("/admin/teams", params={"type": "college", "result": "finalist"}).json()
-    assert [t["code"] for t in found["items"]] == [college["code"]]
-    assert root.get("/admin/teams", params={"type": "college", "result": "pending"}).json()["total"] == 0
-    # The department-round school and KIET teams are untouched.
-    assert root.get(f"/admin/teams/{school['id']}").json()["result"] == "pending"
-    # With a stall allotted the team is accepted; without it, back in the queue.
-    assert root.put("/admin/judging/final/tents", {"tents": [{"team_id": college["id"], "tent": "S-1"}]}).status_code == 200
+    assert judging["cse"].post("/admin/teams/accept", {"team_ids": ids, "accepted": True}).status_code == 403
+    out = root.post("/admin/teams/accept", {"team_ids": ids, "accepted": True}).json()
+    assert (out["changed"], out["not_found"]) == (2, 1)
+    assert [s["code"] for s in out["skipped"]] == [cse_a["code"]] and "does not need acceptance" in out["skipped"][0]["reason"]
+    assert root.post("/admin/teams/accept", {"team_ids": ids, "accepted": True}).json()["changed"] == 0
+    # Accepted, no stall yet.
     accepted = leader.get("/me/results").json()["cards"][0]
-    assert accepted["status"] == "qualified" and "S-1" in accepted["message"]
-    assert root.put("/admin/judging/final/tents", {"tents": [{"team_id": college["id"], "tent": None}]}).status_code == 200
-    assert cards() == [("final", "awaiting")]
-    # Schools are in the queue too, and are told nothing about being accepted.
-    school_cards = as_user("k@gmail.com").get("/me/results").json()["cards"]
-    assert [c["status"] for c in school_cards] == ["awaiting"] and "queue" in school_cards[0]["title"]
-    # Back to awaiting, then disqualified.
-    assert root.post("/admin/teams/qualify", {"team_ids": [college["id"]], "qualified": False}).json()["changed"] == 1
-    assert cards() == [("final", "awaiting")]
-    assert root.post(f"/admin/teams/{college['id']}/disqualify", {"reason": "Not a genuine entry"}).status_code == 200
-    assert cards() == [("final", "disqualified")]
-    skipped = root.post("/admin/teams/qualify", {"team_ids": [college["id"]], "qualified": True}).json()
+    assert accepted["status"] == "qualified" and "accepted" in accepted["title"] and "No stall has been allotted yet" in accepted["message"]
+    assert cards(pupil) == [("final", "qualified")]
+    assert {r["team"]["name"] for r in root.get("/admin/judging/final").json()["tents"]} == {"ABES Team", "DPS Team"}
+    # With a stall the team is told it.
+    assert root.put("/admin/judging/final/tents", {"tents": [{"team_id": college["id"], "tent": "S-1"}]}).status_code == 200
+    assert "S-1" in leader.get("/me/results").json()["cards"][0]["message"]
+    # Taking acceptance back is blocked while the team has a stall; the rest go back in the queue.
+    back = root.post("/admin/teams/accept", {"team_ids": [college["id"], school["id"]], "accepted": False}).json()
+    assert back["changed"] == 1 and "stall" in back["skipped"][0]["reason"].lower()
+    assert cards(pupil) == [("final", "awaiting")] and cards(leader) == [("final", "qualified")]
+    # Filters: the approval filter finds teams waiting for acceptance.
+    waiting = root.get("/admin/teams", params={"type": "school", "approval": "pending"}).json()
+    assert [t["code"] for t in waiting["items"]] == [school["code"]]
+    # Disqualified teams are told so (colleges and schools alike); a team that is not submitted cannot be accepted.
+    assert root.post(f"/admin/teams/{school['id']}/disqualify", {"reason": "Not a genuine entry"}).status_code == 200
+    assert cards(pupil) == [("final", "disqualified")]
+    skipped = root.post("/admin/teams/accept", {"team_ids": [school["id"]], "accepted": True}).json()
     assert skipped["changed"] == 0 and "not a submitted team" in skipped["skipped"][0]["reason"]
     log = root.get("/admin/activity", params={"kind": "team", "page_size": 100}).json()["items"]
-    assert {"team.qualified", "team.qualification_removed"} <= {e["action"] for e in log}
+    assert {"team.approved", "team.approval_revoked"} <= {e["action"] for e in log}
 
 
 def test_finale_rankings_group_schools_separately(judging, settings):
+    accept_direct(judging)
     root = judging["root"]
     panel = root.post("/admin/panels", {"round": "final", "name": "Panel A"}).json()
     college, school = judging["teams"]["college"], judging["teams"]["school"]
@@ -834,6 +849,7 @@ def test_students_see_their_results(judging, as_user, settings):
     alpha, beta, college = as_user("a@kiet.edu"), as_user("c@kiet.edu"), as_user("r@gmail.com")
     assert [c["status"] for c in alpha.get("/me/results").json()["cards"]] == ["awaiting"]
     assert [(c["round"], c["status"]) for c in college.get("/me/results").json()["cards"]] == [("final", "awaiting")]
+    accept_direct(judging)
     # Finalists published: Alpha is a finalist, Beta is not.
     root.put("/admin/finalists/CSE", {"nominations": [{"category": 1, "team_ids": [teams["cse_a"]["id"]]}]})
     assert publish(root, settings).status_code == 200

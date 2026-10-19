@@ -62,6 +62,11 @@ export function directFinaleKind(type: ParticipantType, department: string | nul
   return type === "kiet" && department === clubDepartment ? "coe" : null;
 }
 
+/** Teams an admin must accept before they can get a stall: startups, COE KIET, other colleges and schools (server: rules.needs_approval). */
+export function needsApproval(type: ParticipantType, department: string | null) {
+  return type === "startup" || type === "college" || type === "school" || directFinaleKind(type, department) !== null;
+}
+
 /** The route a new team takes (server: rules.route_for). */
 export function routeFor(type: ParticipantType, department: string | null): "department" | "finale" {
   return type === "kiet" && department !== clubDepartment ? "department" : "finale";

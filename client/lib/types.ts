@@ -31,7 +31,7 @@ export type ProfileInput = Omit<Profile, "userId" | "email" | "createdAt">;
 
 export type TeamStatus = "draft" | "submitted" | "withdrawn" | "disqualified" | "archived";
 
-/** KIET teams go through the department round; other colleges and schools go straight to the finale. */
+/** KIET teams go through the department round; other colleges and schools are accepted by the organisers, then go to the finale. */
 export type TeamRoute = "department" | "finale";
 
 export type TeamResult = "pending" | "finalist" | "not_selected";

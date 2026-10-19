@@ -26,8 +26,8 @@ import { ClubDialog } from "./ClubDialog";
 const typeIcons = { kiet: University, college: GraduationCap, school: School };
 const typeNotes: Partial<Record<ParticipantType, string>> = {
   kiet: "Department round, then the Grand Finale",
-  college: "Straight to the Grand Finale, any category",
-  school: "Straight to the Grand Finale, any category",
+  college: "Accepted by the organisers, then the Grand Finale",
+  school: "Accepted by the organisers, then the Grand Finale",
 };
 
 

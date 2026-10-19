@@ -77,6 +77,7 @@ def test_judging_blocks_reopening_and_dissolving(world):  # noqa: F811
     assert root.get(f"/admin/teams/{team['id']}").json()["status"] == "submitted"
     # A finale team with a tent is blocked too.
     college = world["teams"]["college"]
+    assert root.post("/admin/teams/accept", {"team_ids": [college["id"]], "accepted": True}).status_code == 200
     assert root.put("/admin/judging/final/tents", {"tents": [{"team_id": college["id"], "tent": "T-1"}]}).status_code == 200
     assert "stall" in root.post(f"/admin/teams/{college['id']}/dissolve", REASON).json()["detail"]
 
