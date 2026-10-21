@@ -152,6 +152,8 @@ export const auditLabels: Record<AuditAction, string> = {
   "team.dissolved": "Team dissolved",
   "team.approved": "Team accepted for the Grand Finale",
   "team.approval_revoked": "Acceptance withdrawn (back in the queue)",
+  "team.rejected": "Team rejected",
+  "team.rejection_revoked": "Rejection withdrawn (back in the queue)",
 };
 
 export const roundLabels = { department: "Departmental", final: "Grand Finale" } as const;

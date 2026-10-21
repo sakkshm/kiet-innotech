@@ -31,6 +31,8 @@ from ..schemas import (
     AuditPage,
     AwardInput,
     BufferInput,
+    BulkOut,
+    BulkTeamsInput,
     FinalistBoardOut,
     FinalistSummaryOut,
     JudgingOut,
@@ -158,6 +160,12 @@ def set_team_leader(team_id: uuid.UUID, data: TeamLeaderInput, admin: CurrentAdm
 def archive_teams(data: ArchiveInput, admin: CurrentAdmin, db: Db, settings: AppSettings) -> ArchiveOut:
     """Super admin: archives draft teams whose registration has closed (others are skipped and listed)."""
     return service.archive_teams(db, admin, settings, data.team_ids, data.reason)
+
+
+@router.post("/teams/bulk")
+def bulk_teams(data: BulkTeamsInput, admin: CurrentAdmin, db: Db, settings: AppSettings) -> BulkOut:
+    """One action for many teams (withdraw, disqualify, restore, archive, submit, accept, back to queue, reject); each team on its own."""
+    return service.bulk_teams(db, admin, settings, data.team_ids, data.action, data.reason, unban_members=data.unban_members)
 
 
 @router.post("/teams/accept")

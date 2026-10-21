@@ -18,6 +18,7 @@ const looks: Record<ResultCard["status"], { box: string; Icon: typeof Trophy }> 
   participated: { box: "bg-white text-ink ring-line", Icon: Frown },
   qualified: { box: "bg-emerald-600 text-white ring-emerald-500", Icon: PartyPopper },
   disqualified: { box: "bg-red-50 text-red-900 ring-red-200", Icon: Ban },
+  rejected: { box: "bg-red-50 text-red-900 ring-red-200", Icon: CircleX },
 };
 
 /**
@@ -56,7 +57,7 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
               </p>
               <h2 className="mt-1 font-display text-xl font-bold">{card.title}</h2>
               {card.amount !== null && <p className="mt-1 font-display text-3xl font-bold">₹{card.amount.toLocaleString("en-IN")}</p>}
-              <p className={`mt-1 text-sm ${bright ? "text-white/90" : card.status === "disqualified" ? "text-red-800" : "text-muted"}`}>{card.message}</p>
+              <p className={`mt-1 text-sm ${bright ? "text-white/90" : card.status === "disqualified" || card.status === "rejected" ? "text-red-800" : "text-muted"}`}>{card.message}</p>
             </div>
           </section>
         );

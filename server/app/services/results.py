@@ -6,7 +6,8 @@ What a student sees about their team's results, round by round, only once the or
 - Grand Finale (finalists, and teams that go straight to the finale): awaiting until the finale's winners are
   published; then the prize and amount, or "better luck next time".
 - Teams from other colleges and schools: in the queue until the organisers accept the team, then accepted (with the
-  stall once one is allotted). Not every team is accepted. A disqualified team is told so.
+  stall once one is allotted). Not every team is accepted: a rejected team is told so, with the organisers' reason.
+  A disqualified team is told so.
 """
 
 from sqlalchemy import select
@@ -32,6 +33,17 @@ def _other_institution_cards(db: Session, team: Team, awards: dict, published: d
     Other colleges and schools: in the queue until the organisers accept the team, then accepted, then the stall once one is
     allotted. Not every team is accepted. After the finale, only a prize or a thank-you shows.
     """
+    if team.rejected_at is not None:
+        reason = f" Reason from the organisers: {team.rejected_reason}" if team.rejected_reason else ""
+        return [
+            ResultCard(
+                round="final",
+                status="rejected",
+                title="Your team was not accepted",
+                message=f"The organisers could not accept your team for the Grand Finale, so no stall will be allotted.{reason} "
+                "Please contact the organisers if you have any questions.",
+            )
+        ]
     accepted = team.approved_at is not None
     award = awards.get("final") if published["final"] else None
     if award:

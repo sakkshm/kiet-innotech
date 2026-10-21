@@ -317,6 +317,9 @@ class TeamOut(BaseModel):
     # Startups and COE KIET teams: True until an admin has accepted the entry for the Grand Finale.
     approval_required: bool = False
     approved_at: datetime | None = None
+    # Other colleges and schools: set when the organisers declined the team, with the reason they gave (shown to its students).
+    rejected_at: datetime | None = None
+    rejected_reason: str | None = None
 
 
 # ---------- Admin ----------
@@ -430,6 +433,7 @@ class TeamSummaryOut(BaseModel):
     submitted_at: datetime | None
     approval_required: bool = False
     approved_at: datetime | None = None
+    rejected_at: datetime | None = None
     leader_year: int | None = None
     # Year (or class) of every member, the leader's first.
     member_years: list[int] = []
@@ -1171,8 +1175,9 @@ class ResultCard(BaseModel):
     round: str
     # awaiting: not announced yet (or, for other colleges and schools, in the queue to be accepted); finalist / not_selected:
     # department round outcome; winner: a cash prize; participated: took part in the finale without a prize;
-    # qualified: an other-college or school team that was accepted; disqualified: an other-college or school team that is out.
-    status: Literal["awaiting", "finalist", "not_selected", "winner", "participated", "qualified", "disqualified"]
+    # qualified: an other-college or school team that was accepted; disqualified: an other-college or school team that is out;
+    # rejected: an other-college or school team the organisers did not accept.
+    status: Literal["awaiting", "finalist", "not_selected", "winner", "participated", "qualified", "disqualified", "rejected"]
     title: str
     message: str
     place: int | None = None
@@ -1325,6 +1330,19 @@ class AcceptInput(Input):
     accepted: bool
 
 
+BulkAction = Literal["withdraw", "disqualify", "restore", "archive", "submit", "accept", "unaccept", "reject"]
+
+
+class BulkTeamsInput(Input):
+    """One action for many teams. A reason (at least five characters) is needed for everything except accept and back-to-queue."""
+
+    team_ids: list[uuid.UUID] = Field(min_length=1, max_length=5000)
+    action: BulkAction
+    reason: str | None = Field(default=None, max_length=500)
+    # Restore only: also lift the bans of the restored teams' students.
+    unban_members: bool = False
+
+
 class SkippedTeam(BaseModel):
     code: str
     name: str
@@ -1335,6 +1353,14 @@ class AcceptOut(BaseModel):
     changed: int
     skipped: list["SkippedTeam"]
     not_found: int
+
+
+class BulkOut(BaseModel):
+    action: BulkAction
+    changed: int
+    skipped: list[SkippedTeam]
+    # Ids that do not exist or are outside the caller's scope.
+    not_found: int = 0
 
 
 class ArchiveOut(BaseModel):

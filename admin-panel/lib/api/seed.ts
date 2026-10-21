@@ -12,6 +12,7 @@ import {
   REGISTRATION_CLOSES,
   REGISTRATION_OPENS,
   categoryEligibility,
+  needsApproval,
 } from "../rules";
 import type { Invitation, ParticipantType, Profile, TeamStatus } from "../types";
 import { demoAdmins } from "./demo-admins";
@@ -425,8 +426,11 @@ export function createSeed(): MockDb {
       institution: plan.institution.name,
       department: plan.department,
       route: plan.type === "kiet" ? "department" : "finale",
-      approvalRequired: false,
+      // Startups, COE KIET, other colleges and schools wait in the queue until an admin accepts them.
+      approvalRequired: needsApproval(plan.type, plan.department),
       approvedAt: null,
+      rejectedAt: null,
+      rejectedReason: null,
       leaderId: members[0].userId,
       members,
       invitations: [],

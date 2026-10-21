@@ -304,7 +304,7 @@ function SuperAdminFinalists() {
                       <Pill tone={typeTones[team.participantType]}>{typeShortLabels[team.participantType]}</Pill>
                       {team.approvalRequired && (
                         <span className="mt-0.5 block">
-                          <Pill tone={team.approvedAt ? "green" : "orange"}>{team.approvedAt ? "Accepted" : "Awaiting approval"}</Pill>
+                          <Pill tone={team.approvedAt ? "green" : team.rejectedAt ? "red" : "orange"}>{team.approvedAt ? "Accepted" : team.rejectedAt ? "Rejected" : "Awaiting approval"}</Pill>
                         </span>
                       )}
                     </td>

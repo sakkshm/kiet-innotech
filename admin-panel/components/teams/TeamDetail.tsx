@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { ArrowLeft, Ban, BadgeCheck, Crown, Pencil, RotateCcw, Send, ShieldX, Trash2, Undo2, UserMinus, UserPlus, UserX } from "lucide-react";
+import { ArrowLeft, Ban, BadgeCheck, CircleX, Crown, Pencil, RotateCcw, Send, ShieldX, Trash2, Undo2, UserMinus, UserPlus, UserX } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type { AdminTeam } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -23,7 +23,7 @@ import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
 import { TableFrame, tdClass, Th } from "@/components/ui/Table";
 import { EditTeamDialog } from "./EditTeamDialog";
 
-type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove" | "submit";
+type Action = "withdraw" | "disqualify" | "restore" | "ban" | "reopen" | "dissolve" | "approve" | "unapprove" | "reject" | "queue" | "submit";
 
 const actionCopy: Record<Action, { title: string; confirm: string; tone: "primary" | "danger"; description: (team: AdminTeam) => ReactNode }> = {
   withdraw: {
@@ -109,6 +109,29 @@ const actionCopy: Record<Action, { title: string; confirm: string; tone: "primar
       <>
         <strong className="text-navy-900">{team.name}</strong> ({team.code}) goes back in the queue and cannot get a stall until it is accepted again. This is
         not possible once it has been allotted to a panel or a stall, or scored.
+      </>
+    ),
+  },
+  reject: {
+    title: "Reject this team",
+    confirm: "Reject team",
+    tone: "danger",
+    description: (team) => (
+      <>
+        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is not accepted, so it gets no stall. Its students see that the team was not
+        accepted, together with the reason you give. You can accept it or put it back in the queue later. This is not possible once it has been allotted to a
+        panel or a stall, or scored.
+      </>
+    ),
+  },
+  queue: {
+    title: "Back to the queue",
+    confirm: "Back to queue",
+    tone: "primary",
+    description: (team) => (
+      <>
+        <strong className="text-navy-900">{team.name}</strong> ({team.code}) is no longer rejected and waits in the queue until it is accepted or rejected
+        again.
       </>
     ),
   },
@@ -225,9 +248,13 @@ function TeamView({ id }: { id: string }) {
     admin.role === "college_admin" ||
     admin.role === "school_admin" ||
     (admin.role === "admin" && admin.department === clubDepartment);
-  const awaitingApproval = t.approvalRequired && !t.approvedAt;
-  const canApprove = isApprover && awaitingApproval && t.status === "submitted";
+  const rejected = t.approvalRequired && !!t.rejectedAt;
+  const awaitingApproval = t.approvalRequired && !t.approvedAt && !rejected;
+  // A rejected team can still be accepted, or put back in the queue.
+  const canApprove = isApprover && t.approvalRequired && !t.approvedAt && t.status === "submitted";
   const canUnapprove = isApprover && t.approvalRequired && !!t.approvedAt && t.status === "submitted";
+  const canReject = isApprover && t.approvalRequired && !rejected && t.status === "submitted";
+  const canQueue = isApprover && rejected && t.status === "submitted";
 
   async function run(kind: Action, reason: string) {
     if (kind === "approve" || kind === "unapprove") {
@@ -236,6 +263,18 @@ function TeamView({ id }: { id: string }) {
       history.reload();
       setAction(null);
       setDone(kind === "approve" ? `${updated.code} is accepted. It can now be allotted a stall.` : `${updated.code} is back in the queue until it is accepted again.`);
+      return;
+    }
+    if (kind === "reject" || kind === "queue") {
+      const result = await api.bulkTeams([t.id], kind === "reject" ? "reject" : "unaccept", { reason: kind === "reject" ? reason : undefined });
+      if (result.skipped.length > 0) {
+        const why = result.skipped[0].reason;
+        throw new Error(`${why.charAt(0).toUpperCase()}${why.slice(1)}${why.endsWith(".") ? "" : "."}`);
+      }
+      team.setData(await api.getTeam(t.id));
+      history.reload();
+      setAction(null);
+      setDone(kind === "reject" ? `${t.code} is rejected. Its students see that it was not accepted.` : `${t.code} is back in the queue until it is accepted or rejected.`);
       return;
     }
     if (kind === "dissolve") {
@@ -285,10 +324,12 @@ function TeamView({ id }: { id: string }) {
               {t.route === "department" && <ResultPill result={t.result} />}
               <Pill tone={t.route === "finale" ? "orange" : "cyan"}>{routeLabels[t.route]}</Pill>
               {otherDepartments.length > 0 && <Pill tone="navy">Mixed departments</Pill>}
-              {t.approvalRequired && <Pill tone={t.approvedAt ? "green" : "orange"}>{t.approvedAt ? "Accepted" : "Awaiting approval"}</Pill>}
+              {t.approvalRequired && (
+                <Pill tone={t.approvedAt ? "green" : rejected ? "red" : "orange"}>{t.approvedAt ? "Accepted" : rejected ? "Rejected" : "Awaiting approval"}</Pill>
+              )}
             </div>
           </div>
-          {(canEdit || canApprove || canUnapprove || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
+          {(canEdit || canApprove || canUnapprove || canReject || canQueue || canSubmit || canWithdraw || canDisqualify || canRestore || canBan || canReopen || canDissolve) && (
             <div className="flex flex-wrap gap-2">
               {canApprove && (
                 <Button onClick={() => setAction("approve")}>
@@ -300,6 +341,18 @@ function TeamView({ id }: { id: string }) {
                 <Button variant="secondary" onClick={() => setAction("unapprove")}>
                   <BadgeCheck aria-hidden="true" className="size-4" />
                   Withdraw acceptance
+                </Button>
+              )}
+              {canQueue && (
+                <Button variant="secondary" onClick={() => setAction("queue")}>
+                  <Undo2 aria-hidden="true" className="size-4" />
+                  Back to queue
+                </Button>
+              )}
+              {canReject && (
+                <Button variant="secondary" className="text-red-700" onClick={() => setAction("reject")}>
+                  <CircleX aria-hidden="true" className="size-4" />
+                  Reject team
                 </Button>
               )}
               {canEdit && (
@@ -362,6 +415,14 @@ function TeamView({ id }: { id: string }) {
                 : "This entry does not qualify for the Grand Finale until it is accepted as a legal entry. The students have been told to contact the coordinator or write to innotech@kiet.edu."}
           </Notice>
         )}
+        {rejected && t.status === "submitted" && (
+          <Notice tone="error" title="Rejected">
+            {t.participantType === "college" || t.participantType === "school"
+              ? "This team is not accepted, so it gets no stall. Its students see that it was not accepted"
+              : "This entry is not accepted. Its students see that it was not accepted"}
+            {t.rejectedReason ? `, with this reason: ${t.rejectedReason}` : ""}.
+          </Notice>
+        )}
         {done && <Notice tone="success">{done} The change is recorded in the history below.</Notice>}
       </div>
 
@@ -388,7 +449,11 @@ function TeamView({ id }: { id: string }) {
               )}
             </Fact>
             <Fact label="Route">{routeLabels[t.route]}</Fact>
-            {t.approvalRequired && <Fact label="Approval">{t.approvedAt ? `Accepted on ${formatDate(t.approvedAt)}` : "Waiting for an admin to accept it"}</Fact>}
+            {t.approvalRequired && (
+              <Fact label="Approval">
+                {t.approvedAt ? `Accepted on ${formatDate(t.approvedAt)}` : rejected ? `Rejected on ${formatDate(t.rejectedAt)}` : "Waiting for an admin to accept it"}
+              </Fact>
+            )}
             <Fact label="Team code">
               <span className="font-mono tracking-wider">{t.joinCode}</span>
             </Fact>
@@ -602,7 +667,7 @@ function TeamView({ id }: { id: string }) {
           description={actionCopy[action].description(t)}
           confirmLabel={actionCopy[action].confirm}
           tone={actionCopy[action].tone}
-          reasonLabel={action === "approve" ? undefined : "Reason"}
+          reasonLabel={action === "approve" || action === "queue" ? undefined : action === "reject" ? "Reason (the students see it)" : "Reason"}
           typeToConfirm={action === "dissolve" ? t.name : undefined}
           onConfirm={(reason) => run(action, reason)}
           onClose={() => setAction(null)}

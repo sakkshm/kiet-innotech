@@ -21,6 +21,15 @@ export function FinaleNote({ kind, team, className }: { kind: DirectFinaleKind; 
     );
   }
 
+  if (team?.approvalRequired && team.rejectedAt) {
+    return (
+      <Notice tone="error" title={`Your ${noun} was not accepted`} className={className}>
+        The organisers could not accept your {noun}.{team.rejectedReason ? ` Reason: ${team.rejectedReason}` : ""} Please write to <MailLink /> if you have any
+        questions.
+      </Notice>
+    );
+  }
+
   if (team?.approvalRequired) {
     return (
       <Notice tone="warning" title="Waiting for approval" className={className}>

@@ -120,6 +120,8 @@ function seed(): Db {
     submittedAt: null,
     approvalRequired: false,
     approvedAt: null,
+    rejectedAt: null,
+    rejectedReason: null,
   };
 
   return { version: 1, seq: 1, profiles, teams: [team], invitations: [] };
@@ -346,6 +348,8 @@ export const mockApi: StudentApi = {
       submittedAt: null,
       approvalRequired: directFinaleKind(leader.participantType, leader.department) !== null,
       approvedAt: null,
+      rejectedAt: null,
+      rejectedReason: null,
     };
     db.teams.push(team);
     declinePendingInvitations(db, leader.email);

@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, BadgeCheck, Download, Plus, Undo2, X } from "lucide-react";
+import { Download, Plus, X } from "lucide-react";
 import { api, errorMessage, MAX_SEARCH_LENGTH } from "@/lib/api";
-import type { AcceptResult, AdminTeam, ArchiveResult, TeamQuery, TeamSort } from "@/lib/admin-types";
+import type { AdminTeam, BulkAction, BulkResult, TeamQuery, TeamSort } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { downloadTeams, downloadTeamsExcel } from "@/lib/export";
@@ -16,7 +16,6 @@ import { intParam, pageSizeParam, pickParam, useUrlParams } from "@/lib/use-url-
 import { useSelection } from "@/lib/use-selection";
 import { teamHref } from "@/lib/routes";
 import { Button } from "@/components/ui/Button";
-import { ConfirmDialog } from "@/components/ui/Dialog";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ExportDialog, type ExportFormat, type ExportScope } from "@/components/ui/ExportDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -28,6 +27,7 @@ import { SelectionBar } from "@/components/ui/SelectionBar";
 import { Pill, ResultPill, StatusPill } from "@/components/ui/Pill";
 import { yearLabel } from "@/lib/rules";
 import { isOutsideAdmin, scopedTypes, scopeName } from "@/lib/scope";
+import { BulkActionDialog, BulkActionMenu, BulkResultNotice } from "./BulkTeamActions";
 import { CreateTeamDialog } from "./CreateTeamDialog";
 import { YearChips } from "./YearChips";
 import { SearchBox } from "@/components/ui/SearchBox";
@@ -36,7 +36,7 @@ import { numClass, SortableTh, TableFrame, tdClass, Th } from "@/components/ui/T
 const statuses: TeamStatus[] = ["draft", "submitted", "withdrawn", "disqualified", "archived"];
 const types: ParticipantType[] = ["kiet", "college", "school", "startup"];
 const routes: TeamRoute[] = ["department", "finale"];
-const approvals = ["pending", "approved"] as const;
+const approvals = ["pending", "approved", "rejected"] as const;
 const results: TeamResult[] = ["pending", "finalist", "not_selected"];
 const sorts: TeamSort[] = ["code", "name", "category", "department", "status", "members", "submitted_at", "leader_year"];
 const memberYears = (team: AdminTeam) =>
@@ -62,11 +62,9 @@ export function TeamsView() {
   const [selectingAll, setSelectingAll] = useState(false);
   const [selectError, setSelectError] = useState<string | null>(null);
   const selection = useSelection(teamKey);
-  const [archiving, setArchiving] = useState(false);
-  const [archived, setArchived] = useState<ArchiveResult | null>(null);
-  // Teams that wait for acceptance: accept the selected teams (true) or put them back in the queue (false).
-  const [accepting, setAccepting] = useState<boolean | null>(null);
-  const [acceptedResult, setAcceptedResult] = useState<(AcceptResult & { accepted: boolean }) | null>(null);
+  // The bulk action being confirmed for the selected teams, and what the last one did.
+  const [bulk, setBulk] = useState<BulkAction | null>(null);
+  const [bulkResult, setBulkResult] = useState<BulkResult | null>(null);
 
   const query: TeamQuery = {
     department: isSuper ? pickParam(params, "department", departments) : undefined,
@@ -229,6 +227,7 @@ export function TeamsView() {
                 <option value="">Any</option>
                 <option value="pending">Awaiting approval</option>
                 <option value="approved">Accepted</option>
+                <option value="rejected">Rejected</option>
               </Select>
             </Field>
           )}
@@ -292,101 +291,17 @@ export function TeamsView() {
         onSelectAll={selectAllMatching}
         onClear={selection.clear}
         onExport={() => setExportOpen(true)}
-        actions={
-          <>
-            {seesApprovals && (
-              <>
-                <Button size="sm" variant="secondary" onClick={() => setAccepting(true)}>
-                  <BadgeCheck aria-hidden="true" className="size-3.5" />
-                  Accept teams
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => setAccepting(false)}>
-                  <Undo2 aria-hidden="true" className="size-3.5" />
-                  Back to queue
-                </Button>
-              </>
-            )}
-            {isSuper && (
-              <Button size="sm" variant="secondary" onClick={() => setArchiving(true)}>
-                <Archive aria-hidden="true" className="size-3.5" />
-                Archive drafts
-              </Button>
-            )}
-          </>
-        }
+        actions={<BulkActionMenu approver={seesApprovals} isSuper={isSuper} onPick={setBulk} />}
       />
-      {acceptedResult && (
-        <Notice tone={acceptedResult.skipped.length ? "warning" : "success"} title={`${plural(acceptedResult.changed, "team")} ${acceptedResult.accepted ? "accepted" : "back in the queue"}`}>
-          {acceptedResult.skipped.length > 0 && (
-            <>
-              {plural(acceptedResult.skipped.length, "team")} skipped:{" "}
-              {acceptedResult.skipped
-                .slice(0, 8)
-                .map((x) => `${x.code} (${x.reason})`)
-                .join(", ")}
-              {acceptedResult.skipped.length > 8 ? ` and ${acceptedResult.skipped.length - 8} more` : ""}.
-            </>
-          )}
-        </Notice>
-      )}
-      {accepting !== null && (
-        <ConfirmDialog
-          title={accepting ? `Accept ${plural(selection.size, "selected team")}?` : `Put ${plural(selection.size, "selected team")} back in the queue?`}
-          description={
-            <>
-              Only <strong className="text-navy-900">submitted</strong> startups, COE KIET, other-college and school teams change; the rest are skipped and
-              listed. {accepting ? "Accepted teams can be allotted stalls for the Grand Finale, and their students see that they are accepted." : "Teams that already have a judging panel or a stall stay accepted."}
-            </>
-          }
-          confirmLabel={accepting ? "Accept teams" : "Back to queue"}
-          onClose={() => setAccepting(null)}
-          onConfirm={async () => {
-            const result = await api.acceptTeams(
-              selection.rows.map((t) => t.id),
-              accepting,
-            );
-            setAccepting(null);
-            setAcceptedResult({ ...result, accepted: accepting });
-            selection.clear();
-            reload();
-          }}
-        />
-      )}
-      {archived && (
-        <Notice tone={archived.skipped.length ? "warning" : "success"} title={`${plural(archived.archived, "team")} archived`}>
-          {archived.skipped.length > 0 && (
-            <>
-              {plural(archived.skipped.length, "team")} skipped:{" "}
-              {archived.skipped
-                .slice(0, 8)
-                .map((s) => `${s.code} (${s.reason})`)
-                .join(", ")}
-              {archived.skipped.length > 8 ? ` and ${archived.skipped.length - 8} more` : ""}.
-            </>
-          )}
-        </Notice>
-      )}
-      {archiving && (
-        <ConfirmDialog
-          title={`Archive ${plural(selection.size, "selected team")}?`}
-          description={
-            <>
-              Only <strong className="text-navy-900">draft</strong> teams whose registration has closed are archived (KIET, COE KIET and startups after
-              15 October; other colleges and schools after 21 October). Others are skipped and listed. Members, details and history are kept, and their
-              students see that their registration is archived. A super admin can restore, submit or disqualify an archived team later.
-            </>
-          }
-          confirmLabel="Archive"
-          tone="danger"
-          reasonLabel="Reason"
-          onClose={() => setArchiving(false)}
-          onConfirm={async (reason) => {
-            const result = await api.archiveTeams(
-              selection.rows.map((t) => t.id),
-              reason,
-            );
-            setArchiving(false);
-            setArchived(result);
+      {bulkResult && <BulkResultNotice result={bulkResult} onDismiss={() => setBulkResult(null)} />}
+      {bulk && (
+        <BulkActionDialog
+          action={bulk}
+          teams={selection.rows}
+          onClose={() => setBulk(null)}
+          onDone={(result) => {
+            setBulk(null);
+            setBulkResult(result);
             selection.clear();
             reload();
           }}
@@ -490,7 +405,9 @@ export function TeamsView() {
                         <StatusPill status={team.status} />
                         {team.approvalRequired && (
                           <span className="mt-0.5 block">
-                            <Pill tone={team.approvedAt ? "green" : "orange"}>{team.approvedAt ? "Accepted" : "Awaiting approval"}</Pill>
+                            <Pill tone={team.approvedAt ? "green" : team.rejectedAt ? "red" : "orange"}>
+                              {team.approvedAt ? "Accepted" : team.rejectedAt ? "Rejected" : "Awaiting approval"}
+                            </Pill>
                           </span>
                         )}
                       </td>

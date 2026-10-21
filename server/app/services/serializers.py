@@ -97,4 +97,6 @@ def team_out(db: Session, team: Team) -> TeamOut:
         submitted_at=team.submitted_at,
         approval_required=team.approval_required,
         approved_at=team.approved_at,
+        rejected_at=team.rejected_at,
+        rejected_reason=team.rejected_reason,
     )

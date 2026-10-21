@@ -50,6 +50,7 @@ from ..schemas import (
     AdminTeamOut,
     ArchiveOut,
     AuditOut,
+    BulkOut,
     CategoryStats,
     DepartmentStats,
     DomainStats,
@@ -243,6 +244,7 @@ def summaries(db: Session, teams: list[Team]) -> list[TeamSummaryOut]:
             submitted_at=t.submitted_at,
             approval_required=t.approval_required,
             approved_at=t.approved_at,
+            rejected_at=t.rejected_at,
             leader_year=next((year for role, year in years[t.id] if role == "leader"), None),
             member_years=[year for _, year in years[t.id]],
         )
@@ -311,6 +313,8 @@ def admin_teams(db: Session, teams: list[Team]) -> list[AdminTeamOut]:
             submitted_at=t.submitted_at,
             approval_required=t.approval_required,
             approved_at=t.approved_at,
+            rejected_at=t.rejected_at,
+            rejected_reason=t.rejected_reason,
         )
         for t in teams
     ]
@@ -331,7 +335,7 @@ class TeamFilters(Paging):
     type: rules.ParticipantType | None = None
     route: Literal["department", "finale"] | None = None
     # Startup and COE KIET entries: waiting for an admin to accept them, or already accepted.
-    approval: Literal["pending", "approved"] | None = None
+    approval: Literal["pending", "approved", "rejected"] | None = None
     # Department round result (finalist, not selected).
     result: Literal["pending", "finalist", "not_selected"] | None = None
     # Teams with at least one member in this year (college) or class (school).
@@ -359,9 +363,11 @@ def _team_query(admin: Admin, f: TeamFilters):
     if f.result:
         conditions.append(Team.result == f.result)
     if f.approval == "pending":
-        conditions.append(and_(Team.approval_required.is_(True), Team.approved_at.is_(None)))
+        conditions.append(and_(Team.approval_required.is_(True), Team.approved_at.is_(None), Team.rejected_at.is_(None)))
     elif f.approval == "approved":
         conditions.append(and_(Team.approval_required.is_(True), Team.approved_at.is_not(None)))
+    elif f.approval == "rejected":
+        conditions.append(and_(Team.approval_required.is_(True), Team.rejected_at.is_not(None)))
     if f.year:
         member, member_profile = aliased(TeamMember), aliased(Profile)
         conditions.append(
@@ -450,8 +456,22 @@ def change_status(
     if action in ("disqualify", "restore"):
         _require_super(admin, f"{action} teams")
     team = _visible_team(db, admin, team_id, lock=True)
+    _apply_status(db, admin, team, action, reason, unban_members=unban_members, published=_results_published(db) is not None)
+    db.commit()
+    return admin_teams(db, [team])[0]
 
-    published = _results_published(db) is not None
+
+def _apply_status(
+    db: Session,
+    admin: Admin,
+    team: Team,
+    action: str,
+    reason: str,
+    *,
+    unban_members: bool,
+    published: bool,
+) -> None:
+    """Withdraws, disqualifies or restores one locked team the admin may act on; raises ApiError if it cannot be done. No commit."""
     if action == "restore":
         if team.status not in ("withdrawn", "disqualified", "archived"):
             raise ApiError("Only withdrawn, disqualified or archived teams can be restored.", 409)
@@ -498,8 +518,6 @@ def change_status(
             # Frees the nomination so the department can pick another team.
             db.execute(delete(FinalistNomination).where(FinalistNomination.team_id == team.id))
         audit.record(db, admin.email, f"team.{team.status}", team, reason)
-    db.commit()
-    return admin_teams(db, [team])[0]
 
 
 # ---------- Creating a team for students ----------
@@ -639,6 +657,7 @@ def approve_team(db: Session, admin: Admin, team_id: uuid.UUID) -> AdminTeamOut:
     if team.approved_at is not None:
         raise ApiError("This entry has already been accepted.", 409)
     team.approved_at, team.approved_by = utcnow(), admin.email
+    _clear_rejection(team)
     audit.record(db, admin.email, "team.approved", team, "Accepted for the Grand Finale")
     db.commit()
     return admin_teams(db, [team])[0]
@@ -697,6 +716,7 @@ def reopen_team(db: Session, admin: Admin, settings: Settings, team_id: uuid.UUI
     team.status, team.submitted_at, team.status_reason, team.result = "draft", None, None, "pending"
     # An entry that is edited and submitted again is accepted again.
     team.approved_at = team.approved_by = None
+    _clear_rejection(team)
     # A draft cannot be nominated; this frees the place for another team.
     db.execute(delete(FinalistNomination).where(FinalistNomination.team_id == team.id))
     audit.record(db, admin.email, "team.reopened", team, f"Sent back to draft. Reason: {reason}")
@@ -709,10 +729,21 @@ def submit_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> A
     Submits a draft team for its students, e.g. after the deadline when they reach out to the organisers. Super admins
     only. The registration window does not apply, but the team rules do; pending invitations are cancelled.
     """
-    from .students import submission_problem
-
     _require_super(admin, "submit teams")
     team = _visible_team(db, admin, team_id, lock=True)
+    try:
+        _apply_submit(db, admin, team, reason)
+    except ApiError:
+        db.rollback()
+        raise
+    db.commit()
+    return admin_teams(db, [team])[0]
+
+
+def _apply_submit(db: Session, admin: Admin, team: Team, reason: str) -> None:
+    """Submits one locked draft or archived team; raises ApiError if it cannot be submitted. No commit."""
+    from .students import submission_problem
+
     if team.status not in ("draft", "archived"):
         raise ApiError(f"Only a draft or archived team can be submitted; this team is {team.status}.", 409)
     if team.route == "department" and _results_published(db) is not None:
@@ -724,13 +755,10 @@ def submit_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> A
     ).rowcount
     db.flush()
     if problem := submission_problem(db, team):
-        db.rollback()
         raise ApiError(f"This team cannot be submitted: {problem}.", 422)
     team.status, team.submitted_at = "submitted", utcnow()
     note = f" {cancelled} pending invitation(s) cancelled." if cancelled else ""
     audit.record(db, admin.email, "team.submitted", team, f"Submitted by an organiser. Reason: {reason}.{note}")
-    db.commit()
-    return admin_teams(db, [team])[0]
 
 
 # ---------- Editing students and teams (super admins) ----------
@@ -963,34 +991,87 @@ def set_team_leader(db: Session, admin: Admin, team_id: uuid.UUID, user_id: uuid
     return admin_teams(db, [team])[0]
 
 
+def _apply_archive(db: Session, admin: Admin, team: Team, reason: str, window: schedule.Schedule) -> None:
+    """Archives one locked draft team whose registration has closed; raises ApiError otherwise. No commit."""
+    if team.status != "draft":
+        raise ApiError(f"not a draft ({team.status})", 409)
+    if window.registration_state(extended=schedule.is_extended(team)) != "closed":
+        raise ApiError("registration is still open for this team", 409)
+    team.status, team.status_reason = "archived", reason
+    db.execute(
+        update(Invitation)
+        .where(Invitation.team_id == team.id, Invitation.status == "pending")
+        .values(status="cancelled", responded_at=utcnow())
+    )
+    audit.record(db, admin.email, "team.archived", team, reason)
+
+
 def archive_teams(db: Session, admin: Admin, settings: Settings, team_ids: list[uuid.UUID], reason: str) -> ArchiveOut:
     """
     Archives draft teams whose registration has closed (KIET and startups on the general date, other colleges and
     schools on the later one). Super admins only. Members, details and history are kept; a super admin can restore or
     submit an archived team later. Teams that are not drafts, or whose registration is still open, are skipped.
     """
-    _require_super(admin, "archive teams")
-    window = schedule.load(db, settings)
-    # One order for the locks, so two organisers archiving overlapping selections never deadlock.
-    teams = list(db.scalars(select(Team).where(Team.id.in_(set(team_ids)), team_scope(admin)).order_by(Team.id).with_for_update()))
-    archived, skipped = [], []
-    for team in teams:
-        if team.status != "draft":
-            skipped.append(SkippedTeam(code=team.code, name=team.name, reason=f"not a draft ({team.status})"))
-        elif window.registration_state(extended=schedule.is_extended(team)) != "closed":
-            skipped.append(SkippedTeam(code=team.code, name=team.name, reason="registration is still open for this team"))
-        else:
-            team.status, team.status_reason = "archived", reason
-            db.execute(
-                update(Invitation)
-                .where(Invitation.team_id == team.id, Invitation.status == "pending")
-                .values(status="cancelled", responded_at=utcnow())
-            )
-            audit.record(db, admin.email, "team.archived", team, reason)
-            archived.append(team.code)
-    missing = len(set(team_ids)) - len(teams)
-    db.commit()
-    return ArchiveOut(archived=len(archived), skipped=skipped, not_found=missing)
+    result = bulk_teams(db, admin, settings, team_ids, "archive", reason)
+    return ArchiveOut(archived=result.changed, skipped=result.skipped, not_found=result.not_found)
+
+
+# ---------- Accepting and rejecting teams ----------
+
+
+def _check_decidable(team: Team) -> None:
+    """Only submitted teams that need acceptance (startups, COE KIET, other colleges, schools) can be accepted or rejected."""
+    if not team.approval_required:
+        raise ApiError("this team does not need acceptance", 409)
+    if team.status != "submitted":
+        raise ApiError(f"not a submitted team ({team.status})", 409)
+
+
+def _clear_rejection(team: Team) -> None:
+    team.rejected_at = team.rejected_by = team.rejected_reason = None
+
+
+def _apply_accept(db: Session, admin: Admin, team: Team) -> bool:
+    """Accepts one locked team (also one that was rejected). False when it is accepted already."""
+    _check_decidable(team)
+    if team.approved_at is not None:
+        return False
+    was_rejected = team.rejected_at is not None
+    team.approved_at, team.approved_by = utcnow(), admin.email
+    _clear_rejection(team)
+    audit.record(
+        db, admin.email, "team.approved", team, "Accepted for the Grand Finale" + (" after being rejected" if was_rejected else "")
+    )
+    return True
+
+
+def _apply_queue(db: Session, admin: Admin, team: Team) -> bool:
+    """Puts one locked accepted or rejected team back in the queue. False when it is in the queue already."""
+    _check_decidable(team)
+    if team.approved_at is None and team.rejected_at is None:
+        return False
+    if blocked := _judging_blocker(db, team):
+        raise ApiError(blocked, 409)
+    if team.approved_at is not None:
+        team.approved_at = team.approved_by = None
+        audit.record(db, admin.email, "team.approval_revoked", team, "Back in the queue")
+    else:
+        _clear_rejection(team)
+        audit.record(db, admin.email, "team.rejection_revoked", team, "Back in the queue")
+    return True
+
+
+def _apply_reject(db: Session, admin: Admin, team: Team, reason: str) -> bool:
+    """Rejects one locked team: it loses any acceptance and gets no stall. False when it is rejected already."""
+    _check_decidable(team)
+    if team.rejected_at is not None:
+        return False
+    if blocked := _judging_blocker(db, team):
+        raise ApiError(blocked, 409)
+    team.approved_at = team.approved_by = None
+    team.rejected_at, team.rejected_by, team.rejected_reason = utcnow(), admin.email, reason
+    audit.record(db, admin.email, "team.rejected", team, f"Rejected. Reason: {reason}")
+    return True
 
 
 def accept_teams(db: Session, admin: Admin, team_ids: list[uuid.UUID], accepted: bool) -> AcceptOut:
@@ -999,27 +1080,77 @@ def accept_teams(db: Session, admin: Admin, team_ids: list[uuid.UUID], accepted:
     puts them back in the queue. Teams outside the admin's scope are not found; others that cannot change are skipped
     and listed (not submitted, no acceptance needed, or already in a room or with a stall, which blocks taking it back).
     """
-    _require_approver(admin)
-    teams = list(db.scalars(select(Team).where(Team.id.in_(set(team_ids)), team_scope(admin)).order_by(Team.id).with_for_update()))
+    result = bulk_teams(db, admin, None, team_ids, "accept" if accepted else "unaccept", None)
+    return AcceptOut(changed=result.changed, skipped=result.skipped, not_found=result.not_found)
+
+
+# ---------- Bulk actions ----------
+
+# Actions that need a reason, which is kept in the audit trail (and shown to the students for a rejection).
+BULK_NEEDS_REASON = ("withdraw", "disqualify", "restore", "archive", "submit", "reject")
+
+
+def bulk_teams(
+    db: Session,
+    admin: Admin,
+    settings: Settings | None,
+    team_ids: list[uuid.UUID],
+    action: str,
+    reason: str | None,
+    *,
+    unban_members: bool = False,
+) -> BulkOut:
+    """
+    Applies one action to many teams. Every team is handled on its own: one that cannot change (wrong state, a stall or a
+    judging room in the way, ...) is skipped and listed with the reason, and the rest still change. Teams outside the
+    admin's scope are not found. Who may do what is the same as for a single team.
+    """
+    if action in ("accept", "unaccept", "reject"):
+        _require_approver(admin)
+    elif action != "withdraw":
+        _require_super(admin, f"{action} teams")
+    if action in BULK_NEEDS_REASON and (not reason or len(reason) < 5):
+        raise ApiError("Please give a reason of at least five characters.", 422)
+    window = schedule.load(db, settings) if action == "archive" and settings is not None else None
+    published = _results_published(db) is not None
+    # One order for the locks, so two organisers acting on overlapping selections never deadlock.
+    ids = set(team_ids)
+    teams = list(
+        db.scalars(
+            select(Team)
+            .where(Team.id.in_(ids), team_scope(admin))
+            .order_by(Team.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    )
     changed, skipped = 0, []
     for team in teams:
-        if not team.approval_required:
-            skipped.append(SkippedTeam(code=team.code, name=team.name, reason="this team does not need acceptance"))
-        elif team.status != "submitted":
-            skipped.append(SkippedTeam(code=team.code, name=team.name, reason=f"not a submitted team ({team.status})"))
-        elif accepted and team.approved_at is None:
-            team.approved_at, team.approved_by = utcnow(), admin.email
-            audit.record(db, admin.email, "team.approved", team, "Accepted for the Grand Finale")
-            changed += 1
-        elif not accepted and team.approved_at is not None:
-            if blocked := _judging_blocker(db, team):
-                skipped.append(SkippedTeam(code=team.code, name=team.name, reason=blocked))
-                continue
-            team.approved_at = team.approved_by = None
-            audit.record(db, admin.email, "team.approval_revoked", team, "Back in the queue")
-            changed += 1
+        try:
+            # A savepoint per team, so a refusal half-way leaves nothing of that team behind.
+            with db.begin_nested():
+                if action in ("withdraw", "disqualify", "restore"):
+                    _apply_status(db, admin, team, action, reason or "", unban_members=unban_members, published=published)
+                    done = True
+                elif action == "archive":
+                    assert window is not None
+                    _apply_archive(db, admin, team, reason or "", window)
+                    done = True
+                elif action == "submit":
+                    _apply_submit(db, admin, team, reason or "")
+                    done = True
+                elif action == "accept":
+                    done = _apply_accept(db, admin, team)
+                elif action == "unaccept":
+                    done = _apply_queue(db, admin, team)
+                else:
+                    done = _apply_reject(db, admin, team, reason or "")
+        except ApiError as exc:
+            skipped.append(SkippedTeam(code=team.code, name=team.name, reason=exc.message))
+            continue
+        changed += int(done)
     db.commit()
-    return AcceptOut(changed=changed, skipped=skipped, not_found=len(set(team_ids)) - len(teams))
+    return BulkOut(action=action, changed=changed, skipped=skipped, not_found=len(ids) - len(teams))
 
 
 def dissolve_team(db: Session, admin: Admin, team_id: uuid.UUID, reason: str) -> None:
@@ -1442,7 +1573,13 @@ def stats(db: Session, admin: Admin, settings: Settings) -> StatsOut:
     awaiting = db.scalar(
         select(func.count())
         .select_from(Team)
-        .where(team_scope(admin), Team.status == "submitted", Team.approval_required.is_(True), Team.approved_at.is_(None))
+        .where(
+            team_scope(admin),
+            Team.status == "submitted",
+            Team.approval_required.is_(True),
+            Team.approved_at.is_(None),
+            Team.rejected_at.is_(None),
+        )
     )
     return StatsOut(
         department=admin.department if admin.role == "admin" else None,

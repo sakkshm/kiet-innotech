@@ -658,13 +658,15 @@ function TeamFacts({ team }: { team: Team }) {
       ? ([
           [
             "Approval",
-            team.participantType === "college" || team.participantType === "school"
-              ? team.approvedAt
-                ? "Accepted by the organisers"
-                : "In the queue to be accepted"
-              : team.approvedAt
-                ? "Accepted by an admin"
-                : "Waiting for an admin",
+            team.rejectedAt
+              ? "Not accepted by the organisers"
+              : team.participantType === "college" || team.participantType === "school"
+                ? team.approvedAt
+                  ? "Accepted by the organisers"
+                  : "In the queue to be accepted"
+                : team.approvedAt
+                  ? "Accepted by an admin"
+                  : "Waiting for an admin",
           ],
         ] as [string, string][])
       : []),

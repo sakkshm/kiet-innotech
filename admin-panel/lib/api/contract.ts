@@ -1,4 +1,4 @@
-import type { AcceptResult, ActivityQuery, AdminInput, AttendanceReport, AttendanceReportQuery, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, BulkAction, BulkResult, ActivityQuery, AdminInput, AttendanceReport, AttendanceReportQuery, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -29,6 +29,12 @@ export interface AdminApi {
    * back in the queue (false). Teams that cannot change are skipped and listed.
    */
   acceptTeams(ids: string[], accepted: boolean): Promise<AcceptResult>;
+  /**
+   * One action for many teams: withdraw, disqualify, restore, archive, submit, accept, back to the queue (unaccept) or reject.
+   * Every team changes on its own; those that cannot are skipped and listed with the reason. A reason is needed for all but
+   * accept and unaccept; the students see it for a rejection.
+   */
+  bulkTeams(ids: string[], action: BulkAction, options?: { reason?: string; unbanMembers?: boolean }): Promise<BulkResult>;
   /** Super admin: deletes a team and frees its members. The history stays in the audit log. */
   dissolveTeam(id: string, reason: string): Promise<void>;
   /** Accepts a submitted startup, COE KIET, other-college or school team for the Grand Finale. */

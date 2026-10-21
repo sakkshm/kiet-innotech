@@ -12,6 +12,7 @@ import {
   type AdminTeam,
   type AdminUser,
   type ArchiveResult,
+  type BulkResult,
   type AcceptResult,
   type AuditEntry,
   type FinalistBoard,
@@ -182,6 +183,9 @@ function filterTeams(db: MockDb, admin: AdminUser, query: TeamQuery) {
     if (query.type && team.participantType !== query.type) return false;
     if (query.route && team.route !== query.route) return false;
     if (query.result && team.result !== query.result) return false;
+    if (query.approval === "pending" && !(team.approvalRequired && !team.approvedAt && !team.rejectedAt)) return false;
+    if (query.approval === "approved" && !(team.approvalRequired && team.approvedAt)) return false;
+    if (query.approval === "rejected" && !(team.approvalRequired && team.rejectedAt)) return false;
     if (query.year && !team.members.some((m) => m.year === query.year)) return false;
     if (query.leaderYear && leaderYear(team) !== query.leaderYear) return false;
     if (q) {
@@ -231,6 +235,7 @@ function summary(team: AdminTeam): TeamSummary {
     submittedAt: team.submittedAt,
     approvalRequired: team.approvalRequired,
     approvedAt: team.approvedAt,
+    rejectedAt: team.rejectedAt,
     leaderYear: leaderYear(team),
     memberYears: [...team.members].sort((a, b) => Number(b.role === "leader") - Number(a.role === "leader") || a.year - b.year).map((m) => m.year),
   };
@@ -546,7 +551,7 @@ export const mockApi: AdminApi = {
     ]);
     const stats: Stats = {
       department: admin.role === "admin" ? admin.department : null,
-      awaitingApproval: teams.filter((t) => t.approvalRequired && !t.approvedAt && t.status === "submitted").length,
+      awaitingApproval: teams.filter((t) => t.approvalRequired && !t.approvedAt && !t.rejectedAt && t.status === "submitted").length,
       students: students.length,
       studentsInTeams: students.filter((s) => s.teamId).length,
       pendingInvitations: teams.reduce((sum, t) => sum + t.invitations.length, 0),
@@ -757,15 +762,22 @@ export const mockApi: AdminApi = {
       if (!team) result.notFound += 1;
       else if (!team.approvalRequired) result.skipped.push({ code: team.code, name: team.name, reason: "this team does not need acceptance" });
       else if (team.status !== "submitted") result.skipped.push({ code: team.code, name: team.name, reason: `not a submitted team (${team.status})` });
-      else if (accepted !== !!team.approvedAt) {
-        team.approvedAt = accepted ? new Date().toISOString() : null;
+      else if (accepted && !team.approvedAt) {
+        team.approvedAt = new Date().toISOString();
+        team.rejectedAt = team.rejectedReason = null;
+        log(db, { actorEmail: admin.email, action: "team.approved", teamId: team.id, teamCode: team.code, department: team.department, detail: "Accepted for the Grand Finale" });
+        result.changed += 1;
+      } else if (!accepted && (team.approvedAt || team.rejectedAt)) {
+        const wasRejected = !team.approvedAt;
+        team.approvedAt = null;
+        team.rejectedAt = team.rejectedReason = null;
         log(db, {
           actorEmail: admin.email,
-          action: accepted ? "team.approved" : "team.approval_revoked",
+          action: wasRejected ? "team.rejection_revoked" : "team.approval_revoked",
           teamId: team.id,
           teamCode: team.code,
           department: team.department,
-          detail: accepted ? "Accepted for the Grand Finale" : "Back in the queue",
+          detail: "Back in the queue",
         });
         result.changed += 1;
       }
@@ -795,6 +807,61 @@ export const mockApi: AdminApi = {
       }
     }
     save(db);
+    return result;
+  },
+
+  async bulkTeams(ids, action, options = {}) {
+    await delay();
+    const result: BulkResult = { action, changed: 0, skipped: [], notFound: 0 };
+    const reason = options.reason ?? "";
+    if (action === "reject") {
+      const db = load();
+      const admin = actor(db);
+      if (admin.role === "admin" && admin.department !== "COE") throw new ApiError(403, "Only a super admin or the admin of startups, COE KIET, other colleges or schools can accept teams.");
+      const text = requireReason(reason);
+      for (const id of new Set(ids)) {
+        const team = db.teams.find((t) => t.id === id && canSeeTeam(admin, t));
+        if (!team) result.notFound += 1;
+        else if (!team.approvalRequired) result.skipped.push({ code: team.code, name: team.name, reason: "this team does not need acceptance" });
+        else if (team.status !== "submitted") result.skipped.push({ code: team.code, name: team.name, reason: `not a submitted team (${team.status})` });
+        else if (!team.rejectedAt) {
+          team.approvedAt = null;
+          team.rejectedAt = new Date().toISOString();
+          team.rejectedReason = text;
+          log(db, { actorEmail: admin.email, action: "team.rejected", teamId: team.id, teamCode: team.code, department: team.department, detail: `Rejected. Reason: ${text}` });
+          result.changed += 1;
+        }
+      }
+      save(db);
+      return result;
+    }
+    // Everything else goes through the single-team methods, so the rules stay in one place.
+    const merge = (one: { changed: number; skipped: BulkResult["skipped"]; notFound: number }) => {
+      result.changed += one.changed;
+      result.skipped.push(...one.skipped);
+      result.notFound += one.notFound;
+    };
+    for (const id of new Set(ids)) {
+      const team = load().teams.find((t) => t.id === id);
+      try {
+        if (action === "archive") {
+          const one = await mockApi.archiveTeams([id], reason);
+          merge({ ...one, changed: one.archived });
+        } else if (action === "accept" || action === "unaccept") {
+          merge(await mockApi.acceptTeams([id], action === "accept"));
+        } else {
+          if (action === "withdraw") await mockApi.withdrawTeam(id, reason);
+          else if (action === "disqualify") await mockApi.disqualifyTeam(id, reason);
+          else if (action === "restore") await mockApi.restoreTeam(id, reason, options.unbanMembers ?? false);
+          else await mockApi.submitTeam(id, reason);
+          result.changed += 1;
+        }
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status === 403) throw error;
+        if (error.status === 404 || !team) result.notFound += 1;
+        else result.skipped.push({ code: team.code, name: team.name, reason: error.message });
+      }
+    }
     return result;
   },
 
@@ -845,6 +912,7 @@ export const mockApi: AdminApi = {
     if (team.status !== "submitted") throw new ApiError(409, "Only a submitted entry can be accepted.");
     if (team.approvedAt) throw new ApiError(409, "This entry has already been accepted.");
     team.approvedAt = new Date().toISOString();
+    team.rejectedAt = team.rejectedReason = null;
     log(db, { actorEmail: admin.email, action: "team.approved", teamId: team.id, teamCode: team.code, department: team.department, detail: "Accepted for the Grand Finale" });
     save(db);
     return clone(team);
@@ -1168,6 +1236,8 @@ export const mockApi: AdminApi = {
       // An entry an organiser creates is accepted at once.
       approvalRequired: needsApproval(leader.participantType, leader.department),
       approvedAt: needsApproval(leader.participantType, leader.department) ? at : null,
+      rejectedAt: null,
+      rejectedReason: null,
       leaderId: leader.userId,
       members: people.map((p, index) => ({
         userId: p.userId,

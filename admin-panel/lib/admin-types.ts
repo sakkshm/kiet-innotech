@@ -93,7 +93,9 @@ export type AuditAction =
   | "team.reopened"
   | "team.dissolved"
   | "team.approved"
-  | "team.approval_revoked";
+  | "team.approval_revoked"
+  | "team.rejected"
+  | "team.rejection_revoked";
 
 export type ActivityKind = "team" | "member" | "invitation" | "finalists" | "results" | "admin" | "schedule" | "judging" | "attendance" | "student";
 
@@ -165,7 +167,7 @@ export type TeamQuery = {
   type?: ParticipantType;
   route?: TeamRoute;
   /** Startup and COE KIET entries: waiting for an admin to accept them, or already accepted. */
-  approval?: "pending" | "approved";
+  approval?: "pending" | "approved" | "rejected";
   /** Department round result (finalist, not selected). */
   result?: TeamResult;
   /** Teams with at least one member in this year (college) or class (school). */
@@ -309,6 +311,8 @@ export type TeamSummary = {
   /** Startups and COE KIET teams: true until an admin has accepted the entry. */
   approvalRequired: boolean;
   approvedAt: string | null;
+  /** Set when the organisers rejected the team: it is not accepted and gets no stall. */
+  rejectedAt: string | null;
   submittedAt: string | null;
   leaderYear: number | null;
   /** Every member's year (or class), the leader's first. */
@@ -755,6 +759,16 @@ export type ArchiveResult = {
 
 /** The outcome of accepting teams for the Grand Finale (or putting them back in the queue): how many changed, and which were skipped and why. */
 export type AcceptResult = {
+  changed: number;
+  skipped: { code: string; name: string; reason: string }[];
+  notFound: number;
+};
+
+/** One action for many teams at once; each team changes on its own, and those that cannot are skipped with the reason. */
+export type BulkAction = "withdraw" | "disqualify" | "restore" | "archive" | "submit" | "accept" | "unaccept" | "reject";
+
+export type BulkResult = {
+  action: BulkAction;
   changed: number;
   skipped: { code: string; name: string; reason: string }[];
   notFound: number;

@@ -89,6 +89,9 @@ export type Team = {
   /** Startups and COE KIET teams: true until an admin has accepted the entry for the Grand Finale. */
   approvalRequired: boolean;
   approvedAt: string | null;
+  /** Other colleges and schools: set when the organisers did not accept the team, with the reason they gave. */
+  rejectedAt: string | null;
+  rejectedReason: string | null;
 };
 
 export type TeamInput = Pick<Team, "name" | "category" | "domain" | "projectTitle" | "abstract">;

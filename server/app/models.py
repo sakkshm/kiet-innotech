@@ -127,6 +127,10 @@ class Team(Base):
     approval_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     approved_at: Mapped[datetime | None] = mapped_column(Timestamp)
     approved_by: Mapped[str | None] = mapped_column(String(320))
+    # Other colleges and schools: an admin can decline the team, so it is not accepted and gets no stall.
+    rejected_at: Mapped[datetime | None] = mapped_column(Timestamp)
+    rejected_by: Mapped[str | None] = mapped_column(String(320))
+    rejected_reason: Mapped[str | None] = mapped_column(Text)
 
     members: Mapped[list["TeamMember"]] = relationship(back_populates="team", cascade="all, delete-orphan", order_by="TeamMember.joined_at")
     invitations: Mapped[list["Invitation"]] = relationship(back_populates="team", cascade="all, delete-orphan")
