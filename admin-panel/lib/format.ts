@@ -138,6 +138,7 @@ export const auditLabels: Record<AuditAction, string> = {
   "judging.awards_published": "Winners published to students",
   "judging.awards_withdrawn": "Winners hidden from students",
   "attendance.marked": "Marked present",
+  "attendance.absent": "Marked absent",
   "attendance.unmarked": "Attendance undone",
   "finalists.quotas_updated": "Finalist quotas changed",
   "judging.tents_allotted": "Stalls allotted",

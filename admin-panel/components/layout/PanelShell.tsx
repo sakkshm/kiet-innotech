@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, CalendarClock, ClipboardCheck, GraduationCap, Inbox, LayoutDashboard, LogOut, Menu, QrCode, Scale, ShieldCheck, Trophy, Users, X, type LucideIcon } from "lucide-react";
+import { Activity, CalendarClock, ClipboardCheck, GraduationCap, Inbox, LayoutDashboard, LogOut, Menu, QrCode, Scale, ShieldCheck, Trophy, UserCheck, Users, X, type LucideIcon } from "lucide-react";
 import { clubDepartment } from "@/lib/content";
 import type { AdminUser } from "@/lib/admin-types";
 import { useAuth } from "@/lib/auth/AuthProvider";
@@ -41,6 +41,7 @@ const nav: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/finalists", label: "Finalists", Icon: Trophy, roles: ["super_admin", "admin"] },
       { href: "/judging", label: "Judging", Icon: Scale, roles: ORGANISERS },
+      { href: "/attendance-report", label: "Attendance report", Icon: UserCheck, roles: ["super_admin", "admin"] },
       { href: "/attendance", label: "Attendance", Icon: QrCode, roles: ORGANISERS },
       { href: "/judge", label: "My judging", Icon: ClipboardCheck, roles: ["judge"] },
       { href: "/schedule", label: "Schedule", Icon: CalendarClock, roles: ["super_admin"] },
@@ -55,6 +56,8 @@ const nav: { title: string; items: NavItem[] }[] = [
 function visible(item: NavItem, admin: AdminUser) {
   // Attendance by event pass is switched off for now.
   if (item.href === "/attendance" && !attendanceEnabled) return false;
+  // COE KIET has no department round, so its admin has no attendance to report.
+  if (item.href === "/attendance-report" && admin.role === "admin" && admin.department === clubDepartment) return false;
   // COE KIET teams go straight to the Grand Finale, so their admin has no finalists to nominate.
   if (item.href === "/finalists" && admin.role === "admin" && admin.department === clubDepartment) return false;
   return item.roles.includes(admin.role) || (item.href === "/judge" && admin.judge === true);

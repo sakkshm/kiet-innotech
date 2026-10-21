@@ -206,6 +206,8 @@ export function EventPass() {
                     <CheckCircle2 size={16} aria-hidden="true" />
                     Present · {time.format(new Date(round.presentAt))}
                   </span>
+                ) : round.attendance === "absent" ? (
+                  <span className="font-semibold text-red-700">Absent</span>
                 ) : (
                   <span className="text-muted">Not marked yet</span>
                 )}

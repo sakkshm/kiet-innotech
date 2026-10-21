@@ -1,8 +1,12 @@
 """
 Attendance by event pass.
 
-A student in a submitted team shows a QR code on their phone; an organiser (or a judge of the team's room) scans it
-and the student is marked present for that round. The code changes every minute and is made on the phone itself, so
+Department round: a judge of the room (either of the two, during the room's time) or an admin switches each student of a
+team present or absent. Everybody counts as present until marked absent, and a team whose members are all absent scores 0
+(presence.py, judging.py). An admin can change it at any time; super admins for every team, a department's admin for their own.
+
+By event pass: a student in a submitted team shows a QR code on their phone; an organiser (or a judge of the team's room)
+scans it and the student is marked present for that round. The code changes every minute and is made on the phone itself, so
 it works without mobile data once the portal has loaded that day:
 
   code = "IT26P:" + user id (32 hex) + "." + minute number + "." + base32(HMAC-SHA256(seed, minute)[:10])
@@ -28,10 +32,21 @@ from .. import rules
 from ..auth import Staff
 from ..config import Settings
 from ..errors import ApiError
-from ..models import Attendance, FinalTent, Panel, PanelJuror, PanelTeam, Profile, Team, TeamMember, User, utcnow
-from ..schemas import ManualAttendanceInput, PassOut, PassRound, ScanInput, ScanOut, ScanStudent
+from ..models import Admin, Attendance, FinalTent, Juror, Panel, PanelJuror, PanelTeam, Profile, Team, TeamMember, User, utcnow
+from ..schemas import (
+    AttendanceReportOut,
+    AttendanceReportRow,
+    ManualAttendanceInput,
+    PassOut,
+    PassRound,
+    PresenceInput,
+    ScanInput,
+    ScanOut,
+    ScanStudent,
+    TeamPresenceOut,
+)
 from . import admin as admin_service
-from . import audit, judging, limits
+from . import audit, judging, limits, presence
 
 CODE = re.compile(r"^IT26P:([0-9A-F]{32})\.(\d{1,12})\.([A-Z2-7]{16})$")
 NOT_A_PASS = "This is not an InnoTech26 event pass."
@@ -121,7 +136,11 @@ def my_pass(db: Session, user: User, settings: Settings) -> PassOut:
                 planned_start=planned[0] if planned and round_ == "department" and room is None else None,
                 planned_end=planned[1] if planned and round_ == "department" and room is None else None,
                 tent=tent.tent if tent and round_ == "final" else None,
-                present_at=marks[round_].marked_at if round_ in marks else None,
+                present_at=marks[round_].marked_at if round_ in marks and marks[round_].status == "present" else None,
+                # Only KIET students in the department round are told whether they were marked present or absent.
+                attendance=(marks[round_].status if round_ in marks else "not_marked")  # type: ignore[arg-type]
+                if round_ == "department" and team.participant_type == "kiet"
+                else None,
             )
         )
     # With attendance switched off the student still sees where to go, but no QR seed is issued.
@@ -211,10 +230,18 @@ def _mark(db: Session, staff: Staff, user_id: uuid.UUID, round_: str, method: st
     room = _room(db, team, round_)
     if panel_id is not None and (room is None or room.id != panel_id):
         warning = f"{team.code} is allotted to {judging.room_label(room)}, not this room." if room else f"{team.code} has no room yet."
+    # A scan or a hand mark means the student is here: it also turns an "absent" into present.
+    now = utcnow()
     statement = (
         insert(Attendance)
-        .values(user_id=user_id, round=round_, team_id=team.id, marked_at=utcnow(), marked_by=staff.email, method=method, note=note)
-        .on_conflict_do_nothing(index_elements=["user_id", "round"])
+        .values(
+            user_id=user_id, round=round_, team_id=team.id, marked_at=now, marked_by=staff.email, method=method, note=note, status="present"
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id", "round"],
+            set_={"status": "present", "marked_at": now, "marked_by": staff.email, "method": method, "note": note},
+            where=Attendance.status != "present",
+        )
         .returning(Attendance.user_id)
     )
     marked_now = db.execute(statement).first() is not None
@@ -245,7 +272,7 @@ def unmark(db: Session, staff: Staff, settings: Settings, data: ManualAttendance
     require_enabled(settings)
     _, profile, _, team = _student(db, staff, data.user_id, data.round)
     mark = db.get(Attendance, (data.user_id, data.round), with_for_update=True)
-    if mark is None:
+    if mark is None or mark.status != "present":
         raise ApiError(f"{profile.full_name} is not marked present.", 409)
     db.delete(mark)
     audit.record(
@@ -257,3 +284,202 @@ def unmark(db: Session, staff: Staff, settings: Settings, data: ManualAttendance
         f"(was marked by {mark.marked_by}). Reason: {data.note}",
     )
     db.commit()
+
+
+# ---------- Department round: present or absent, by a judge or an admin ----------
+
+
+def _presence_team(db: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> tuple[Team, TeamMember]:
+    team = db.get(Team, team_id)
+    if team is None:
+        raise ApiError("Team not found.", 404)
+    if not db.scalar(select(Team.id).where(Team.id == team.id, judging._eligible_condition("department"))):
+        raise ApiError(f"{team.code} is not taking part in the department round (status: {team.status}).", 409)
+    member = db.get(TeamMember, (team_id, user_id))
+    if member is None:
+        raise ApiError("This student is not in this team.", 404)
+    return team, member
+
+
+def _apply_presence(db: Session, actor: str, team: Team, user_id: uuid.UUID, present: bool) -> TeamPresenceOut:
+    """Sets one student present or absent. Setting what is already set changes nothing and is not logged again."""
+    profile = db.get(Profile, user_id)
+    assert profile is not None
+    status = "present" if present else "absent"
+    now = utcnow()
+    statement = (
+        insert(Attendance)
+        .values(
+            user_id=user_id, round=presence.ROUND, team_id=team.id, marked_at=now, marked_by=actor, method="manual", note="", status=status
+        )
+        .on_conflict_do_update(
+            index_elements=["user_id", "round"],
+            set_={"status": status, "marked_at": now, "marked_by": actor, "method": "manual", "team_id": team.id},
+            where=Attendance.status != status,
+        )
+        .returning(Attendance.user_id)
+    )
+    if db.execute(statement).first() is not None:
+        audit.record(
+            db,
+            actor,
+            "attendance.marked" if present else "attendance.absent",
+            team,
+            f"{profile.full_name} marked {status} for the {judging.ROUND_LABELS[presence.ROUND]}",
+        )
+    db.commit()
+    members = presence.member_states(db, [team.id])[team.id]
+    return TeamPresenceOut(team_id=team.id, members=members, all_absent=presence.is_all_absent(members))
+
+
+def set_presence_as_admin(db: Session, admin: Admin, team_id: uuid.UUID, user_id: uuid.UUID, data: PresenceInput) -> TeamPresenceOut:
+    """An admin changes a student's attendance at any time: a super admin for any team, a department's admin for their own."""
+    team, _ = _presence_team(db, team_id, user_id)
+    own = admin.role == "admin" and team.participant_type == "kiet" and team.department == admin.department
+    if not (admin.role == "super_admin" or own):
+        raise ApiError("Only a super admin or this team's department admin can change attendance.", 403)
+    return _apply_presence(db, admin.email, team, user_id, data.present)
+
+
+def set_presence_as_judge(
+    db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUID, user_id: uuid.UUID, data: PresenceInput
+) -> TeamPresenceOut:
+    """
+    Either judge of a room marks or changes a student's attendance while judging is open, during the room's slot and its
+    buffer. Both judges can change it, whoever marked it first.
+    """
+    panel = db.get(Panel, panel_id)
+    link = db.get(PanelJuror, (panel_id, juror.email))
+    if panel is None or link is None:
+        raise ApiError("You are not a judge on this panel.", 403)
+    if panel.round != presence.ROUND:
+        raise ApiError("Attendance is taken in the department round.", 422)
+    if db.get(PanelTeam, (panel_id, team_id)) is None:
+        raise ApiError("This team is not allotted to your room.", 403)
+    team, _ = _presence_team(db, team_id, user_id)
+    if not judging.round_open(db, presence.ROUND):
+        raise ApiError("Judging has not been opened yet, so attendance cannot be taken. Ask the organisers.", 423)
+    opens, closes = judging.scoring_window(panel)
+    now = judging.utcnow()
+    if opens is not None and now < opens:
+        raise ApiError("Your room's slot has not started yet. Attendance can be taken once it does.", 423)
+    if closes is not None and now > closes:
+        raise ApiError("Your room's time is over. Ask your department admin to change attendance.", 423)
+    return _apply_presence(db, juror.email, team, user_id, data.present)
+
+
+# ---------- The report ----------
+
+
+def presence_report(
+    db: Session,
+    admin: Admin,
+    *,
+    department: str | None = None,
+    day: date | None = None,
+    state: str | None = None,
+    panel_id: uuid.UUID | None = None,
+    q: str | None = None,
+    team_zero: bool = False,
+    page: int = 1,
+    page_size: int | None = 25,
+) -> AttendanceReportOut:
+    """
+    Every student of the department round with their attendance: present, absent or not marked. A super admin sees all
+    departments (and can pick one); a department's admin sees only their own students. `page_size=None` returns everything
+    the filters match (for the PDF and CSV downloads).
+    """
+    if admin.role == "admin" and admin.department != rules.CLUB_DEPARTMENT:
+        department = admin.department
+    elif admin.role != "super_admin":
+        raise ApiError("The attendance report is for super admins and department admins.", 403)
+    elif department is not None and department not in rules.DEPARTMENTS:
+        raise ApiError(f'Unknown department "{department}".', 422)
+
+    statement = (
+        select(Team, Panel)
+        .outerjoin(PanelTeam, (PanelTeam.team_id == Team.id) & (PanelTeam.round == presence.ROUND))
+        .outerjoin(Panel, Panel.id == PanelTeam.panel_id)
+        .where(judging._eligible_condition(presence.ROUND, department))
+        .order_by(Team.number)
+    )
+    if panel_id is not None:
+        statement = statement.where(Panel.id == panel_id)
+    rows = db.execute(statement).tuples().all()
+    teams = [team for team, _ in rows]
+    states = presence.member_states(db, [t.id for t in teams])
+    details = {
+        user_id: (profile, member)
+        for member, profile in db.execute(
+            select(TeamMember, Profile)
+            .join(Profile, Profile.user_id == TeamMember.user_id)
+            .where(TeamMember.team_id.in_([t.id for t in teams]))
+        ).tuples()
+        for user_id in [member.user_id]
+    }
+    table = judging.timetable(db).slots
+    needle = q.strip().lower() if q and q.strip() else None
+    items: list[tuple[tuple, AttendanceReportRow]] = []
+    for team, room in rows:
+        members = states.get(team.id, [])
+        zero = presence.is_all_absent(members)
+        planned = table.get(team.department or "") if room is None else None
+        start = room.slot_start if room is not None and room.slot_start else (planned[0] if planned else None)
+        end = room.slot_end if room is not None and room.slot_end else (planned[1] if planned else None)
+        team_day = start.astimezone(rules.IST).date() if start else None
+        if day is not None and team_day != day:
+            continue
+        if team_zero and not zero:
+            continue
+        for m in members:
+            profile, _member = details[m.user_id]
+            if state is not None and m.state != state:
+                continue
+            if needle and not any(needle in v.lower() for v in (m.full_name, profile.roll_number, team.code, team.name)):
+                continue
+            row = AttendanceReportRow(
+                user_id=m.user_id,
+                team_id=team.id,
+                team_code=team.code,
+                team_name=team.name,
+                category=team.category,
+                department=team.department,
+                room=judging.room_label(room) if room is not None else None,
+                slot_start=start,
+                slot_end=end,
+                day=team_day,
+                full_name=m.full_name,
+                role=m.role,
+                roll_number=profile.roll_number,
+                year=profile.year,
+                course=profile.course,
+                phone=profile.phone,
+                state=m.state,
+                marked_by=m.marked_by,
+                marked_at=m.marked_at,
+                team_all_absent=zero,
+            )
+            order = (
+                team.department or "",
+                start.timestamp() if start else 0,
+                room.name_key if room is not None else "",
+                team.number,
+                m.role != "leader",
+                m.full_name.lower(),
+            )
+            items.append((order, row))
+    items.sort(key=lambda pair: pair[0])
+    ordered = [row for _, row in items]
+    total = len(ordered)
+    shown = ordered if page_size is None else ordered[(page - 1) * page_size : page * page_size]
+    return AttendanceReportOut(
+        items=shown,
+        total=total,
+        page=page,
+        page_size=page_size or total,
+        present=sum(1 for r in ordered if r.state == "present"),
+        absent=sum(1 for r in ordered if r.state == "absent"),
+        not_marked=sum(1 for r in ordered if r.state == "not_marked"),
+        teams=len({r.team_id for r in ordered}),
+        teams_all_absent=len({r.team_id for r in ordered if r.team_all_absent}),
+    )

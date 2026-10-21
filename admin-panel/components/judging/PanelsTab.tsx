@@ -24,6 +24,7 @@ import { numClass, TableFrame, tdClass, Th } from "@/components/ui/Table";
 import { YearChips } from "@/components/teams/YearChips";
 import { AttendanceButtons } from "./AttendanceButtons";
 import { HiddenMarks } from "./HiddenMarks";
+import { StudentAttendance } from "./StudentAttendance";
 import { RoomTimer, TimeLeftPopup, type WarningItem } from "./RoomTimer";
 import { PARTS, RubricForm, TOTAL } from "./RubricForm";
 import { TimetableStrip } from "./TimetableStrip";
@@ -80,6 +81,12 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
     } finally {
       setPresenting(null);
     }
+  }
+
+  // A department admin or a super admin switches a student present or absent at any time; the list refreshes after.
+  async function changePresence(team: PanelTeam, userId: string, present: boolean) {
+    await api.setStudentPresence(team.id, userId, present);
+    reload();
   }
 
   const panels = department ? judging.panels.filter((p) => p.department === department) : judging.panels;
@@ -176,6 +183,7 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
               now={now}
               showMarks={panel.teams.some((t) => t.judgeScores !== null)}
               presenting={presenting}
+              onPresence={changePresence}
               onJudgePresent={(juror, present) => markJudge(panel, juror, present)}
               onBuffer={() => setBuffering(panel)}
               onUnlock={(juror) => setUnlocking({ panel, juror })}
@@ -308,6 +316,7 @@ function PanelCard({
   now,
   showMarks,
   presenting,
+  onPresence,
   onJudgePresent,
   onBuffer,
   onUnlock,
@@ -322,6 +331,8 @@ function PanelCard({
   showMarks: boolean;
   /** "<room id>:<judge email>" of the judge whose attendance is being saved. */
   presenting: string | null;
+  /** Switches a student of a team in this room present or absent. */
+  onPresence: (team: PanelTeam, userId: string, present: boolean) => Promise<void>;
   onJudgePresent: (juror: PanelJuror, present: boolean) => void;
   onBuffer: () => void;
   onUnlock: (juror: PanelJuror) => void;
@@ -332,6 +343,7 @@ function PanelCard({
   onChangeScore: (team: PanelTeam) => void;
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [studentsOpen, setStudentsOpen] = useState<string | null>(null);
   const final = panel.round === "final";
   const scored = panel.teams.reduce((sum, t) => sum + t.scores, 0);
   const expected = panel.teams.length * panel.jurors.length;
@@ -456,7 +468,7 @@ function PanelCard({
         <p className="px-5 py-6 text-sm text-muted">No teams allotted yet.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[980px] border-separate border-spacing-0 text-sm">
             <thead>
               <tr>
                 {final && <Th>Stall</Th>}
@@ -464,6 +476,7 @@ function PanelCard({
                 <Th>Project</Th>
                 <Th>Category</Th>
                 <Th>Years</Th>
+                {!final && <Th>Students</Th>}
                 {attendanceEnabled && <Th className={numClass}>Present</Th>}
                 <Th className={numClass}>Scores</Th>
                 <Th className={numClass}>Average /50</Th>
@@ -478,6 +491,10 @@ function PanelCard({
                   judges={panel.jurors.length}
                   showMarks={showMarks}
                   canEditMarks={panel.canEditMarks}
+                  canMarkStudents={panel.canEdit}
+                  studentsOpen={studentsOpen === team.id}
+                  onStudents={() => setStudentsOpen(studentsOpen === team.id ? null : team.id)}
+                  onPresence={(userId, present) => onPresence(team, userId, present)}
                   open={open === team.id}
                   onToggle={() => setOpen(open === team.id ? null : team.id)}
                   onChange={() => onChangeScore(team)}
@@ -597,6 +614,10 @@ function TeamRows({
   judges,
   showMarks,
   canEditMarks,
+  canMarkStudents,
+  studentsOpen,
+  onStudents,
+  onPresence,
   open,
   onToggle,
   onChange,
@@ -607,11 +628,17 @@ function TeamRows({
   showMarks: boolean;
   /** The viewer may change the judges' marks right now. */
   canEditMarks: boolean;
+  /** The viewer may switch this team's students present or absent (any time). */
+  canMarkStudents: boolean;
+  studentsOpen: boolean;
+  onStudents: () => void;
+  onPresence: (userId: string, present: boolean) => Promise<void>;
   open: boolean;
   onToggle: () => void;
   onChange: () => void;
 }) {
-  const columns = (final ? 8 : 7) - (attendanceEnabled ? 0 : 1);
+  const columns = 7 + (attendanceEnabled ? 1 : 0);
+  const here = team.memberCount - team.absent;
   return (
     <>
       <tr className="hover:bg-surface/70">
@@ -635,6 +662,22 @@ function TeamRows({
         <td className={tdClass}>
           <YearChips years={team.memberYears} type={team.participantType} />
         </td>
+        {!final && (
+          <td className={tdClass}>
+            <button
+              type="button"
+              onClick={onStudents}
+              aria-expanded={studentsOpen}
+              aria-label={`Students' attendance for ${team.name}`}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset transition hover:bg-surface ${
+                team.allAbsent ? "bg-red-50 text-red-700 ring-red-200" : team.absent > 0 ? "bg-accent-50 text-accent-600 ring-accent-100" : "bg-white text-navy-800 ring-line"
+              }`}
+            >
+              {team.allAbsent ? "All absent: scores 0" : team.absent > 0 ? `${here} / ${team.memberCount} here · ${team.absent} absent` : `${team.memberCount} / ${team.memberCount} here`}
+              <ChevronDown aria-hidden="true" className={`size-3.5 transition ${studentsOpen ? "rotate-180" : ""}`} />
+            </button>
+          </td>
+        )}
         {attendanceEnabled && (
           <td className={`${tdClass} ${numClass}`}>
             <span className={team.present === team.memberCount ? "font-semibold text-emerald-700" : team.present ? "font-semibold text-accent-600" : "text-muted"}>
@@ -661,6 +704,19 @@ function TeamRows({
           </span>
         </td>
       </tr>
+      {!final && studentsOpen && (
+        <tr>
+          <td colSpan={columns} className="border-b border-line bg-surface/60 px-4 py-3">
+            <div className="max-w-xl space-y-2">
+              <p className="text-xs text-muted">
+                Everyone counts as present until switched off, and a team whose students are all absent scores 0.{" "}
+                {canMarkStudents ? "You can change this at any time." : "Judges and the department's admin change it."}
+              </p>
+              <StudentAttendance members={team.members} canEdit={canMarkStudents} onChange={onPresence} />
+            </div>
+          </td>
+        </tr>
+      )}
       {showMarks && open && (
         <tr>
           <td colSpan={columns} className="border-b border-line bg-surface/60 px-4 py-3">

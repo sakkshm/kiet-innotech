@@ -56,8 +56,9 @@ const teamCell = (row: Row, sheet: AttendanceSheet) =>
   // A department-wide sheet says which room each team is in.
   `${!sheet.room && row.team.room ? `\n${row.team.room}` : ""}${row.team.status !== "submitted" ? `\n(${row.team.status})` : ""}`;
 
-/** Already present (by pass or by hand) prints as "Yes 10:42"; the rest stay blank to tick by hand. */
-const presentCell = (row: Row) => (row.member?.presentAt ? `Yes ${formatTime(row.member.presentAt)}` : "");
+/** Already present (by pass, by hand or by a judge) prints as "Yes 10:42", marked absent as "Absent"; the rest stay blank to tick by hand. */
+const presentCell = (row: Row) =>
+  row.member?.state === "absent" ? "Absent" : row.member?.presentAt ? `Yes ${formatTime(row.member.presentAt)}` : "";
 
 function filename(sheet: AttendanceSheet, extension: string) {
   const slug = sheet.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -197,7 +198,7 @@ export async function downloadAttendanceExcel(sheet: AttendanceSheet) {
         { header: "Course", width: 14, value: (l) => l.member.course },
         { header: "Department / institution", width: 26, value: (l) => l.member.department ?? l.member.institution },
         { header: "Phone", width: 13, value: (l) => l.member.phone, text: true },
-        { header: "Present", width: 9, value: (l) => (l.member.presentAt ? "Yes" : "No") },
+        { header: "Present", width: 9, value: (l) => (l.member.state === "absent" ? "Absent" : l.member.presentAt ? "Yes" : "No") },
         { header: "Marked at (IST)", width: 18, value: (l) => formatCsvDateTime(l.member.presentAt) },
         { header: "Marked by", width: 26, value: (l) => l.member.markedBy ?? "" },
         { header: "How", width: 10, value: (l) => (l.member.method === "qr" ? "Event pass" : l.member.method === "manual" ? "By hand" : "") },

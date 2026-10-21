@@ -371,12 +371,13 @@ class Score(Base):
 
 
 class Attendance(Base):
-    """A student marked present for a round, by a scanned event pass (QR) or by hand. Deleting the row unmarks them."""
+    """A student marked present (or absent) for a round: by a scanned pass (QR), by hand or by a judge. Deleting the row unmarks them."""
 
     __tablename__ = "attendance"
     __table_args__ = (
         CheckConstraint("round IN ('department', 'final')", name="round"),
         CheckConstraint("method IN ('qr', 'manual')", name="method"),
+        CheckConstraint("status IN ('present', 'absent')", name="status"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
@@ -386,6 +387,8 @@ class Attendance(Base):
     marked_by: Mapped[str] = mapped_column(String(320))
     method: Mapped[str] = mapped_column(String(10))
     note: Mapped[str] = mapped_column(Text, default="")
+    # "present", or "absent" (department round: marked by a judge of the room or an admin). No row: not marked, counted present.
+    status: Mapped[str] = mapped_column(String(10), default="present", server_default=text("'present'"))
 
 
 class Award(Base):

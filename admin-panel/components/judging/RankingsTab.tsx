@@ -207,6 +207,7 @@ function Row({
           {row.team.code} · {row.team.department ?? row.team.institution} · {row.panel}
         </span>
         {row.tied && <Pill tone="orange">Level with the team above: {tieBreaker}</Pill>}
+        {row.allAbsent && <Pill tone="red">All students absent: scores 0, no place</Pill>}
       </td>
       <td className={tdClass}>
         <YearChips years={row.team.memberYears} type={row.team.participantType} />

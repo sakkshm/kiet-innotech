@@ -1,4 +1,4 @@
-import type { AcceptResult, ActivityQuery, AdminInput, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, ActivityQuery, AdminInput, AttendanceReport, AttendanceReportQuery, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -119,6 +119,12 @@ export interface AdminApi {
   unlockJudge(panelId: string, jurorEmail: string, reason: string): Promise<Panel>;
 
   /** Marks the student behind a scanned event pass present. Organisers, and judges for their own rooms. */
+  /** An admin marks a student of a department round team present or absent, at any time (super admins; a department's admin for their own). */
+  setStudentPresence(teamId: string, userId: string, present: boolean): Promise<TeamPresence>;
+  /** The department round's students with their attendance. Super admins: all departments; a department's admin: their own. */
+  attendanceReport(query: AttendanceReportQuery): Promise<AttendanceReport>;
+  /** Everything the filters match (no paging), for the PDF and CSV downloads. */
+  attendanceReportAll(query: AttendanceReportQuery): Promise<AttendanceReport>;
   scanPass(code: string, round: JudgingRound, panelId?: string): Promise<ScanResult>;
   markPresent(userId: string, round: JudgingRound, note: string): Promise<ScanResult>;
   unmarkPresent(userId: string, round: JudgingRound, note: string): Promise<void>;
@@ -134,6 +140,8 @@ export interface AdminApi {
   lockMarks(panelId: string): Promise<LockResult>;
   /** A judge's own room: its teams and who is present. */
   judgeAttendance(panelId: string): Promise<AttendanceSheet>;
+  /** A judge of the room marks a student of one of its teams present or absent, during the room's time. */
+  judgeSetStudentPresence(panelId: string, teamId: string, userId: string, present: boolean): Promise<TeamPresence>;
 }
 
 export class ApiError extends Error {

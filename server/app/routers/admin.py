@@ -1,7 +1,8 @@
 """Admin panel endpoints. The list matches admin-panel/lib/api/live.ts."""
 
 import uuid
-from typing import Annotated
+from datetime import date as datetime_date
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ from ..schemas import (
     AdminTeamOut,
     ArchiveInput,
     ArchiveOut,
+    AttendanceReportOut,
     AttendanceSheet,
     AuditOut,
     AuditPage,
@@ -42,6 +44,7 @@ from ..schemas import (
     PanelOut,
     PanelTeamsInput,
     PanelUpdateInput,
+    PresenceInput,
     PresentInput,
     PublishInput,
     PublishOut,
@@ -64,6 +67,7 @@ from ..schemas import (
     TeamLeaderInput,
     TeamMemberInput,
     TeamPage,
+    TeamPresenceOut,
     TentsInput,
     TimetableInput,
     TimetableOut,
@@ -420,6 +424,48 @@ def attendance_sheet(
     department: Annotated[str | None, Query(max_length=20)] = None,
 ) -> AttendanceSheet:
     return judging.attendance(db, admin, round_, panel_id, department)
+
+
+@router.put("/teams/{team_id}/attendance/{user_id}")
+def set_student_presence(team_id: uuid.UUID, user_id: uuid.UUID, data: PresenceInput, admin: CurrentAdmin, db: Db) -> TeamPresenceOut:
+    """An admin marks a student of a department round team present or absent, at any time."""
+    return attendance.set_presence_as_admin(db, admin, team_id, user_id, data)
+
+
+@router.get("/attendance/report")
+def attendance_report(
+    admin: CurrentAdmin,
+    db: Db,
+    department: Annotated[str | None, Query(max_length=20)] = None,
+    date: Annotated[datetime_date | None, Query()] = None,
+    state: Annotated[Literal["present", "absent", "not_marked"] | None, Query()] = None,
+    panel_id: Annotated[uuid.UUID | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    team_zero: Annotated[bool, Query()] = False,
+    page: Annotated[int, Query(ge=1, le=10_000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> AttendanceReportOut:
+    """The department round's students: present, absent or not marked, with filters."""
+    return attendance.presence_report(
+        db, admin, department=department, day=date, state=state, panel_id=panel_id, q=q, team_zero=team_zero, page=page, page_size=page_size
+    )
+
+
+@router.get("/attendance/report/export")
+def attendance_report_export(
+    admin: CurrentAdmin,
+    db: Db,
+    department: Annotated[str | None, Query(max_length=20)] = None,
+    date: Annotated[datetime_date | None, Query()] = None,
+    state: Annotated[Literal["present", "absent", "not_marked"] | None, Query()] = None,
+    panel_id: Annotated[uuid.UUID | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    team_zero: Annotated[bool, Query()] = False,
+) -> AttendanceReportOut:
+    """Everything the filters match, for the PDF and CSV downloads."""
+    return attendance.presence_report(
+        db, admin, department=department, day=date, state=state, panel_id=panel_id, q=q, team_zero=team_zero, page=1, page_size=None
+    )
 
 
 @router.post("/attendance/scan")

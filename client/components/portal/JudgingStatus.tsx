@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, Ban, CalendarClock, Clock, Frown, Hourglass, MapPin, PartyPopper, QrCode, Trophy } from "lucide-react";
+import { ArrowRight, Ban, CalendarClock, CircleCheck, CircleHelp, CircleX, Clock, Frown, Hourglass, MapPin, PartyPopper, QrCode, Trophy } from "lucide-react";
 import { api } from "@/lib/api";
 import { attendanceEnabled } from "@/lib/features";
 import type { EventPass, ResultCard } from "@/lib/types";
@@ -84,6 +84,7 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
                   </p>
                 )}
                 <p className="text-sm text-muted">Be there 15 minutes early with your whole team and your college ID cards.</p>
+                {round.attendance && <AttendanceLine attendance={round.attendance} presentAt={round.presentAt} />}
               </div>
             ) : (
               <div className="mt-2 flex items-start gap-4">
@@ -127,5 +128,34 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
         </section>
       ))}
     </div>
+  );
+}
+
+/** Whether the judges marked this student present or absent in their room, or have not marked them yet. */
+function AttendanceLine({ attendance, presentAt }: { attendance: "present" | "absent" | "not_marked"; presentAt: string | null }) {
+  if (attendance === "present") {
+    return (
+      <p className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+        <CircleCheck size={18} className="shrink-0" aria-hidden="true" />
+        Attendance: present{presentAt ? ` (marked at ${time.format(new Date(presentAt))})` : ""}
+      </p>
+    );
+  }
+  if (attendance === "absent") {
+    return (
+      <p className="flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">
+        <CircleX size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>
+          Attendance: absent.
+          <span className="block font-normal">If this is a mistake, tell your department coordinator or the judges in your room.</span>
+        </span>
+      </p>
+    );
+  }
+  return (
+    <p className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-muted">
+      <CircleHelp size={18} className="shrink-0" aria-hidden="true" />
+      Attendance: not marked yet
+    </p>
   );
 }

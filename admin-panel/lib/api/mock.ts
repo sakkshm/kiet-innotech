@@ -1344,4 +1344,8 @@ export const mockApi: AdminApi = {
   judgeView: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   saveScore: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   judgeAttendance: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  judgeSetStudentPresence: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  setStudentPresence: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  attendanceReport: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  attendanceReportAll: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
 };

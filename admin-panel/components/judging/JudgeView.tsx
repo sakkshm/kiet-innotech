@@ -23,6 +23,7 @@ import { AttendanceDesk } from "@/components/attendance/AttendanceDesk";
 import { HiddenMarks, RevealButton, useHoldToReveal } from "./HiddenMarks";
 import { RoomTimer, TimeLeftPopup, type WarningItem } from "./RoomTimer";
 import { PARTS, RubricForm, RubricSummary, rubricFor, TOTAL } from "./RubricForm";
+import { StudentAttendance } from "./StudentAttendance";
 
 type Draft = { marks: (number | null)[]; remarks: string };
 
@@ -194,6 +195,7 @@ export function JudgeView() {
           draft={drafts[`${scoring.panel.id}:${scoring.team.id}`]}
           onDraft={(draft) => setDrafts((all) => ({ ...all, [`${scoring.panel.id}:${scoring.team.id}`]: draft }))}
           onClose={() => setScoring(null)}
+          onAttendance={view.reload}
           onSaved={(changed) => {
             setDrafts((all) => {
               const rest = { ...all };
@@ -531,6 +533,11 @@ function TeamCard({ team, index, open, locked, onScore }: { team: JudgeTeam; ind
               Cat {team.category} · {categoryTitle(team.category)}
             </span>
             {!scorable && <Pill tone="red">{team.status}</Pill>}
+            {team.allAbsent ? (
+              <Pill tone="red">All absent: scores 0</Pill>
+            ) : (
+              team.members.some((m) => m.attendance === "absent") && <Pill tone="orange">{team.members.filter((m) => m.attendance === "absent").length} absent</Pill>
+            )}
             {team.myScore && team.myScore.editCount > 0 && <Pill tone="orange">Changed {team.myScore.editCount}×</Pill>}
           </p>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
@@ -549,10 +556,12 @@ function TeamCard({ team, index, open, locked, onScore }: { team: JudgeTeam; ind
             <HiddenMarks value={<>{team.myScore!.total}<span className="text-xs text-muted">/{TOTAL}</span></>} label={`your marks for ${team.name}`} size="sm" />
           </span>
         ) : (
-          <span className="text-xs font-semibold text-accent-600">{scorable ? (open ? "To score" : "Not scored yet") : "Not scored"}</span>
+          <span className={`text-xs font-semibold ${team.allAbsent ? "text-red-700" : "text-accent-600"}`}>
+            {team.allAbsent ? "Scores 0" : scorable ? (open ? "To score" : "Not scored yet") : "Not scored"}
+          </span>
         )}
-        <Button size="sm" variant={scored || !open || !scorable ? "secondary" : "primary"} onClick={onScore}>
-          {scored ? (open ? "Review / edit" : "View") : open && scorable ? "Score team" : "Read"}
+        <Button size="sm" variant={scored || !open || !scorable || team.allAbsent ? "secondary" : "primary"} onClick={onScore}>
+          {team.allAbsent ? "Attendance" : scored ? (open ? "Review / edit" : "View") : open && scorable ? "Score team" : "Read"}
           <ArrowRight aria-hidden="true" className="size-3.5" />
         </Button>
       </div>
@@ -571,6 +580,7 @@ function ScoreSheet({
   draft,
   onDraft,
   onClose,
+  onAttendance,
   onSaved,
 }: {
   panel: JudgePanel;
@@ -579,6 +589,8 @@ function ScoreSheet({
   draft: Draft | undefined;
   onDraft: (draft: Draft) => void;
   onClose: () => void;
+  /** Attendance was changed here: the page behind reloads so its cards follow. */
+  onAttendance: () => void;
   /** `changed`: these were saved marks that were changed (not a first save). */
   onSaved: (changed: boolean) => void;
 }) {
@@ -593,7 +605,10 @@ function ScoreSheet({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const reveal = useHoldToReveal();
-  const savable = canScore && team.status === "submitted";
+  // Department round: each student's attendance. Everybody counts as present until switched off; all absent scores 0.
+  const [members, setMembers] = useState(team.members);
+  const absentAll = members.length > 0 && members.every((m) => m.attendance === "absent");
+  const savable = canScore && team.status === "submitted" && !absentAll;
   const total = marks.reduce<number>((sum, m) => sum + (m ?? 0), 0);
   const missing = marks.filter((m) => m === null).length;
   const unchanged = !!scored && sameMarks(marks, scored.marks) && remarks.trim() === scored.remarks;
@@ -604,6 +619,12 @@ function ScoreSheet({
     setMarks(next);
     if (!scored) onDraft({ marks: next, remarks });
   };
+
+  async function markPresence(userId: string, present: boolean) {
+    const result = await api.judgeSetStudentPresence(panel.id, team.id, userId, present);
+    setMembers((current) => current.map((m) => ({ ...m, attendance: result.members.find((x) => x.userId === m.userId)?.state ?? m.attendance })));
+    onAttendance();
+  }
 
   async function save() {
     if (scored) {
@@ -678,6 +699,30 @@ function ScoreSheet({
       <div className="space-y-5">
         {(step === "marks" || (scored && !editing)) && <TeamBrief team={team} />}
 
+        {panel.round === "department" && team.status === "submitted" && (step === "marks" || (scored && !editing)) && (
+          <section aria-label="Attendance" className="space-y-2 rounded-2xl p-4 ring-1 ring-line">
+            <div>
+              <h3 className="font-display text-base font-bold text-navy-900">Attendance</h3>
+              <p className="text-xs text-muted">
+                {panel.canMarkAttendance
+                  ? "Everyone is counted present unless you switch them off. A team whose students are all absent scores 0. Either judge of this room can change this until the room's time ends."
+                  : "Everyone is counted present unless marked absent. Judges can change attendance while judging is open, during the room's time. Ask your department admin to change it later."}
+              </p>
+            </div>
+            <StudentAttendance
+              members={members.map((m) => ({ userId: m.userId, fullName: m.fullName, role: m.role, state: m.attendance }))}
+              canEdit={panel.canMarkAttendance}
+              onChange={markPresence}
+              warnWhenAllAbsent={false}
+            />
+          </section>
+        )}
+        {absentAll && team.status === "submitted" && (
+          <Notice tone="warning" title="This team scores 0">
+            Every student is marked absent, so the team scores 0 and cannot be marked. If someone is here, switch them on above.
+          </Notice>
+        )}
+
         {!canScore && !scored && <Notice tone="info">Practice view: read the team and the rubric to get familiar. Marks can be saved once scoring opens for your room.</Notice>}
         {canScore && !scored && team.status !== "submitted" && <Notice tone="warning">This team has been {team.status}, so it is not scored.</Notice>}
 
@@ -702,7 +747,7 @@ function ScoreSheet({
             {scored.editedBy && <p className="text-xs text-muted">Changed by an organiser ({scored.editedBy}).</p>}
             {!savable && <p className="text-xs text-muted">Need a correction? Ask a super admin or your department&apos;s admin.</p>}
           </section>
-        ) : step === "marks" ? (
+        ) : absentAll ? null : step === "marks" ? (
           <>
             {scored && (
               <Notice tone="warning" title="You are changing saved marks">

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..auth import CurrentJuror
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..schemas import AttendanceSheet, JudgeOut, JudgeScoreInput, LockOut, ScoreOut
+from ..schemas import AttendanceSheet, JudgeOut, JudgeScoreInput, LockOut, PresenceInput, ScoreOut, TeamPresenceOut
 from ..services import attendance, judging
 
 router = APIRouter(prefix="/judge", tags=["judge"])
@@ -31,6 +31,14 @@ def save_score(panel_id: uuid.UUID, team_id: uuid.UUID, data: JudgeScoreInput, j
 @router.post("/panels/{panel_id}/lock")
 def lock_scores(panel_id: uuid.UUID, juror: CurrentJuror, db: Db) -> LockOut:
     return judging.lock_scores(db, juror, panel_id)
+
+
+@router.put("/panels/{panel_id}/teams/{team_id}/attendance/{user_id}")
+def set_student_presence(
+    panel_id: uuid.UUID, team_id: uuid.UUID, user_id: uuid.UUID, data: PresenceInput, juror: CurrentJuror, db: Db
+) -> TeamPresenceOut:
+    """Marks a student of one of the room's teams present or absent, during the room's time."""
+    return attendance.set_presence_as_judge(db, juror, panel_id, team_id, user_id, data)
 
 
 @router.get("/panels/{panel_id}/attendance")

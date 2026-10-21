@@ -861,6 +861,20 @@ class PanelScoreOut(BaseModel):
     locked: bool = False
 
 
+AttendanceState = Literal["present", "absent", "not_marked"]
+
+
+class PresenceMemberOut(BaseModel):
+    """A student's attendance in the department round: present, absent, or not marked (counted present)."""
+
+    user_id: uuid.UUID
+    full_name: str
+    role: str
+    state: AttendanceState = "not_marked"
+    marked_by: str | None = None
+    marked_at: datetime | None = None
+
+
 class PanelTeamOut(TeamSummaryOut):
     tent: str | None = None
     # Scores recorded by this panel's judges, and their average total (out of 50).
@@ -870,6 +884,10 @@ class PanelTeamOut(TeamSummaryOut):
     judge_scores: list[PanelScoreOut] | None = None
     # Members marked present for this round.
     present: int = 0
+    # Department round: each student's attendance, the number marked absent, and whether the whole team is absent (scores 0).
+    members: list[PresenceMemberOut] = []
+    absent: int = 0
+    all_absent: bool = False
 
 
 class PanelOut(BaseModel):
@@ -947,6 +965,8 @@ class AttendanceMember(BaseModel):
     present_at: datetime | None = None
     marked_by: str | None = None
     method: str | None = None
+    # present, absent, or not marked.
+    state: AttendanceState = "not_marked"
 
 
 class AttendanceTeam(BaseModel):
@@ -1007,6 +1027,55 @@ class ScanOut(BaseModel):
     warning: str | None = None
 
 
+class TeamPresenceOut(BaseModel):
+    team_id: uuid.UUID
+    members: list[PresenceMemberOut]
+    # Every member is marked absent: the team scores 0.
+    all_absent: bool = False
+
+
+class PresenceInput(Input):
+    present: bool
+
+
+class AttendanceReportRow(BaseModel):
+    user_id: uuid.UUID
+    team_id: uuid.UUID
+    team_code: str
+    team_name: str
+    category: int
+    department: str | None
+    room: str | None
+    slot_start: datetime | None
+    slot_end: datetime | None
+    # The IST day the team is judged: its room's slot, or its department's planned slot before a room is allotted.
+    day: date | None
+    full_name: str
+    role: str
+    roll_number: str
+    year: int
+    course: str
+    phone: str
+    state: AttendanceState
+    marked_by: str | None
+    marked_at: datetime | None
+    # Every member of the team is absent, so the team scores 0.
+    team_all_absent: bool
+
+
+class AttendanceReportOut(BaseModel):
+    items: list[AttendanceReportRow]
+    total: int
+    page: int
+    page_size: int
+    # Over everything the filters match, not only this page.
+    present: int
+    absent: int
+    not_marked: int
+    teams: int
+    teams_all_absent: int
+
+
 class ManualAttendanceInput(Input):
     user_id: uuid.UUID
     round: rules.JudgingRound
@@ -1028,6 +1097,8 @@ class PassRound(BaseModel):
     planned_end: datetime | None = None
     tent: str | None = None
     present_at: datetime | None = None
+    # Department round (KIET students): present, absent, or not marked yet. Null for the finale.
+    attendance: AttendanceState | None = None
 
 
 class PassOut(BaseModel):
@@ -1062,6 +1133,8 @@ class RankedTeam(BaseModel):
     tied: bool
     # Every judge of the team's room has scored it; only complete teams get a place.
     complete: bool = True
+    # Every member is absent: the team scores 0 and gets no place.
+    all_absent: bool = False
     award: AwardOut | None = None
 
 
@@ -1177,6 +1250,9 @@ class QuotasInput(Input):
 
 
 class JudgeMemberOut(BaseModel):
+    user_id: uuid.UUID
+    # Department round: present, absent, or not marked (counted present).
+    attendance: AttendanceState = "not_marked"
     full_name: str
     role: str
     year: int
@@ -1198,6 +1274,8 @@ class JudgeTeamOut(BaseModel):
     status: str
     tent: str | None
     members: list[JudgeMemberOut]
+    # Every member is absent: the team scores 0 and cannot be marked.
+    all_absent: bool = False
     my_score: ScoreOut | None
 
 
@@ -1214,6 +1292,8 @@ class JudgePanelOut(BaseModel):
     parent_department: bool = False
     # When an organiser marked the judge present in this room.
     present_at: datetime | None = None
+    # The judge can mark or change students' attendance now (department round, judging open, during the room's time).
+    can_mark_attendance: bool = False
     # The judge has locked all their marks here, or the room's time is over: nothing more can be changed by the judge.
     locked: bool = False
     # Extra minutes after the slot in which marks can still be submitted.

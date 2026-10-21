@@ -127,6 +127,8 @@ export type PassRound = {
   plannedEnd: string | null;
   tent: string | null;
   presentAt: string | null;
+  /** Department round, KIET students only: marked present or absent in the room, or not marked yet. Null for the finale. */
+  attendance: "present" | "absent" | "not_marked" | null;
 };
 
 /**

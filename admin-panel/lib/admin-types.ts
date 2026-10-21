@@ -80,6 +80,7 @@ export type AuditAction =
   | "judging.awards_published"
   | "judging.awards_withdrawn"
   | "attendance.marked"
+  | "attendance.absent"
   | "attendance.unmarked"
   | "finalists.quotas_updated"
   | "judging.tents_allotted"
@@ -428,6 +429,10 @@ export type PanelTeam = TeamSummary & {
   judgeScores: PanelScore[] | null;
   /** Members marked present for this round. */
   present: number;
+  /** Department round: each student's attendance, how many are marked absent, and whether all are (the team scores 0). */
+  members: PresenceMember[];
+  absent: number;
+  allAbsent: boolean;
 };
 
 /** A judging room (department round, one department's teams, in a building at a time slot) or a Grand Finale panel. */
@@ -492,6 +497,72 @@ export type PanelPlace = { building: string; name: string; location: string; slo
 
 export type PanelInput = PanelPlace & { round: JudgingRound; department: string | null };
 
+/** A student's attendance in the department round: present, absent, or not marked (counted present). */
+export type AttendanceState = "present" | "absent" | "not_marked";
+
+export type PresenceMember = {
+  userId: string;
+  fullName: string;
+  role: "leader" | "member";
+  state: AttendanceState;
+  markedBy: string | null;
+  markedAt: string | null;
+};
+
+/** A team's students after a change of attendance. When every one is absent the team scores 0. */
+export type TeamPresence = { teamId: string; members: PresenceMember[]; allAbsent: boolean };
+
+/** One student of the department round in the attendance report. */
+export type AttendanceReportRow = {
+  userId: string;
+  teamId: string;
+  teamCode: string;
+  teamName: string;
+  category: number;
+  department: string | null;
+  room: string | null;
+  slotStart: string | null;
+  slotEnd: string | null;
+  /** The IST day the team is judged (YYYY-MM-DD). */
+  day: string | null;
+  fullName: string;
+  role: "leader" | "member";
+  rollNumber: string;
+  year: number;
+  course: string;
+  phone: string;
+  state: AttendanceState;
+  markedBy: string | null;
+  markedAt: string | null;
+  teamAllAbsent: boolean;
+};
+
+export type AttendanceReport = {
+  items: AttendanceReportRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Over everything the filters match, not only this page. */
+  present: number;
+  absent: number;
+  notMarked: number;
+  teams: number;
+  teamsAllAbsent: number;
+};
+
+export type AttendanceReportQuery = {
+  department?: string;
+  /** YYYY-MM-DD, IST. */
+  date?: string;
+  state?: AttendanceState;
+  panelId?: string;
+  q?: string;
+  /** Only teams whose students are all absent (they score 0). */
+  teamZero?: boolean;
+  page?: number;
+  pageSize?: number;
+};
+
 export type AttendanceMember = {
   userId: string;
   fullName: string;
@@ -506,6 +577,8 @@ export type AttendanceMember = {
   presentAt: string | null;
   markedBy: string | null;
   method: "qr" | "manual" | null;
+  /** Present, absent, or not marked. */
+  state: AttendanceState;
 };
 
 export type AttendanceSheet = {
@@ -571,6 +644,8 @@ export type RankedTeam = {
   tied: boolean;
   /** Every judge of the room has scored the team; only complete teams get a place. */
   complete: boolean;
+  /** Every student is absent: the team scores 0 and gets no place. */
+  allAbsent: boolean;
   /** A prize place declared by the organisers. */
   award: { place: number; amount: number; declaredBy: string; declaredAt: string } | null;
 };
@@ -620,7 +695,9 @@ export type JudgeTeam = {
   department: string | null;
   status: TeamStatus;
   tent: string | null;
-  members: { fullName: string; role: "leader" | "member"; year: number; course: string; department: string | null }[];
+  members: { userId: string; attendance: AttendanceState; fullName: string; role: "leader" | "member"; year: number; course: string; department: string | null }[];
+  /** Every student is absent: the team scores 0 and cannot be marked. */
+  allAbsent: boolean;
   myScore: Score | null;
 };
 
@@ -644,6 +721,8 @@ export type JudgePanel = {
   scoringUntil: string | null;
   /** Extra minutes after the slot in which marks can still be submitted. */
   bufferMinutes: number;
+  /** The judge can mark or change students' attendance now (department round, judging open, during the room's time). */
+  canMarkAttendance: boolean;
   /** The judge locked all their marks here, or the room's time is over. */
   locked: boolean;
   teams: JudgeTeam[];

@@ -175,6 +175,10 @@
  *   POST   /admin/panels/{id}/jurors/{juror_email}/unlock  body { reason } → Panel   (same people; lets a judge change their marks again)
  *   GET    /admin/jurors → Juror[];  POST /admin/jurors body JurorInput → Juror;  DELETE /admin/jurors/{email} → 204
  *   PUT    /admin/finalists/quotas  (super admin) body { quotas: [{ department, category, quota }] } → FinalistSummary
+ *   PUT    /admin/teams/{team}/attendance/{user}  body { present } → TeamPresence   (super admin; the team's department admin; any time)
+ *   PUT    /judge/panels/{panel}/teams/{team}/attendance/{user}  body { present } → TeamPresence   (either judge of the room, during its time)
+ *   GET    /admin/attendance/report?department=&date=&state=&panel_id=&q=&team_zero=&page=&page_size= → AttendanceReport
+ *          (super admin: all departments; a department's admin: their own) and GET /admin/attendance/report/export → all rows
  *   POST   /admin/attendance/scan   body { code, round, panel_id? } → ScanResult  (organisers; judges for their rooms)
  *   POST   /admin/attendance/mark | /unmark   body { user_id, round, note } → ScanResult | 204
  *   GET    /judge  → JudgeView (the signed-in judge's panels);  PUT /judge/panels/{panel}/teams/{team}/score
@@ -194,7 +198,7 @@
  *                  member.removed | invitation.sent | invitation.cancelled | invitation.declined.
  *          Unknown future actions render with their raw action string.
  */
-import type { AcceptResult, AdminInput, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, AdminInput, AttendanceReport, TeamPresence, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 import { getSession } from "../auth/session";
 import { ApiError, type AdminApi } from "./contract";
 
@@ -390,6 +394,10 @@ export const liveApi: AdminApi = {
   editScore: (panelId, teamId, jurorEmail, marks, remarks, reason) =>
     request<Score>("PUT", `/admin/panels/${id(panelId)}/teams/${id(teamId)}/scores/${id(jurorEmail)}`, { marks, remarks, reason }),
 
+  setStudentPresence: (teamId, userId, present) => request<TeamPresence>("PUT", `/admin/teams/${id(teamId)}/attendance/${id(userId)}`, { present }),
+  attendanceReport: (query) => request<AttendanceReport>("GET", `/admin/attendance/report${queryString(query)}`),
+  attendanceReportAll: (query) =>
+    request<AttendanceReport>("GET", `/admin/attendance/report/export${queryString({ ...query, page: undefined, pageSize: undefined })}`),
   scanPass: (code, round, panelId) => request<ScanResult>("POST", "/admin/attendance/scan", { code, round, panelId: panelId ?? null }),
   markPresent: (userId, round, note) => request<ScanResult>("POST", "/admin/attendance/mark", { userId, round, note }),
   unmarkPresent: (userId, round, note) => request<void>("POST", "/admin/attendance/unmark", { userId, round, note }),
@@ -399,4 +407,6 @@ export const liveApi: AdminApi = {
     request<Score>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/score`, { marks, remarks, editReason }),
   lockMarks: (panelId) => request<LockResult>("POST", `/judge/panels/${id(panelId)}/lock`),
   judgeAttendance: (panelId) => request<AttendanceSheet>("GET", `/judge/panels/${id(panelId)}/attendance`),
+  judgeSetStudentPresence: (panelId, teamId, userId, present) =>
+    request<TeamPresence>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/attendance/${id(userId)}`, { present }),
 };

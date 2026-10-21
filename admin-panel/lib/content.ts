@@ -392,7 +392,7 @@ export const prizePools = {
 type Criterion = { title: string; parts?: string[] };
 
 /** The judges' manual for the department round (public/guides), linked from My judging and the Judging page. */
-export const judgeManualUrl = "/guides/InnoTech26-Judge-Manual.pdf?v=3";
+export const judgeManualUrl = "/guides/InnoTech26-Judge-Manual.pdf?v=4";
 
 /** Judging rubrics, word for word from the Judging Parameters document: four criteria of two 5-mark parts, then Query Addressing (10). */
 export const rubrics: Record<

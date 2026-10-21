@@ -95,7 +95,7 @@ from ..schemas import (
     UnlockInput,
 )
 from . import admin as admin_service
-from . import audit, schedule
+from . import audit, presence, schedule
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +238,14 @@ def _locked(panel: Panel, link: PanelJuror, open_rounds: set[str], now: datetime
     """A judge's marks in a room are locked once they locked them, the round is shut or the room's time is over."""
     closes = scoring_window(panel)[1]
     return link.locked_at is not None or panel.round not in open_rounds or (closes is not None and now > closes)
+
+
+def attendance_open(panel: Panel, open_rounds: set[str], now: datetime) -> bool:
+    """A room's judges can mark or change students' attendance while judging is open, during the room's slot and buffer."""
+    if panel.round != "department" or panel.round not in open_rounds:
+        return False
+    opens, closes = scoring_window(panel)
+    return (opens is None or now >= opens) and (closes is None or now <= closes)
 
 
 def save_timetable(db: Session, admin: Admin, data: TimetableInput) -> TimetableOut:
@@ -411,19 +419,27 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
             (round_, team_id): count
             for round_, team_id, count in db.execute(
                 select(Attendance.round, Attendance.team_id, func.count())
-                .where(Attendance.team_id.in_([t.id for t in teams]))
+                .where(Attendance.team_id.in_([t.id for t in teams]), Attendance.status == "present")
                 .group_by(Attendance.round, Attendance.team_id)
             ).tuples()
         }
+    # Department rooms: each student's attendance. A team whose members are all absent scores 0.
+    room_teams = [team.id for panel_id, team in links if round_of[panel_id] == "department"]
+    states = presence.member_states(db, room_teams)
     by_panel: dict[uuid.UUID, list[PanelTeamOut]] = defaultdict(list)
     for panel_id, team in links:
         mine = scores[(panel_id, team.id)]
+        members = states.get(team.id, []) if round_of[panel_id] == "department" else []
+        absent_all = presence.is_all_absent(members)
         by_panel[panel_id].append(
             PanelTeamOut(
                 **summaries[team.id].model_dump(),
                 tent=tents.get(team.id),
                 scores=len(mine),
-                average=round(mean(s.total for s in mine), 2) if mine else None,
+                average=0.0 if absent_all else (round(mean(s.total for s in mine), 2) if mine else None),
+                members=members,
+                absent=sum(1 for m in members if m.state == "absent"),
+                all_absent=absent_all,
                 judge_scores=[
                     PanelScoreOut(
                         juror_email=s.juror_email,
@@ -1080,7 +1096,8 @@ def _sheet(db: Session, round_: str, teams: list[Team], *, panel: Panel | None =
     present: dict[uuid.UUID, Attendance] = {}
     members: dict[uuid.UUID, list[AttendanceMember]] = defaultdict(list)
     if teams:
-        present = {a.user_id: a for a in db.scalars(select(Attendance).where(Attendance.round == round_, Attendance.team_id.in_(team_ids)))}
+        marks = {a.user_id: a for a in db.scalars(select(Attendance).where(Attendance.round == round_, Attendance.team_id.in_(team_ids)))}
+        present = {user_id: a for user_id, a in marks.items() if a.status == "present"}
         for member, profile in db.execute(
             select(TeamMember, Profile)
             .join(Profile, Profile.user_id == TeamMember.user_id)
@@ -1100,8 +1117,9 @@ def _sheet(db: Session, round_: str, teams: list[Team], *, panel: Panel | None =
                     roll_number=profile.roll_number,
                     phone=profile.phone,
                     present_at=mark.marked_at if mark else None,
-                    marked_by=mark.marked_by if mark else None,
+                    marked_by=mark.marked_by if mark else (marks[member.user_id].marked_by if member.user_id in marks else None),
                     method=mark.method if mark else None,
+                    state="present" if mark else ("absent" if member.user_id in marks else "not_marked"),
                 )
             )
     return AttendanceSheet(
@@ -1208,12 +1226,17 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
     groups: dict[str, list[Team]] = defaultdict(list)
     for team in teams:
         groups[_group_key(round_, team)].append(team)
+    # Teams whose members are all absent (department round) score 0 whatever the judges gave, and get no place.
+    absent = presence.absent_teams(db, [t.id for t in teams]) if round_ == "department" else set()
 
     def ranked(group: list[Team]) -> list[RankedTeam]:
         entries = []
         for team in group:
             scores = marks[team.id]
             needed = judges.get(panel_of[team.id].id, 0)
+            if team.id in absent:
+                entries.append((team, True, 0.0, 0.0, 0.0))
+                continue
             entries.append(
                 (
                     team,
@@ -1223,20 +1246,21 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
                     round(mean(rules.query_marks(m) for m in scores), 2) if scores else None,
                 )
             )
-        # Complete teams first, in order; teams still waiting for a judge after them, without a place.
-        entries.sort(key=lambda e: (not e[1], e[2] is None, -(e[2] or 0), -(e[3] or 0), -(e[4] or 0), e[0].number))
+        # Complete teams first, in order; teams still waiting for a judge after them, without a place; absent teams last.
+        entries.sort(key=lambda e: (e[0].id in absent, not e[1], e[2] is None, -(e[2] or 0), -(e[3] or 0), -(e[4] or 0), e[0].number))
         out: list[RankedTeam] = []
         previous = None
         place = 0
         for team, complete, average, innovation, query in entries:
             key = (average, innovation, query)
             panel = panel_of[team.id]
-            if complete:
+            is_absent = team.id in absent
+            if complete and not is_absent:
                 place += 1
             award = awards.get(team.id)
             out.append(
                 RankedTeam(
-                    position=place if complete else None,
+                    position=place if complete and not is_absent else None,
                     team=summaries[team.id],
                     panel=room_label(panel),
                     scores=len(marks[team.id]),
@@ -1244,14 +1268,15 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
                     average=average,
                     innovation=innovation,
                     query=query,
-                    tied=complete and key == previous,
+                    tied=complete and not is_absent and key == previous,
                     complete=complete,
+                    all_absent=is_absent,
                     award=AwardOut(place=award.place, amount=award.amount, declared_by=award.declared_by, declared_at=award.declared_at)
                     if award
                     else None,
                 )
             )
-            previous = key if complete else previous
+            previous = key if complete and not is_absent else previous
         return out
 
     def order(key: str) -> tuple:
@@ -1298,6 +1323,8 @@ def declare_award(db: Session, admin: Admin, round_: str, data: AwardInput) -> N
         raise ApiError(f"You can declare winners for {admin.department} only.", 403)
     if team.status != "submitted":
         raise ApiError(f"This team has been {team.status}, so it cannot win.", 409)
+    if round_ == "department" and presence.absent_teams(db, [team.id]):
+        raise ApiError("Every member of this team is absent, so it scores 0 and cannot win.", 409)
     needed = db.scalar(select(func.count()).select_from(PanelJuror).where(PanelJuror.panel_id == link.panel_id)) or 0
     scored = db.scalar(
         select(func.count())
@@ -1412,6 +1439,7 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
     tents = _tents(db, team_ids)
     members: dict[uuid.UUID, list[JudgeMemberOut]] = defaultdict(list)
     mine: dict[tuple[str, uuid.UUID], Score] = {}
+    states = presence.member_states(db, team_ids)
     if team_ids:
         for member, profile in db.execute(
             select(TeamMember, Profile)
@@ -1419,9 +1447,16 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
             .where(TeamMember.team_id.in_(team_ids))
             .order_by(TeamMember.role != "leader", Profile.full_name)
         ).tuples():
+            state = next((m.state for m in states.get(member.team_id, []) if m.user_id == member.user_id), "not_marked")
             members[member.team_id].append(
                 JudgeMemberOut(
-                    full_name=profile.full_name, role=member.role, year=profile.year, course=profile.course, department=profile.department
+                    user_id=member.user_id,
+                    attendance=state,
+                    full_name=profile.full_name,
+                    role=member.role,
+                    year=profile.year,
+                    course=profile.course,
+                    department=profile.department,
                 )
             )
         for score in db.scalars(select(Score).where(Score.juror_email == juror.email, Score.team_id.in_(team_ids))):
@@ -1448,6 +1483,7 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
                 status=team.status,
                 tent=tents.get(team.id),
                 members=members[team.id],
+                all_absent=round_of[panel_id] == "department" and presence.is_all_absent(states.get(team.id, [])),
                 my_score=_score_out(score, locked_of[panel_id]) if score else None,
             )
         )
@@ -1466,6 +1502,7 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
                 department=panel.department,
                 parent_department=_is_parent(panel, juror),
                 present_at=link.present_at,
+                can_mark_attendance=attendance_open(panel, open_rounds, now),
                 locked=locked_of[panel.id],
                 buffer_minutes=panel.buffer_minutes,
                 open=panel.round in open_rounds,
@@ -1548,6 +1585,8 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
     team = db.get(Team, team_id)
     if team is None or team.status != "submitted":
         raise ApiError("This team has been withdrawn or disqualified, so it is not scored.", 409)
+    if panel.round == "department" and presence.absent_teams(db, [team_id]):
+        raise ApiError("Every member of this team is marked absent, so it scores 0. Mark at least one student present to give marks.", 409)
 
     current = db.scalar(
         select(Score)
