@@ -14,6 +14,27 @@ export function slotLabel(start: string | null, end: string | null) {
   return `${day.format(new Date(start))} · ${time.format(new Date(start))} – ${time.format(new Date(end))}`;
 }
 
+/** A judge is free for another room this long after the slot of their last room ends (the server uses the same minute). */
+const JUDGE_GAP_MS = 60_000;
+
+type Slot = { slotStart: string | null; slotEnd: string | null };
+
+/**
+ * Whether one judge cannot sit in both rooms: their slots overlap, or the second starts less than a minute after the first
+ * ends. Rooms without a time (finale panels) cannot be shown to be apart, so they clash.
+ */
+export function roomsClash(a: Slot, b: Slot) {
+  if (!a.slotStart || !a.slotEnd || !b.slotStart || !b.slotEnd) return true;
+  const [aStart, aEnd, bStart, bEnd] = [a.slotStart, a.slotEnd, b.slotStart, b.slotEnd].map((value) => new Date(value).getTime());
+  return aStart < bEnd + JUDGE_GAP_MS && bStart < aEnd + JUDGE_GAP_MS;
+}
+
+/** When a judge in a room that ends at `end` is free again: "Fri 23 Oct · 12:31 pm". */
+export function freeFromLabel(end: string) {
+  const at = new Date(new Date(end).getTime() + JUDGE_GAP_MS);
+  return `${day.format(at)} · ${time.format(at)}`;
+}
+
 /** Where a slot stands right now, for the "now" badge on a room. */
 export function slotState(start: string | null, end: string | null, now = Date.now()): "upcoming" | "now" | "over" | null {
   if (!start || !end) return null;

@@ -6,41 +6,59 @@ import { api, errorMessage } from "@/lib/api";
 import type { Juror } from "@/lib/admin-types";
 import { departmentLabel, departments } from "@/lib/content";
 import { roundLabels } from "@/lib/format";
+import { roomLabel, slotLabel } from "@/lib/rooms";
 import { useQuery } from "@/lib/use-query";
 import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Input, Select } from "@/components/ui/Field";
+import { SearchBox } from "@/components/ui/SearchBox";
 import { Loading, Notice } from "@/components/ui/Notice";
 import { SectionTitle } from "@/components/ui/PageHeader";
 import { Pill } from "@/components/ui/Pill";
 import { TableFrame, tdClass, Th } from "@/components/ui/Table";
 
-/** Appointing judges. They sign in to this panel with Google and see only their own rooms. */
-export function JurorsTab({ onChange }: { onChange: () => void }) {
+/**
+ * Judges and where each one is booked. Super admins also appoint and remove judges; department admins see the same list
+ * (so they can tell which judges are free for their rooms) and appoint faculty from a room's judge picker.
+ */
+export function JurorsTab({ onChange, canManage }: { onChange: () => void; canManage: boolean }) {
   const jurors = useQuery("jurors", () => api.listJurors());
   const [removing, setRemoving] = useState<Juror | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const q = search.trim().toLowerCase();
+  const shown = (jurors.data ?? []).filter((j) => !q || [j.name, j.email, j.department ?? "", j.organisation, ...j.panels.map((p) => `${roomLabel(p)} ${p.department ?? ""}`)].some((v) => v.toLowerCase().includes(q)));
 
   return (
     <div className="space-y-8">
       {message && <Notice tone="success">{message}</Notice>}
-      <section aria-labelledby="add-judge">
-        <SectionTitle id="add-judge" title="Appoint a judge" meta="They sign in to this panel with Google using this email" />
-        <AddJurorForm
-          onAdded={(juror) => {
-            setMessage(`${juror.name} can now sign in at this panel and will see the rooms you appoint them to.`);
-            jurors.reload();
-          }}
-        />
-      </section>
+      {canManage && (
+        <section aria-labelledby="add-judge">
+          <SectionTitle id="add-judge" title="Appoint a judge" meta="They sign in to this panel with Google using this email" />
+          <AddJurorForm
+            onAdded={(juror) => {
+              setMessage(`${juror.name} can now sign in at this panel and will see the rooms you appoint them to.`);
+              jurors.reload();
+            }}
+          />
+        </section>
+      )}
 
       <section aria-labelledby="judge-list">
-        <SectionTitle id="judge-list" title={`Judges${jurors.data ? ` (${jurors.data.length})` : ""}`} />
+        <SectionTitle
+          id="judge-list"
+          title={`Judges${jurors.data ? ` (${jurors.data.length})` : ""}`}
+          meta="A judge can be in several rooms, one at a time. Each room shows its day and time, so you can see who is taken when."
+        />
+        <div className="mb-3">
+          <SearchBox id="judge-search-list" label="Find a judge" placeholder="Name, email, department or room" value={search} onSearch={setSearch} />
+        </div>
         {jurors.error && <Notice tone="error">{jurors.error}</Notice>}
         {!jurors.data && !jurors.error && <Loading label="Loading judges" />}
-        {jurors.data && jurors.data.length === 0 && <EmptyState title="No judges yet">Appoint faculty for the department round and external judges for the finale.</EmptyState>}
-        {jurors.data && jurors.data.length > 0 && (
+        {jurors.data && jurors.data.length === 0 && <EmptyState title="No judges yet">{canManage ? "Appoint faculty for the department round and external judges for the finale." : "Add faculty from a room's judge picker."}</EmptyState>}
+        {jurors.data && jurors.data.length > 0 && shown.length === 0 && <EmptyState title="No judge matches">Try another name, email, department or room.</EmptyState>}
+        {jurors.data && shown.length > 0 && (
           <TableFrame label="Judges" minWidth="min-w-[820px]">
             <thead>
               <tr>
@@ -54,7 +72,7 @@ export function JurorsTab({ onChange }: { onChange: () => void }) {
               </tr>
             </thead>
             <tbody>
-              {jurors.data.map((j) => (
+              {shown.map((j) => (
                 <tr key={j.email}>
                   <td className={tdClass}>
                     <span className="font-semibold text-navy-900">{j.name}</span>
@@ -66,20 +84,28 @@ export function JurorsTab({ onChange }: { onChange: () => void }) {
                   </td>
                   <td className={tdClass}>
                     {j.panels.length === 0 ? (
-                      <span className="text-muted">Not on a panel yet</span>
+                      <span className="text-muted">Free: not in any room yet</span>
                     ) : (
-                      <ul className="space-y-0.5 text-xs">
-                        {j.panels.map((p) => (
-                          <li key={p.id}>
-                            <span className="font-semibold text-navy-900">{p.name}</span> <span className="text-muted">({roundLabels[p.round]}{p.parentDepartment ? ", parent department judge" : ""})</span>
-                          </li>
-                        ))}
+                      <ul className="space-y-1.5 text-xs">
+                        {[...j.panels]
+                          .sort((a, b) => (a.slotStart ?? "").localeCompare(b.slotStart ?? ""))
+                          .map((p) => (
+                            <li key={p.id}>
+                              <span className="font-semibold text-navy-900">{roomLabel(p)}</span>{" "}
+                              <span className="text-muted">
+                                ({roundLabels[p.round]}
+                                {p.department ? `, ${p.department} teams` : ""}
+                                {p.parentDepartment ? ", parent department judge" : ""})
+                              </span>
+                              {p.slotStart && p.slotEnd && <span className="block text-navy-800">{slotLabel(p.slotStart, p.slotEnd)}</span>}
+                            </li>
+                          ))}
                       </ul>
                     )}
                   </td>
                   <td className={`${tdClass} tabular-nums`}>{j.scores}</td>
                   <td className={`${tdClass} text-right`}>
-                    {j.scores > 0 ? (
+                    {!canManage ? null : j.scores > 0 ? (
                       <span className="text-xs text-muted">Has scored teams</span>
                     ) : (
                       <Button variant="ghost" size="sm" className="text-red-700" onClick={() => setRemoving(j)}>

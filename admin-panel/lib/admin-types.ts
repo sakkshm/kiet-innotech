@@ -389,8 +389,8 @@ export type Juror = {
   department: string | null;
   organisation: string;
   phone: string;
-  /** Rooms and panels the judge sits in (one per round). */
-  panels: { id: string; round: JudgingRound; building: string; name: string; department: string | null; slotStart: string | null; parentDepartment: boolean }[];
+  /** Every room and panel the judge sits in, with its time: a judge can be in many, one at a time. */
+  panels: { id: string; round: JudgingRound; building: string; name: string; department: string | null; slotStart: string | null; slotEnd: string | null; parentDepartment: boolean }[];
   scores: number;
   addedAt: string | null;
   addedBy: string | null;

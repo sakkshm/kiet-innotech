@@ -903,3 +903,60 @@ def test_the_readiness_board_ranks_departments_and_shows_counts_only(judging):
     for email, role in (("outside.desk@gmail.com", "outside_admin"), ("startup.desk@gmail.com", "startup_admin")):
         assert root.post("/admin/admins", {"email": email, "name": "Desk", "role": role}).status_code == 201
         assert Api(root.client, email).get("/admin/judging/department/readiness").status_code == 403
+
+
+def test_a_judge_can_sit_in_several_rooms_one_at_a_time(judging):
+    root = judging["root"]
+    jurors = lambda *emails: {"jurors": [{"email": e} for e in emails]}  # noqa: E731
+    first = set_room(judging)  # the CSE room, 22 Oct 10:00 to 1:00 pm, with cse.prof and it.prof
+    assert {j["email"] for j in first["jurors"]} == {"cse.prof@kiet.edu", "it.prof@kiet.edu"}
+
+    def book(department, name, day, start, end, emails):
+        room = root.post("/admin/panels", room_body(department, building="Main Block", name=name, day=day, start=start, end=end)).json()
+        return root.put(f"/admin/panels/{room['id']}/jurors", jurors(*emails)), room
+
+    # Another day: the same two judges are free (it.prof is IT faculty, so IT's room can have them as its parent judge).
+    ok, _ = book("IT", "2", "2026-10-23", "09:30", "12:30", ["it.prof@kiet.edu", "cse.prof@kiet.edu"])
+    assert ok.status_code == 200, ok.text
+    # The same day at an overlapping time, or touching the end of the first room: refused, with when they are free again.
+    clash, _ = book("IT", "3", "2026-10-22", "12:00", "14:00", ["it.prof@kiet.edu"])
+    assert clash.status_code == 409 and "IT Professor already judges in CSIT Block · 304" in clash.json()["detail"]
+    assert "free again from 22 Oct, 1:01 PM" in clash.json()["detail"]
+    touching, _ = book("IT", "4", "2026-10-22", "13:00", "15:00", ["it.prof@kiet.edu"])
+    assert touching.status_code == 409
+    # One minute after the first room ends, they are free.
+    free, late = book("IT", "5", "2026-10-22", "13:01", "15:00", ["it.prof@kiet.edu", "cse.prof@kiet.edu"])
+    assert free.status_code == 200, free.text
+
+    # The judge's page shows every room, and the Judges list tells organisers where each judge is taken and when.
+    assert len(judging["it_prof"].get("/judge").json()["panels"]) == 3
+    listed = {j["email"]: j for j in root.get("/admin/jurors").json()}
+    rooms = listed["it.prof@kiet.edu"]["panels"]
+    assert len(rooms) == 3 and all(r["slot_start"] and r["slot_end"] for r in rooms)
+    # Department admins see the same bookings, including rooms of other departments.
+    seen = {j["email"]: j for j in judging["it"].get("/admin/jurors").json()}
+    assert len(seen["it.prof@kiet.edu"]["panels"]) == 3
+
+    # Moving a room onto another of the judge's rooms is refused too.
+    move = root.patch(
+        f"/admin/panels/{late['id']}",
+        {
+            "building": "Main Block",
+            "name": "5",
+            "location": "",
+            "slot_start": "2026-10-23T10:00:00+05:30",
+            "slot_end": "2026-10-23T12:00:00+05:30",
+        },
+    )
+    assert move.status_code == 409 and "its new time would clash" in move.json()["detail"]
+    later = root.patch(
+        f"/admin/panels/{late['id']}",
+        {
+            "building": "Main Block",
+            "name": "5",
+            "location": "",
+            "slot_start": "2026-10-24T13:30:00+05:30",
+            "slot_end": "2026-10-24T16:30:00+05:30",
+        },
+    )
+    assert later.status_code == 200, later.text

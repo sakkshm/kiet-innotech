@@ -156,7 +156,7 @@
  *   GET    /admin/judging/{round}                 → Judging        round: department | final
  *   GET|PUT /admin/judging/timetable  (PUT: super admin) body { slots: [{ department, slot_start, slot_end }],
  *          move_rooms } → Timetable. A department room has two judges (one from its department, one from another), a judge
- *          sits in one room per round, and judges submit marks only from the slot's start to its end + the room's buffer.
+ *          can sit in several rooms of a round, one at a time (rooms clash when their slots overlap or are under a minute apart), and judges submit marks only from the slot's start to its end + the room's buffer.
  *   POST   /admin/judging/{round}/open | /lock    → RoundState     409 with the reason when it cannot open (super admin)
  *   GET    /admin/judging/{round}/rankings?department=   → Rankings
  *   GET    /admin/judging/{round}/attendance?panel_id=&department=   → AttendanceSheet (a room, a department, or the finale)

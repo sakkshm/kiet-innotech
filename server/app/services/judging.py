@@ -177,6 +177,50 @@ def slot_label(start: datetime | None, end: datetime | None) -> str:
     return f"{s.day} {s:%b}, {s:%I:%M %p} - {e:%I:%M %p}".replace(" 0", " ")
 
 
+# A judge is free for another room from this long after their last room's slot ends.
+JUDGE_GAP = timedelta(minutes=1)
+
+
+def _rooms_clash(a: tuple[datetime | None, datetime | None], b: tuple[datetime | None, datetime | None]) -> bool:
+    """
+    Whether one judge cannot sit in both rooms: their time slots overlap, or the second starts less than a minute after the
+    first ends. Rooms without a time (finale panels) cannot be shown to be apart, so they clash.
+    """
+    if None in (*a, *b):
+        return True
+    return a[0] < b[1] + JUDGE_GAP and b[0] < a[1] + JUDGE_GAP  # type: ignore[operator]
+
+
+def _check_judges_free(
+    db: Session, panel: Panel, emails: list[str], start: datetime | None, end: datetime | None, *, moving: bool = False
+) -> None:
+    """
+    Raises 409 when one of these judges is already in another room of the round whose time clashes with [start, end].
+    A judge can be in many rooms, one at a time: different days, or the same day one after the other.
+    """
+    if not emails:
+        return
+    rows = db.execute(
+        select(Juror.name, Panel)
+        .join(PanelJuror, PanelJuror.juror_email == Juror.email)
+        .join(Panel, Panel.id == PanelJuror.panel_id)
+        .where(Juror.email.in_(emails), Panel.round == panel.round, Panel.id != panel.id)
+        .order_by(Panel.slot_start, Juror.name)
+    ).all()
+    for name, other in rows:
+        if not _rooms_clash((start, end), (other.slot_start, other.slot_end)):
+            continue
+        where = ", ".join(p for p in (other.department and f"{other.department} teams", slot_label(other.slot_start, other.slot_end)) if p)
+        free_at = (other.slot_end + JUDGE_GAP).astimezone(rules.IST) if other.slot_end is not None else None
+        free = f" {name} is free again from {free_at.day} {free_at:%b}, {free_at:%I:%M %p}.".replace(" 0", " ") if free_at else ""
+        what = "so its new time would clash" if moving else "which is at the same time"
+        raise ApiError(
+            f"{name} already judges in {room_label(other)}{f' ({where})' if where else ''}, {what}. "
+            f"A judge can be in one room at a time.{free}",
+            409,
+        )
+
+
 # ---------- Timetable ----------
 
 TIMETABLE_KEY = "judging_timetable"
@@ -277,6 +321,14 @@ def save_timetable(db: Session, admin: Admin, data: TimetableInput) -> Timetable
                     "department",
                     PanelUpdateInput(building=room.building, name=room.name, slot_start=new[0], slot_end=new[1]),
                     exclude=room.id,
+                )
+                _check_judges_free(
+                    db,
+                    room,
+                    list(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == room.id))),
+                    new[0],
+                    new[1],
+                    moving=True,
                 )
                 room.slot_start, room.slot_end = new
                 moved += 1
@@ -632,6 +684,7 @@ def _juror_out(db: Session, jurors: list[Juror]) -> list[JurorOut]:
                     name=panel.name,
                     department=panel.department,
                     slot_start=panel.slot_start,
+                    slot_end=panel.slot_end,
                     parent_department=_is_parent(panel, by_email[link.juror_email]),
                 )
             )
@@ -774,6 +827,16 @@ def update_panel(db: Session, admin: Admin, panel_id: uuid.UUID, data: PanelUpda
     if panel.round == "department" and (not data.building or data.slot_start is None):
         raise ApiError("A department room needs its building and time slot.", 422)
     _check_free(db, panel.round, data, exclude=panel.id)
+    if (data.slot_start, data.slot_end) != (panel.slot_start, panel.slot_end):
+        # Moving the room must not put its judges in two rooms at once.
+        _check_judges_free(
+            db,
+            panel,
+            list(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == panel.id))),
+            data.slot_start,
+            data.slot_end,
+            moving=True,
+        )
     before = _describe_room(panel)
     panel.building, panel.name, panel.name_key, panel.location = data.building, data.name, data.name.lower(), data.location
     panel.slot_start, panel.slot_end = data.slot_start, data.slot_end
@@ -901,17 +964,8 @@ def set_panel_jurors(db: Session, admin: Admin, panel_id: uuid.UUID, data: Panel
             raise ApiError(f"Only one of the two judges can be from {panel.department}; the other comes from another department.", 422)
         if len(emails) - len(own) > 1:
             raise ApiError(f"Only one judge can come from another department; the other is from {panel.department}.", 422)
-    # A judge sits in one room (or panel) per round.
-    elsewhere = db.execute(
-        select(Juror.name, Panel)
-        .join(PanelJuror, PanelJuror.juror_email == Juror.email)
-        .join(Panel, Panel.id == PanelJuror.panel_id)
-        .where(Juror.email.in_(emails), Panel.round == panel.round, Panel.id != panel.id)
-    ).first()
-    if elsewhere:
-        name, other = elsewhere
-        where = ", ".join(p for p in (other.department and f"{other.department} teams", slot_label(other.slot_start, other.slot_end)) if p)
-        raise ApiError(f"{name} already judges in {room_label(other)}{f' ({where})' if where else ''}. A judge sits in one room only.", 409)
+    # A judge can be in several rooms, but one at a time: the rooms' time slots must not overlap.
+    _check_judges_free(db, panel, emails, panel.slot_start, panel.slot_end)
     current = set(db.scalars(select(PanelJuror.juror_email).where(PanelJuror.panel_id == panel.id).with_for_update()))
     removed = [e for e in current if e not in emails]
     if removed and _scored(db, panel, juror_emails=removed):
@@ -1416,7 +1470,7 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
             select(PanelJuror, Panel)
             .join(Panel, Panel.id == PanelJuror.panel_id)
             .where(PanelJuror.juror_email == juror.email)
-            .order_by(Panel.round, Panel.name_key)
+            .order_by(Panel.round, Panel.slot_start, Panel.name_key)
         )
         .tuples()
         .all()

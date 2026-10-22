@@ -9,7 +9,7 @@ import { useAdmin } from "@/lib/auth/AuthProvider";
 import { attendanceEnabled } from "@/lib/features";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
 import { categoryTitle, formatDateTime, plural } from "@/lib/format";
-import { DEFAULT_BUFFER_MINUTES, MAX_BUFFER_MINUTES, MIN_REASON_LENGTH, reasonProblem, roomClock, roomLabel, slotLabel, timeLabel } from "@/lib/rooms";
+import { DEFAULT_BUFFER_MINUTES, freeFromLabel, MAX_BUFFER_MINUTES, MIN_REASON_LENGTH, reasonProblem, roomClock, roomLabel, roomsClash, slotLabel, timeLabel } from "@/lib/rooms";
 import { teamHref } from "@/lib/routes";
 import { useServerNow } from "@/lib/use-room-now";
 import { useQuery } from "@/lib/use-query";
@@ -1082,13 +1082,36 @@ function AllotTeamsDialog({ panel, candidates, onClose, onSaved, onGone }: { pan
   );
 }
 
-/** The room or panel of the same round where this judge already sits, if any (a judge sits in one room). */
+/** The room of the same round where this judge is already booked at a time that clashes with this room, if any. */
 function sitsElsewhere(juror: Juror, panel: Panel) {
-  return juror.panels.find((p) => p.round === panel.round && p.id !== panel.id) ?? null;
+  return juror.panels.find((p) => p.round === panel.round && p.id !== panel.id && roomsClash(p, panel)) ?? null;
+}
+
+/** The judge's other rooms of this round that do not clash: shown for information, they can still take this one. */
+function otherRooms(juror: Juror, panel: Panel) {
+  return juror.panels.filter((p) => p.round === panel.round && p.id !== panel.id && !roomsClash(p, panel));
 }
 
 function elsewhereLabel(p: Juror["panels"][number]) {
-  return `${p.building ? `${p.building} · ` : ""}${p.name}${p.department ? ` (${p.department})` : ""}`;
+  const when = slotLabel(p.slotStart, p.slotEnd);
+  return `${p.building ? `${p.building} · ` : ""}${p.name}${p.department ? ` (${p.department})` : ""}${when ? `, ${when}` : ""}`;
+}
+
+/** What the judge is already doing around this room: busy at this time (red), or also judging elsewhere (grey). */
+function Bookings({ juror, panel }: { juror: Juror; panel: Panel }) {
+  const busy = sitsElsewhere(juror, panel);
+  const others = otherRooms(juror, panel);
+  return (
+    <>
+      {busy && (
+        <span className="mt-0.5 block rounded-lg bg-accent-50 px-2 py-1 text-[11px] font-semibold text-accent-600">
+          Busy then: judging in {elsewhereLabel(busy)}
+          {busy.slotEnd ? `. Free again from ${freeFromLabel(busy.slotEnd)}.` : "."}
+        </span>
+      )}
+      {others.length > 0 && <span className="mt-0.5 block text-[11px] text-muted">Also judges in {others.map(elsewhereLabel).join("; ")}</span>}
+    </>
+  );
 }
 
 function JudgeOption({ juror, panel, name, checked, onPick }: { juror: Juror; panel: Panel; name: string; checked: boolean; onPick: () => void }) {
@@ -1102,7 +1125,7 @@ function JudgeOption({ juror, panel, name, checked, onPick }: { juror: Juror; pa
           <span className="block truncate text-xs text-muted">
             {juror.email} · {juror.kind === "faculty" ? juror.department : `Outside expert, ${juror.organisation}`}
           </span>
-          {busy && <span className="mt-0.5 inline-block rounded-full bg-accent-50 px-2 py-0.5 text-[11px] font-semibold text-accent-600">Judging in {elsewhereLabel(busy)}</span>}
+          <Bookings juror={juror} panel={panel} />
         </span>
       </label>
     </li>
@@ -1149,7 +1172,7 @@ function PanelJudgesDialog({ panel, onClose, onSaved, onGone }: { panel: Panel; 
       title={`Judges for ${roomLabel(panel)}`}
       description={
         seats
-          ? `Two judges: the parent department judge (from ${panel.department}) and one from another department. A judge sits in one room only.`
+          ? `Two judges: the parent department judge (from ${panel.department}) and one from another department. A judge can be in several rooms, one at a time: they are free for this room if their other rooms end a minute before it starts, or are on other days.`
           : "The plan is two outside experts per finale panel. A judge sits on one panel only."
       }
       onClose={onClose}
@@ -1250,7 +1273,7 @@ function PanelJudgesDialog({ panel, onClose, onSaved, onGone }: { panel: Panel; 
                   <span className="min-w-0">
                     <span className="block font-semibold text-navy-900">{j.name}</span>
                     <span className="block text-xs text-muted">{j.email}</span>
-                    {busy && <span className="mt-0.5 inline-block rounded-full bg-accent-50 px-2 py-0.5 text-[11px] font-semibold text-accent-600">On {elsewhereLabel(busy)}</span>}
+                    <Bookings juror={j} panel={panel} />
                   </span>
                 </li>
               );

@@ -707,6 +707,7 @@ class JurorPanelRef(BaseModel):
     name: str
     department: str | None = None
     slot_start: datetime | None = None
+    slot_end: datetime | None = None
     # A department room's parent department judge: the one from the room's own department.
     parent_department: bool = False
 
