@@ -275,6 +275,7 @@ export function StudentsView() {
                   {!startupOnly && <SortableTh label="Year" sortKey="year" {...sortProps} />}
                   {!startupOnly && <Th>Roll no.</Th>}
                   <Th>Team</Th>
+                  <Th>Attendance</Th>
                   <SortableTh label="Registered" sortKey="created_at" {...sortProps} />
                   {isSuper && (
                     <Th>
@@ -337,6 +338,17 @@ export function StudentsView() {
                           </>
                         ) : (
                           <span className="text-muted">Not in a team</span>
+                        )}
+                      </td>
+                      <td className={`${tdClass} whitespace-nowrap`}>
+                        {s.attendance ? (
+                          <Pill tone={s.attendance === "present" ? "green" : s.attendance === "absent" ? "red" : "slate"}>
+                            {s.attendance === "present" ? "Present" : s.attendance === "absent" ? "Absent" : "Not marked"}
+                          </Pill>
+                        ) : (
+                          <span className="text-muted" title="Shown once the student's team has a department room">
+                            —
+                          </span>
                         )}
                       </td>
                       <td className={`${tdClass} whitespace-nowrap text-muted`}>{formatDate(s.createdAt)}</td>

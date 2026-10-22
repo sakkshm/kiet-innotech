@@ -453,6 +453,9 @@ class AdminStudentOut(ProfileOut):
     banned_at: datetime | None = None
     banned_reason: str | None = None
     banned_by: str | None = None
+    # Department round: whether the judges marked the student present or absent in their team's room (not marked until they
+    # do). Null when the student's team has no department room.
+    attendance: Literal["present", "absent", "not_marked"] | None = None
 
 
 class AdminStudentInput(ProfileInput):

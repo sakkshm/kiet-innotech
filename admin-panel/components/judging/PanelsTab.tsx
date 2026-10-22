@@ -13,6 +13,7 @@ import { DEFAULT_BUFFER_MINUTES, freeFromLabel, MAX_BUFFER_MINUTES, MIN_REASON_L
 import { teamHref } from "@/lib/routes";
 import { useServerNow } from "@/lib/use-room-now";
 import { useQuery } from "@/lib/use-query";
+import { JudgeHover } from "./JudgeHover";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
@@ -1121,7 +1122,9 @@ function JudgeOption({ juror, panel, name, checked, onPick }: { juror: Juror; pa
       <label className={`flex items-start gap-3 px-3 py-2.5 ${busy ? "cursor-not-allowed bg-surface/70" : "cursor-pointer hover:bg-brand-50/60"} ${checked ? "bg-brand-50" : ""}`}>
         <input type="radio" name={name} className="mt-1 accent-accent-500" checked={checked} disabled={!!busy} onChange={onPick} />
         <span className="min-w-0 flex-1">
-          <span className={`block font-semibold ${busy ? "text-muted" : "text-navy-900"}`}>{juror.name}</span>
+          <span className={`block font-semibold ${busy ? "text-muted" : "text-navy-900"}`}>
+            <JudgeHover juror={juror}>{juror.name}</JudgeHover>
+          </span>
           <span className="block truncate text-xs text-muted">
             {juror.email} · {juror.kind === "faculty" ? juror.department : `Outside expert, ${juror.organisation}`}
           </span>
@@ -1271,7 +1274,9 @@ function PanelJudgesDialog({ panel, onClose, onSaved, onGone }: { panel: Panel; 
                     }
                   />
                   <span className="min-w-0">
-                    <span className="block font-semibold text-navy-900">{j.name}</span>
+                    <span className="block font-semibold text-navy-900">
+                      <JudgeHover juror={j}>{j.name}</JudgeHover>
+                    </span>
                     <span className="block text-xs text-muted">{j.email}</span>
                     <Bookings juror={j} panel={panel} />
                   </span>

@@ -134,6 +134,8 @@ export type AdminTeam = Omit<Team, "members"> & {
 
 /** A registered student plus a short reference to their team, if any. */
 export type AdminStudent = Profile & {
+  /** Department round: marked present or absent by the judges in the team's room. Null when the team has no room. */
+  attendance?: "present" | "absent" | "not_marked" | null;
   /** Set when an organiser has banned the student from the portal. */
   bannedAt?: string | null;
   bannedReason?: string | null;

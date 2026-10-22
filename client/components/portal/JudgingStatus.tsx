@@ -65,7 +65,10 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
 
       {rounds.map((round) => (
         <section key={round.round} className="rounded-3xl bg-white p-5 ring-1 ring-line sm:p-6">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent-500">{round.round === "final" ? "Grand Finale" : "Your room"}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent-500">{round.round === "final" ? "Grand Finale" : "Your room"}</p>
+            {round.round === "department" && round.room && round.attendance && <AttendanceBadge attendance={round.attendance} />}
+          </div>
           {round.round === "department" ? (
             round.room ? (
               <div className="mt-2 space-y-2">
@@ -130,6 +133,16 @@ export function JudgingStatus({ showPassLink = true }: { showPassLink?: boolean 
       ))}
     </div>
   );
+}
+
+/** The same state as the line below, as a badge you can see at a glance. */
+function AttendanceBadge({ attendance }: { attendance: "present" | "absent" | "not_marked" }) {
+  const look = {
+    present: ["Present", "bg-emerald-50 text-emerald-800 ring-emerald-200"],
+    absent: ["Absent", "bg-red-50 text-red-800 ring-red-200"],
+    not_marked: ["Not marked yet", "bg-surface text-muted ring-line"],
+  }[attendance];
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ring-inset ${look[1]}`}>{look[0]}</span>;
 }
 
 /** Whether the judges marked this student present or absent in their room, or have not marked them yet. */

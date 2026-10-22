@@ -134,3 +134,23 @@ def test_the_attendance_report(judging, as_user):  # noqa: F811
     # Only super admins and department admins. A judge cannot use the admin report.
     assert judging["it_prof"].get("/admin/attendance/report").status_code == 403
     assert report(root, department="CSE")["items"][0]["roll_number"] is not None
+
+
+def test_the_students_list_shows_an_attendance_badge(judging, as_user):  # noqa: F811
+    root, cse, room = judging["root"], judging["cse"], judging["room"]
+    set_room(judging)
+    root.post("/admin/judging/department/open")
+    ua = user_id(as_user, "a@kiet.edu")
+    assert toggle(judging["it_prof"], room, judging["teams"]["cse_a"], ua, False).status_code == 200
+
+    def states(admin):
+        return {s["email"]: s["attendance"] for s in admin.get("/admin/students", params={"page_size": 100}).json()["items"]}
+
+    seen = states(root)
+    # Marked absent, a classmate not marked yet, and students whose team has no department room have no badge.
+    assert seen["a@kiet.edu"] == "absent" and seen["b@kiet.edu"] == "not_marked" and seen["c@kiet.edu"] == "not_marked"
+    assert seen["g@kiet.edu"] is None and seen["r@gmail.com"] is None
+    # The department's own admin sees it too, and it follows a change.
+    assert states(cse)["a@kiet.edu"] == "absent"
+    assert toggle(judging["it_prof"], room, judging["teams"]["cse_a"], ua, True).status_code == 200
+    assert states(cse)["a@kiet.edu"] == "present"

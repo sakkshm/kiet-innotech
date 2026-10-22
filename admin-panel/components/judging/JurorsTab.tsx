@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { SearchBox } from "@/components/ui/SearchBox";
+import { JudgeHover } from "./JudgeHover";
 import { Loading, Notice } from "@/components/ui/Notice";
 import { SectionTitle } from "@/components/ui/PageHeader";
 import { Pill } from "@/components/ui/Pill";
@@ -75,7 +76,9 @@ export function JurorsTab({ onChange, canManage }: { onChange: () => void; canMa
               {shown.map((j) => (
                 <tr key={j.email}>
                   <td className={tdClass}>
-                    <span className="font-semibold text-navy-900">{j.name}</span>
+                    <JudgeHover juror={j}>
+                      <span className="font-semibold text-navy-900">{j.name}</span>
+                    </JudgeHover>
                     <span className="block break-all text-xs text-muted">{j.email}{j.phone && ` · ${j.phone}`}</span>
                   </td>
                   <td className={tdClass}>

@@ -78,7 +78,7 @@ from ..schemas import (
     UnpublishInput,
     YearStats,
 )
-from . import audit, schedule
+from . import audit, presence, schedule
 from .serializers import invitation_out, profile_out
 
 logger = logging.getLogger(__name__)
@@ -1388,7 +1388,7 @@ def _one_student(db: Session, admin: Admin, user_id: uuid.UUID) -> AdminStudentO
     rows = db.execute(statement.where(Profile.user_id == user_id).execution_options(populate_existing=True)).all()
     if not rows:
         raise ApiError("This student is outside your scope.", 403)
-    return _student_rows(rows)[0]
+    return _student_rows(db, rows)[0]
 
 
 # ---------- Students ----------
@@ -1457,7 +1457,26 @@ def _student_query(admin: Admin, f: StudentFilters):
     return statement, count
 
 
-def _student_rows(rows) -> list[AdminStudentOut]:
+def _student_rows(db: Session, rows) -> list[AdminStudentOut]:
+    # Attendance of the department round, for students whose team has been allotted a room.
+    team_ids = {row[3].id for row in rows if row[3] is not None}
+    in_room = (
+        set(db.scalars(select(PanelTeam.team_id).where(PanelTeam.round == presence.ROUND, PanelTeam.team_id.in_(team_ids))))
+        if team_ids
+        else set()
+    )
+    user_ids = [row[0].user_id for row in rows if row[3] is not None and row[3].id in in_room]
+    marks = (
+        dict(
+            db.execute(
+                select(Attendance.user_id, Attendance.status).where(Attendance.round == presence.ROUND, Attendance.user_id.in_(user_ids))
+            )
+            .tuples()
+            .all()
+        )
+        if user_ids
+        else {}
+    )
     result = []
     for profile, email, membership, team, banned_at, banned_reason, banned_by in rows:
         base = profile_out(profile, email).model_dump()
@@ -1466,19 +1485,22 @@ def _student_rows(rows) -> list[AdminStudentOut]:
             if team is not None
             else None
         )
-        result.append(AdminStudentOut(**base, team=ref, banned_at=banned_at, banned_reason=banned_reason, banned_by=banned_by))
+        attendance = marks.get(profile.user_id, "not_marked") if team is not None and team.id in in_room else None
+        result.append(
+            AdminStudentOut(**base, team=ref, banned_at=banned_at, banned_reason=banned_reason, banned_by=banned_by, attendance=attendance)
+        )
     return result
 
 
 def list_students(db: Session, admin: Admin, f: StudentFilters) -> tuple[list[AdminStudentOut], int]:
     statement, count = _student_query(admin, f)
     total = db.scalar(count) or 0
-    return _student_rows(db.execute(statement.offset((f.page - 1) * f.page_size).limit(f.page_size)).all()), total
+    return _student_rows(db, db.execute(statement.offset((f.page - 1) * f.page_size).limit(f.page_size)).all()), total
 
 
 def export_students(db: Session, admin: Admin, f: StudentFilters) -> list[AdminStudentOut]:
     statement, _ = _student_query(admin, f)
-    return _student_rows(db.execute(statement).all())
+    return _student_rows(db, db.execute(statement).all())
 
 
 # ---------- Stats ----------
