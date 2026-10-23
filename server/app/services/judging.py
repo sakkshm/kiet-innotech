@@ -60,6 +60,8 @@ from ..schemas import (
     AwardInput,
     AwardOut,
     BufferInput,
+    ExtendRoomsInput,
+    ExtendRoomsOut,
     JudgeMemberOut,
     JudgeOut,
     JudgePanelOut,
@@ -280,7 +282,10 @@ def scoring_window(panel: Panel) -> tuple[datetime | None, datetime | None]:
     """When a department room's judges can submit marks: its slot, plus the room's buffer after it."""
     if panel.round != "department" or panel.slot_start is None or panel.slot_end is None:
         return None, None
-    return panel.slot_start, panel.slot_end + timedelta(minutes=panel.buffer_minutes)
+    closes = panel.slot_end + timedelta(minutes=panel.buffer_minutes)
+    if panel.scoring_extended_until is not None and panel.scoring_extended_until > closes:
+        closes = panel.scoring_extended_until
+    return panel.slot_start, closes
 
 
 def _locked(panel: Panel, link: PanelJuror, open_rounds: set[str], now: datetime) -> bool:
@@ -532,6 +537,7 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
             teams=by_panel[p.id],
             can_edit=viewer is not None and _can_edit(viewer, p),
             scoring_until=scoring_window(p)[1],
+            extended_until=p.scoring_extended_until,
             buffer_minutes=p.buffer_minutes,
             can_edit_marks=viewer is not None and _may_edit_marks(viewer, p, now),
         )
@@ -869,6 +875,44 @@ def set_buffer(db: Session, admin: Admin, panel_id: uuid.UUID, data: BufferInput
         panel.buffer_minutes = data.buffer_minutes
         db.commit()
     return _panels_out(db, [panel], admin)[0]
+
+
+def extend_rooms(db: Session, admin: Admin, data: ExtendRoomsInput) -> ExtendRoomsOut:
+    """
+    Super admin: judges can save marks in these department rooms until `until`, whatever the slot and buffer, and judges who
+    already locked can edit again. Clearing `until` takes the extension back (the judges' own locks stay as they are).
+    """
+    _require_super(admin)
+    now = utcnow()
+    if data.until is not None and not (now < data.until <= now + timedelta(days=7)):
+        raise ApiError("Choose a time from now up to a week ahead.", 422)
+    ids = sorted(set(data.panel_ids), key=str)
+    panels = list(db.scalars(select(Panel).where(Panel.id.in_(ids)).order_by(Panel.id).with_for_update()))
+    if len(panels) != len(ids):
+        raise ApiError("One of these rooms no longer exists. Reload the page.", 404)
+    if any(p.round != "department" for p in panels):
+        raise ApiError("Only department rooms have judging time to extend.", 422)
+    when = f"until {data.until.astimezone(rules.IST):%d %b, %I:%M %p} IST" if data.until else "taken back"
+    reason = " ".join(data.reason.split()) or "no reason given"
+    unlocked = 0
+    for panel in panels:
+        panel.scoring_extended_until = data.until
+        locked = list(db.scalars(select(PanelJuror).where(PanelJuror.panel_id == panel.id, PanelJuror.locked_at.is_not(None))))
+        if data.unlock_judges and data.until is not None:
+            for link in locked:
+                link.locked_at = None
+                unlocked += 1
+        audit.record(
+            db,
+            admin.email,
+            "judging.time_extended",
+            detail=f"{room_label(panel)}: judging time {when}"
+            + (f"; {len(locked)} locked judge(s) can edit again" if data.unlock_judges and data.until is not None and locked else "")
+            + f". Reason: {reason}",
+            department=panel.department,
+        )
+    db.commit()
+    return ExtendRoomsOut(rooms=len(panels), unlocked=unlocked, until=data.until)
 
 
 def _scored(db: Session, panel: Panel, *, team_ids: list[uuid.UUID] | None = None, juror_emails: list[str] | None = None) -> bool:

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { AlarmClock, CalendarClock, ChevronDown, Lock, LockOpen, MapPin, Pencil, Plus, Trash2, TriangleAlert, Undo2, UserCheck, UserCog, UserPlus, Users } from "lucide-react";
+import { AlarmClock, CalendarClock, ChevronDown, Clock, Lock, LockOpen, MapPin, Pencil, Plus, Trash2, TriangleAlert, Undo2, UserCheck, UserCog, UserPlus, Users } from "lucide-react";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import type { Judging, Juror, Panel, PanelJuror, PanelScore, PanelTeam, TeamSummary, Timetable } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -13,6 +13,7 @@ import { DEFAULT_BUFFER_MINUTES, freeFromLabel, MAX_BUFFER_MINUTES, MIN_REASON_L
 import { teamHref } from "@/lib/routes";
 import { useServerNow } from "@/lib/use-room-now";
 import { useQuery } from "@/lib/use-query";
+import { ExtendTimeDialog } from "./ExtendTimeDialog";
 import { JudgeHover } from "./JudgeHover";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -43,6 +44,8 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
   const isRooms = round === "department";
   const [department, setDepartment] = useState("");
   const [creating, setCreating] = useState(false);
+  const [extending, setExtending] = useState(false);
+  const [extended, setExtended] = useState<string | null>(null);
   const [editing, setEditing] = useState<Panel | null>(null);
   const [allotting, setAllotting] = useState<Panel | null>(null);
   const [staffing, setStaffing] = useState<Panel | null>(null);
@@ -137,6 +140,12 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
               <AttendanceButtons round="department" department={admin.department} label={`all ${admin.department} teams`} />
             </div>
           )}
+          {isRooms && isSuper && (
+            <Button variant="secondary" onClick={() => setExtending(true)}>
+              <Clock aria-hidden="true" className="size-4" />
+              Extend judging time
+            </Button>
+          )}
           {judging.canCreate && (
             <Button onClick={() => setCreating(true)}>
               <Plus aria-hidden="true" className="size-4" />
@@ -145,6 +154,19 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
           )}
         </div>
       </div>
+
+      {extended && <Notice tone="success">{extended}</Notice>}
+      {extending && (
+        <ExtendTimeDialog
+          panels={judging.panels}
+          onClose={() => setExtending(false)}
+          onDone={(message) => {
+            setExtending(false);
+            setExtended(message);
+            reload();
+          }}
+        />
+      )}
 
       {waiting.length > 0 ? (
         <Notice tone="warning" title={`${plural(waiting.length, "team")} not yet allotted to a ${isRooms ? "room" : "panel"}`}>

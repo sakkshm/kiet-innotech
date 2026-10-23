@@ -33,6 +33,8 @@ from ..schemas import (
     BufferInput,
     BulkOut,
     BulkTeamsInput,
+    ExtendRoomsInput,
+    ExtendRoomsOut,
     FinalistBoardOut,
     FinalistSummaryOut,
     JudgingOut,
@@ -548,6 +550,12 @@ def set_tents(data: TentsInput, admin: CurrentAdmin, db: Db, settings: AppSettin
 @router.post("/panels", status_code=status.HTTP_201_CREATED)
 def create_panel(data: PanelInput, admin: CurrentAdmin, db: Db) -> PanelOut:
     return judging.create_panel(db, admin, data)
+
+
+@router.post("/panels/extend")
+def extend_rooms(data: ExtendRoomsInput, admin: CurrentAdmin, db: Db) -> ExtendRoomsOut:
+    """Super admin: extends judging time for department rooms until a chosen time, and unlocks judges who already locked."""
+    return judging.extend_rooms(db, admin, data)
 
 
 @router.patch("/panels/{panel_id}")

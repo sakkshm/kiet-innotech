@@ -385,6 +385,7 @@ export const liveApi: AdminApi = {
   setTents: (tents) => request<Judging>("PUT", "/admin/judging/final/tents", { tents }),
   createPanel: (input) => request<Panel>("POST", "/admin/panels", input),
   updatePanel: (panelId, input) => request<Panel>("PATCH", `/admin/panels/${id(panelId)}`, input),
+  extendRooms: (panelIds, until, reason, unlockJudges) => request("POST", "/admin/panels/extend", { panelIds, until, reason, unlockJudges }),
   setPanelBuffer: (panelId, bufferMinutes) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/buffer`, { bufferMinutes }),
   deletePanel: (panelId) => request<void>("DELETE", `/admin/panels/${id(panelId)}`),
   setPanelTeams: (panelId, teamIds) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/teams`, { teamIds }),

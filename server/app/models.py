@@ -302,6 +302,8 @@ class Panel(Base):
     slot_end: Mapped[datetime | None] = mapped_column(Timestamp)
     # Department round: judges can still submit marks this many minutes after the slot ends (0 to 60).
     buffer_minutes: Mapped[int] = mapped_column(Integer, default=15, server_default=text("15"))
+    # Department round: a super admin extended judging for this room until then (past the slot and buffer), e.g. when judges had to leave.
+    scoring_extended_until: Mapped[datetime | None] = mapped_column(Timestamp)
     # Department round: the department whose teams are judged here.
     department: Mapped[str | None] = mapped_column(String(20), index=True)
     created_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)

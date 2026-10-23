@@ -72,6 +72,7 @@ export type AuditAction =
   | "judging.marks_locked"
   | "judging.marks_unlocked"
   | "judging.buffer_changed"
+  | "judging.time_extended"
   | "judging.judge_present"
   | "judging.judge_unmarked"
   | "judging.timetable_updated"
@@ -459,6 +460,8 @@ export type Panel = {
   canEdit: boolean;
   /** Department rooms: judges submit marks from the slot's start until this moment (slot end + the room's buffer). */
   scoringUntil: string | null;
+  /** Set when a super admin extended this room's judging time past its slot and buffer. */
+  extendedUntil?: string | null;
   /** Extra minutes after the slot in which the room's judges can still submit marks (0 to 60). */
   bufferMinutes: number;
   /** Whether the viewer may change the judges' marks in this room right now (super admins always; the department's own admin during the slot and buffer). */

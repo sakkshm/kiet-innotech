@@ -1033,3 +1033,36 @@ def test_the_leaderboard_ranks_each_problem_statement_against_the_finalist_quota
     # Super admins only: department admins and judges cannot open it.
     assert cse.get("/admin/leaderboard").status_code == 403 and it.get("/admin/leaderboard").status_code == 403
     assert judging["it_prof"].get("/admin/leaderboard").status_code == 403
+
+
+def test_a_super_admin_extends_judging_time_and_unlocks_judges(judging, monkeypatch):
+    root, cse, room = judging["root"], judging["cse"], judging["room"]
+    set_room(judging)
+    root.post("/admin/judging/department/open")
+    team = judging["teams"]["cse_a"]
+    judge = judging["it_prof"]
+    assert score(judge, room, team, FULL).status_code == 200
+    assert judge.post(f"/judge/panels/{room['id']}/lock").status_code == 200
+    # The room's time (slot 10:00 to 1:00 pm, buffer 15) runs out at 1:15 pm on 22 October.
+    after = datetime(2026, 10, 22, 21, 0, tzinfo=rules.IST)
+    monkeypatch.setattr(judging_service, "utcnow", lambda: after)
+    assert score(judge, room, judging["teams"]["cse_b"], FULL).status_code == 423
+    until = "2026-10-23T11:00:00+05:30"
+    body = {"panel_ids": [room["id"]], "until": until, "reason": "Judges had to leave campus"}
+    assert cse.post("/admin/panels/extend", body).status_code == 403
+    assert root.post("/admin/panels/extend", body | {"until": "2026-10-22T20:00:00+05:30"}).status_code == 422  # in the past
+    done = root.post("/admin/panels/extend", body)
+    assert done.status_code == 200 and (done.json()["rooms"], done.json()["unlocked"]) == (1, 1)
+    # The judge who had locked can save marks again, until the new time.
+    assert score(judge, room, judging["teams"]["cse_b"], FULL).status_code == 200
+    mine = judge.get("/judge").json()["panels"][0]
+    assert mine["locked"] is False and mine["scoring_until"].startswith("2026-10-23T05:30:00")
+    panel = next(p for p in root.get("/admin/judging/department").json()["panels"] if p["id"] == room["id"])
+    assert panel["extended_until"].startswith("2026-10-23T05:30:00") and panel["scoring_until"] == panel["extended_until"]
+    # After the new time it closes again.
+    monkeypatch.setattr(judging_service, "utcnow", lambda: datetime(2026, 10, 23, 12, 0, tzinfo=rules.IST))
+    assert score(judge, room, judging["teams"]["cse_c"], FULL).status_code == 423
+    # Taking it back restores the slot and buffer.
+    assert root.post("/admin/panels/extend", body | {"until": None}).status_code == 200
+    log = root.get("/admin/activity", params={"kind": "judging", "page_size": 100}).json()["items"]
+    assert [e["action"] for e in log].count("judging.time_extended") == 2

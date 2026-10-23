@@ -913,6 +913,8 @@ class PanelOut(BaseModel):
     can_edit: bool = False
     # Department rooms: judges submit marks from the slot's start until this moment (slot end + the room's buffer).
     scoring_until: datetime | None = None
+    # Set when a super admin extended this room's judging time beyond its slot and buffer.
+    extended_until: datetime | None = None
     buffer_minutes: int = rules.DEFAULT_BUFFER_MINUTES
     # Whether the caller may change submitted marks in this room right now (super admins always; the department's
     # own admin during the room's slot and buffer).
@@ -1345,6 +1347,21 @@ class BufferInput(Input):
 
 class PresentInput(Input):
     present: bool
+
+
+class ExtendRoomsInput(Input):
+    panel_ids: list[uuid.UUID] = Field(min_length=1, max_length=300)
+    # When judging ends for these rooms; null takes an extension back.
+    until: AwareDatetime | None
+    reason: str = Field(default="", max_length=500)
+    # Judges who already locked their marks in these rooms can edit again.
+    unlock_judges: bool = True
+
+
+class ExtendRoomsOut(BaseModel):
+    rooms: int
+    unlocked: int
+    until: datetime | None
 
 
 class UnlockInput(Input):

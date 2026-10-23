@@ -110,6 +110,8 @@ export interface AdminApi {
   updatePanel(id: string, input: PanelPlace): Promise<Panel>;
   /** Sets a department room's buffer: the extra minutes after its slot in which its judges can still submit marks (0 to 60). */
   setPanelBuffer(id: string, bufferMinutes: number): Promise<Panel>;
+  /** Super admin: judges keep submitting marks in these department rooms until `until` (null takes it back); judges who locked can edit again. */
+  extendRooms(panelIds: string[], until: string | null, reason: string, unlockJudges: boolean): Promise<{ rooms: number; unlocked: number; until: string | null }>;
   deletePanel(id: string): Promise<void>;
   setPanelTeams(id: string, teamIds: string[]): Promise<Panel>;
   setPanelJurors(id: string, jurors: { email: string }[]): Promise<Panel>;
