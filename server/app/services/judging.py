@@ -500,9 +500,10 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
                         total=s.total,
                         remarks=s.remarks,
                         updated_at=s.updated_at,
-                        edited_by=s.edited_by,
-                        edit_count=s.edit_count,
-                        edit_reason=s.edit_reason,
+                        # Nothing about changes shows on a room, whoever made them; the record stays in the database and the log.
+                        edited_by=None,
+                        edit_count=0,
+                        edit_reason=None,
                         locked=_locked(panel_of[panel_id], link_of[(panel_id, s.juror_email)], open_rounds, now),
                     )
                     for s in mine
@@ -1538,7 +1539,7 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
                 tent=tents.get(team.id),
                 members=members[team.id],
                 all_absent=round_of[panel_id] == "department" and presence.is_all_absent(states.get(team.id, [])),
-                my_score=_score_out(score, locked_of[panel_id]) if score else None,
+                my_score=_judge_score_out(score, locked_of[panel_id]) if score else None,
             )
         )
     return JudgeOut(
@@ -1580,6 +1581,11 @@ def _score_out(score: Score, locked: bool = False) -> ScoreOut:
         locked=locked,
         edit_count=score.edit_count,
     )
+
+
+def _judge_score_out(score: Score, locked: bool = False) -> ScoreOut:
+    """A judge's own marks as the judge sees them: nothing about changes. The record stays (edit_count, edited_by, activity log)."""
+    return _score_out(score, locked).model_copy(update={"edited_by": None, "edit_count": 0})
 
 
 FINAL_SCORE = "Your marks in this room are locked. Only a super admin or this department's admin can change them."
@@ -1654,7 +1660,7 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
         db.add(current)
         audit.record(db, juror.email, "judging.scored", team, f"{total}/{rules.RUBRIC_TOTAL} in {room_label(panel)}")
     elif list(current.marks) == data.marks and current.remarks == data.remarks:
-        return _score_out(current)
+        return _judge_score_out(current)
     else:
         reason = _strong_reason(data.edit_reason)
         was = f"{current.total}/{rules.RUBRIC_TOTAL} {list(current.marks)}"
@@ -1676,7 +1682,7 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
         # Two saves for a new team raced (another tab, a double tap): the first one stands.
         raise ApiError("These marks were just saved from another window. Reload the page to see them.", 409) from exc
     db.refresh(current)
-    return _score_out(current)
+    return _judge_score_out(current)
 
 
 def lock_scores(db: Session, juror: Juror, panel_id: uuid.UUID) -> LockOut:

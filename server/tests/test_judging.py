@@ -314,7 +314,8 @@ def test_scores_are_validated_and_scoped(judging):
     # Saving the same marks again is harmless and needs no reason.
     assert score(judge, room, team, [4, 3, 5, 2, 1, 0, 5, 5, 7]).status_code == 200
     changed = judge.put(f"/judge/panels/{room['id']}/teams/{team['id']}/score", edit | {"edit_reason": "I mis-typed the last mark"})
-    assert changed.status_code == 200 and changed.json()["total"] == 49 and changed.json()["edit_count"] == 1
+    # Nothing about changes is shown to the judge; the count is kept in the record (the admin responses below show it).
+    assert changed.status_code == 200 and changed.json()["total"] == 49 and changed.json()["edit_count"] == 0
     # Once the judge locks their marks in the room, they are final for the judge.
     lock = judge.post(f"/judge/panels/{room['id']}/lock")
     assert lock.status_code == 200 and lock.json() == {"locked": 1, "unscored": 2}
@@ -960,3 +961,42 @@ def test_a_judge_can_sit_in_several_rooms_one_at_a_time(judging):
         },
     )
     assert later.status_code == 200, later.text
+
+
+def test_changed_marks_are_not_flagged_to_judges_or_on_the_room(judging):
+    root, cse, room = judging["root"], judging["cse"], judging["room"]
+    set_room(judging)
+    root.post("/admin/judging/department/open")
+    team = judging["teams"]["cse_a"]
+    judge = judging["it_prof"]
+    assert score(judge, room, team, FULL).status_code == 200
+    # The judge changes their own marks (with a reason), then a department admin and a super admin change them too.
+    own = judge.put(
+        f"/judge/panels/{room['id']}/teams/{team['id']}/score",
+        {"marks": [4] * 8 + [9], "remarks": "", "edit_reason": "I changed my mind about this"},
+    )
+    assert own.status_code == 200 and own.json()["edit_count"] == 0 and own.json()["edited_by"] is None
+    path = f"/admin/panels/{room['id']}/teams/{team['id']}/scores/it.prof@kiet.edu"
+    assert cse.put(path, {"marks": [5] * 8 + [8], "remarks": "", "reason": "Judge asked to correct a typo"}).status_code == 200
+    assert root.put(path, {"marks": [3] * 8 + [8], "remarks": "", "reason": ""}).status_code == 200
+
+    def mark_of(admin):
+        panel = next(p for p in admin.get("/admin/judging/department").json()["panels"] if p["id"] == room["id"])
+        return next(s for t in panel["teams"] if t["id"] == team["id"] for s in t["judge_scores"] if s["juror_email"] == "it.prof@kiet.edu")
+
+    # The marks stand, and nothing marks them as changed: not for the super admin, not for the department admin.
+    for who in (root, cse):
+        shown = mark_of(who)
+        assert shown["total"] == 32
+        assert (shown["edit_count"], shown["edited_by"], shown["edit_reason"]) == (0, None, None)
+    # The judge sees only the marks.
+    mine = next(t for t in judge.get("/judge").json()["panels"][0]["teams"] if t["id"] == team["id"])["my_score"]
+    assert mine["total"] == 32 and mine["edit_count"] == 0 and mine["edited_by"] is None
+
+    # The record is kept: the activity log has all three changes for super admins. Department admins do not see any of them.
+    def edits(who):
+        items = who.get("/admin/activity", params={"kind": "judging", "page_size": 100}).json()["items"]
+        return [e["actor_email"] for e in items if e["action"] == "judging.score_edited"]
+
+    assert sorted(edits(root)) == ["cse.admin@kiet.edu", "it.prof@kiet.edu", "root@kiet.edu"]
+    assert edits(cse) == []

@@ -2042,9 +2042,11 @@ def remove_admin(db: Session, admin: Admin, email: str, settings: Settings) -> N
 def _audit_scope(admin: Admin) -> ColumnElement[bool]:
     if _is_super(admin):
         return AuditEntry.id.is_not(None)
+    # A change of a judge's marks (by the judge, a department admin or a super admin) is in the activity log for super admins only.
+    shown = AuditEntry.action != "judging.score_edited"
     if types := type_scope(admin):
-        return AuditEntry.participant_type.in_(types)
-    return AuditEntry.department == admin.department
+        return and_(AuditEntry.participant_type.in_(types), shown)
+    return and_(AuditEntry.department == admin.department, shown)
 
 
 def _audit_out(entry: AuditEntry) -> AuditOut:
