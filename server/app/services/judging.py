@@ -1370,9 +1370,10 @@ def leaderboard(db: Session, admin: Admin, settings: Settings, department: str |
     The department round's leaderboard, department by department and problem statement by problem statement, from the same
     rankings (average of both judges, then innovation, then query addressing). The first teams up to the department's
     finalist quota for that problem statement are in line for the Grand Finale; departments still nominate their finalists.
+    Super admins only.
     """
-    if admin.role == "admin" and admin.department == rules.CLUB_DEPARTMENT:
-        raise ApiError("COE KIET teams go straight to the Grand Finale, so they have no department leaderboard.", 403)
+    if admin.role != "super_admin":
+        raise ApiError("The leaderboard is for super admins only.", 403)
     ranked = rankings(db, admin, "department", department)
     quota = admin_service.quotas(db)
     nominated = set(db.scalars(select(FinalistNomination.team_id)))

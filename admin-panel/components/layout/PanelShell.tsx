@@ -39,7 +39,7 @@ const nav: { title: string; items: NavItem[] }[] = [
   {
     title: "Event",
     items: [
-      { href: "/leaderboard", label: "Leaderboard", Icon: Medal, roles: ["super_admin", "admin"] },
+      { href: "/leaderboard", label: "Leaderboard", Icon: Medal, roles: ["super_admin"] },
       { href: "/finalists", label: "Finalists", Icon: Trophy, roles: ["super_admin", "admin"] },
       { href: "/judging", label: "Judging", Icon: Scale, roles: ORGANISERS },
       { href: "/attendance-report", label: "Student attendance", Icon: UserCheck, roles: ["super_admin", "admin"] },
@@ -61,7 +61,6 @@ function visible(item: NavItem, admin: AdminUser) {
   if (item.href === "/attendance-report" && admin.role === "admin" && admin.department === clubDepartment) return false;
   // COE KIET teams go straight to the Grand Finale, so their admin has no finalists to nominate.
   if (item.href === "/finalists" && admin.role === "admin" && admin.department === clubDepartment) return false;
-  if (item.href === "/leaderboard" && admin.role === "admin" && admin.department === clubDepartment) return false;
   return item.roles.includes(admin.role) || (item.href === "/judge" && admin.judge === true);
 }
 

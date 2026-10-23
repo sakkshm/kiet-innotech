@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Crown, FileSpreadsheet, Medal, RefreshCw, Scale, Trophy, Users } from "lucide-react";
+import { ChevronDown, Crown, FileSpreadsheet, Medal, RefreshCw, Scale, Trophy, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import type { Leaderboard, LeaderboardCategory, LeaderboardTeam } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -27,10 +27,23 @@ const podium = ["bg-amber-400 text-white ring-amber-300", "bg-slate-300 text-nav
 
 /**
  * The department round's leaderboard: every department, every problem statement (PS), ranked by the average of both
- * judges, with the department's finalist places (the event document's quotas, as super admins set them) marked. Super
- * admins see every department; a department's admin sees their own. It refreshes by itself every minute.
+ * judges, with the department's finalist places (the event document's quotas, as super admins set them) marked. For
+ * super admins only. It refreshes by itself every minute.
  */
 export function LeaderboardView() {
+  const admin = useAdmin();
+  if (admin.role !== "super_admin") {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow="Department round" title="Leaderboard" />
+        <Notice tone="info">The leaderboard is for super admins only.</Notice>
+      </div>
+    );
+  }
+  return <Board />;
+}
+
+function Board() {
   const admin = useAdmin();
   const isSuper = admin.role === "super_admin";
   const { params, update } = useUrlParams();
@@ -228,7 +241,13 @@ function standing(team: LeaderboardTeam, category: LeaderboardCategory): { label
   return { label: "Below the cut-off", tone: "slate" };
 }
 
+/** How many teams a problem statement shows before the rest fold away. */
+const SHOWN = 5;
+
 function CategoryCard({ category }: { category: LeaderboardCategory }) {
+  const [open, setOpen] = useState(false);
+  const hidden = Math.max(0, category.teams.length - SHOWN);
+  const shown = open ? category.teams : category.teams.slice(0, SHOWN);
   const cut = category.teams.findIndex((t) => !t.inLine);
   const hasCut = cut > 0 && category.teams.slice(0, cut).every((t) => t.inLine);
   return (
@@ -251,7 +270,7 @@ function CategoryCard({ category }: { category: LeaderboardCategory }) {
         <p className="px-4 py-6 text-center text-sm text-muted">No team in this problem statement yet.</p>
       ) : (
         <ol className="divide-y divide-line">
-          {category.teams.map((t, index) => {
+          {shown.map((t, index) => {
             const s = standing(t, category);
             return (
               <li key={t.team.id}>
@@ -298,6 +317,17 @@ function CategoryCard({ category }: { category: LeaderboardCategory }) {
             );
           })}
         </ol>
+      )}
+      {hidden > 0 && (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center justify-center gap-1.5 border-t border-line bg-surface/60 px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-surface"
+        >
+          <ChevronDown aria-hidden="true" className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
+          {open ? "Show only the top 5" : `Show ${plural(hidden, "more team")}`}
+        </button>
       )}
       {category.tieAtCut && (
         <p className="flex items-center gap-1.5 border-t border-line bg-accent-50 px-4 py-2 text-xs font-semibold text-accent-600">
