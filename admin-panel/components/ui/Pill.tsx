@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 import { resultLabels, statusLabels } from "@/lib/format";
 import type { TeamResult, TeamStatus } from "@/lib/types";
 
-export type PillTone = "slate" | "green" | "red" | "orange" | "cyan" | "navy" | "violet";
+export type PillTone = "slate" | "green" | "greenOutline" | "red" | "orange" | "cyan" | "navy" | "violet";
 
 const tones: Record<PillTone, string> = {
   slate: "bg-slate-100 text-slate-700 ring-slate-200",
   green: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  // Present, but only by default: green like a present student, drawn as an outline because nobody has marked them.
+  greenOutline: "bg-white text-emerald-700 ring-emerald-400",
   red: "bg-red-50 text-red-700 ring-red-200",
   orange: "bg-accent-50 text-accent-600 ring-accent-100",
   // An information blue, kept apart from the brand orange so it still contrasts with "orange" pills.

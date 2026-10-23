@@ -10,9 +10,9 @@ import { Switch } from "@/components/ui/Switch";
 export type AttendanceMember = { userId: string; fullName: string; role: "leader" | "member"; state: AttendanceState };
 
 const words: Record<AttendanceState, { text: string; tone: string }> = {
-  present: { text: "Present", tone: "text-emerald-700" },
+  present: { text: "Present (marked)", tone: "text-emerald-700" },
   absent: { text: "Absent", tone: "text-red-700" },
-  not_marked: { text: "Not marked, counts as present", tone: "text-muted" },
+  not_marked: { text: "Present (default): not marked yet", tone: "text-emerald-700" },
 };
 
 /**

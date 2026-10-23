@@ -453,6 +453,7 @@ def presence_report(
                 roll_number=profile.roll_number,
                 year=profile.year,
                 course=profile.course,
+                student_department=profile.department,
                 phone=profile.phone,
                 state=m.state,
                 marked_by=m.marked_by,

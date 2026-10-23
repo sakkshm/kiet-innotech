@@ -29,6 +29,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { lastPage, PageSizeSelect, Pagination } from "@/components/ui/Pagination";
 import { SelectionBar } from "@/components/ui/SelectionBar";
 import { Pill, StatusPill } from "@/components/ui/Pill";
+import { stateHelp, stateLabels, stateTone } from "@/lib/attendance-report";
 import { SearchBox } from "@/components/ui/SearchBox";
 import { SortableTh, TableFrame, tdClass, Th } from "@/components/ui/Table";
 
@@ -342,9 +343,9 @@ export function StudentsView() {
                       </td>
                       <td className={`${tdClass} whitespace-nowrap`}>
                         {s.attendance ? (
-                          <Pill tone={s.attendance === "present" ? "green" : s.attendance === "absent" ? "red" : "slate"}>
-                            {s.attendance === "present" ? "Present" : s.attendance === "absent" ? "Absent" : "Not marked"}
-                          </Pill>
+                          <span title={stateHelp[s.attendance]}>
+                            <Pill tone={stateTone[s.attendance]}>{stateLabels[s.attendance]}</Pill>
+                          </span>
                         ) : (
                           <span className="text-muted" title="Shown once the student's team has a department room">
                             —

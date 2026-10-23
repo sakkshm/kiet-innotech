@@ -1063,6 +1063,8 @@ class AttendanceReportRow(BaseModel):
     roll_number: str
     year: int
     course: str
+    # The student's own department, which can differ from the team's (a team has members from other branches).
+    student_department: str | None = None
     phone: str
     state: AttendanceState
     marked_by: str | None

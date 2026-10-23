@@ -134,6 +134,9 @@ def test_the_attendance_report(judging, as_user):  # noqa: F811
     # Only super admins and department admins. A judge cannot use the admin report.
     assert judging["it_prof"].get("/admin/attendance/report").status_code == 403
     assert report(root, department="CSE")["items"][0]["roll_number"] is not None
+    # Each row carries the student's own department: b@kiet.edu is an IT student in a CSE team.
+    own = [r["student_department"] for r in report(root, department="CSE")["items"]]
+    assert sorted(set(own)) == ["CSE", "IT"] and own.count("IT") == 1
 
 
 def test_the_students_list_shows_an_attendance_badge(judging, as_user):  # noqa: F811

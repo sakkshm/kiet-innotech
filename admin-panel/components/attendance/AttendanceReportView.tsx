@@ -7,7 +7,7 @@ import { api, errorMessage } from "@/lib/api";
 import type { AttendanceReportQuery, AttendanceReportRow, AttendanceState } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { departmentLabel, nominatingDepartments } from "@/lib/content";
-import { downloadAttendanceReportCsv, downloadAttendanceReportPdf, filterSummary, stateLabels } from "@/lib/attendance-report";
+import { downloadAttendanceReportCsv, downloadAttendanceReportPdf, filterSummary, stateHelp, stateLabels, stateTone } from "@/lib/attendance-report";
 import { formatDateTime, plural } from "@/lib/format";
 import { roomLabel } from "@/lib/rooms";
 import { yearLabel } from "@/lib/rules";
@@ -24,10 +24,10 @@ import { Pill } from "@/components/ui/Pill";
 import { SearchBox } from "@/components/ui/SearchBox";
 import { Switch } from "@/components/ui/Switch";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { AttendanceDownloads } from "./AttendanceDownloads";
 import { TableFrame, tdClass, Th } from "@/components/ui/Table";
 
 const states: AttendanceState[] = ["present", "absent", "not_marked"];
-const stateTone = { present: "green", absent: "red", not_marked: "slate" } as const;
 const dayOnly = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 const timeOnly = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
@@ -107,12 +107,12 @@ export function AttendanceReportView() {
       <PageHeader
         eyebrow="Event day"
         title="Attendance report"
-        description={`Every student of the department round${isSuper ? "" : ` in ${admin.department}`}: present, absent, or not marked. Judges mark attendance in the room; everyone counts as present until marked absent, and a team whose students are all absent scores 0. You can change a student here at any time.`}
+        description={`Every student of the department round${isSuper ? "" : ` in ${admin.department}`}. Judges mark attendance in the room. Everyone counts as present until somebody marks them absent, and a team whose students are all absent scores 0. You can change a student here at any time.`}
         actions={
           <div className="flex w-max gap-2">
             <Button variant="secondary" onClick={() => download("pdf")} pending={downloading === "pdf"} disabled={downloading !== null || !data || data.total === 0}>
               {downloading !== "pdf" && <FileDown aria-hidden="true" className="size-4" />}
-              PDF
+              PDF<span className="sr-only"> of this list</span>
             </Button>
             <Button variant="secondary" onClick={() => download("csv")} pending={downloading === "csv"} disabled={downloading !== null || !data || data.total === 0}>
               {downloading !== "csv" && <FileSpreadsheet aria-hidden="true" className="size-4" />}
@@ -121,6 +121,24 @@ export function AttendanceReportView() {
           </div>
         }
       />
+
+      <AttendanceDownloads isSuper={isSuper} department={admin.department ?? null} />
+
+      <div>
+        <h2 className="font-display text-lg font-bold text-navy-900">Students</h2>
+        <p className="text-sm text-muted">
+          The list below follows your filters; its PDF and CSV buttons (top right) download exactly what you see. For the full sheets, use the downloads above.
+        </p>
+      </div>
+
+      <ul className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-navy-800" aria-label="What the statuses mean">
+        {(["present", "not_marked", "absent"] as const).map((s) => (
+          <li key={s} className="flex items-center gap-1.5">
+            <Pill tone={stateTone[s]}>{stateLabels[s]}</Pill>
+            <span className="text-muted">{stateHelp[s]}</span>
+          </li>
+        ))}
+      </ul>
 
       <form role="search" onSubmit={(e) => e.preventDefault()} className="space-y-3">
         <SearchBox key={searchKey} id="attendance-search" label="Search students" placeholder="Student name, roll number, team code or team name" value={query.q ?? ""} onSearch={(q) => update({ q })} />
@@ -175,9 +193,9 @@ export function AttendanceReportView() {
           <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" aria-label="Totals for these filters">
             {[
               ["Students", data.total, "bg-surface/70 ring-line"],
-              ["Present", data.present, "bg-emerald-50 ring-emerald-200"],
-              ["Absent", data.absent, "bg-red-50 ring-red-200"],
-              ["Not marked", data.notMarked, "bg-surface/70 ring-line"],
+              [stateLabels.present, data.present, "bg-emerald-50 ring-emerald-200"],
+              [stateLabels.not_marked, data.notMarked, "bg-white ring-emerald-300"],
+              [stateLabels.absent, data.absent, "bg-red-50 ring-red-200"],
               ["Teams", data.teams, "bg-surface/70 ring-line"],
               ["Teams scoring 0", data.teamsAllAbsent, data.teamsAllAbsent > 0 ? "bg-red-50 ring-red-200" : "bg-surface/70 ring-line"],
             ].map(([label, value, tone]) => (
@@ -258,7 +276,9 @@ export function AttendanceReportView() {
                       <td className={tdClass}>
                         <span className="flex items-center gap-2.5">
                           <Switch checked={row.state !== "absent"} onChange={(present) => change(row, present)} pending={busy === row.userId} label={`Present: ${row.fullName}`} />
-                          <Pill tone={stateTone[row.state]}>{stateLabels[row.state]}</Pill>
+                          <span title={stateHelp[row.state]}>
+                            <Pill tone={stateTone[row.state]}>{stateLabels[row.state]}</Pill>
+                          </span>
                         </span>
                       </td>
                       <td className={tdClass}>
@@ -268,7 +288,7 @@ export function AttendanceReportView() {
                             <span className="block text-xs text-muted">{formatDateTime(row.markedAt)}</span>
                           </>
                         ) : (
-                          <span className="text-xs text-muted">Not marked yet</span>
+                          <span className="text-xs text-muted">Nobody has marked this student</span>
                         )}
                       </td>
                     </tr>

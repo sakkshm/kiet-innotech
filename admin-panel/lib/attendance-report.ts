@@ -7,7 +7,27 @@ import { asText, csvFilename, downloadBlob, downloadCsv, toCsv } from "./csv";
 import { formatCsvDateTime, formatIst } from "./format";
 import { yearLabel } from "./rules";
 
-export const stateLabels: Record<AttendanceState, string> = { present: "Present", absent: "Absent", not_marked: "Not marked" };
+/**
+ * One vocabulary for every screen. Everybody counts as present until a judge or admin marks them absent, so "not marked"
+ * is a way of being present: "Present (default)". "Present (marked)" is a student somebody ticked present.
+ */
+export const stateLabels: Record<AttendanceState, string> = { present: "Present (marked)", absent: "Absent", not_marked: "Present (default)" };
+
+/** What each state means, in a sentence, for tooltips and legends. */
+export const stateHelp: Record<AttendanceState, string> = {
+  present: "A judge or admin marked this student present.",
+  absent: "A judge or admin marked this student absent.",
+  not_marked: "Nobody has marked this student yet, so they count as present until somebody marks them absent.",
+};
+
+/** The final answer as counted: present (marked or by default) or absent. What the downloaded sheets show first. */
+export const finalLabel = (state: AttendanceState) => (state === "absent" ? "Absent" : "Present");
+
+/** How that answer came about, for the column next to it. */
+export const recordedLabel = (state: AttendanceState) => (state === "present" ? "Marked present" : state === "absent" ? "Marked absent" : "Not marked (counts as present)");
+
+/** The pill tone for a state: green when marked present, outlined green when present by default, red when absent. */
+export const stateTone = { present: "green", absent: "red", not_marked: "greenOutline" } as const;
 
 const dayLabel = (day: string | null) => (day ? new Date(`${day}T12:00:00+05:30`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) : "");
 const time = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
@@ -50,7 +70,7 @@ export async function downloadAttendanceReportPdf(report: AttendanceReport, filt
   doc.text("InnoTech26 · Department round attendance", 12, 14);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  const summary = `${report.total} students · ${report.present} present · ${report.absent} absent · ${report.notMarked} not marked (counted present) · ${report.teams} teams, ${report.teamsAllAbsent} scoring 0`;
+  const summary = `${report.total} students · ${report.present} marked present · ${report.notMarked} present by default (not marked) · ${report.absent} absent · ${report.teams} teams, ${report.teamsAllAbsent} scoring 0`;
   doc.text(summary, 12, 21, { maxWidth: 270 });
   doc.setTextColor(90, 103, 132);
   doc.text([filters.length ? filters.join("   ·   ") : "All students in scope", `Printed ${formatIst(new Date().toISOString())}`].join("   ·   "), 12, 26, { maxWidth: 270 });

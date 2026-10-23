@@ -536,6 +536,8 @@ export type AttendanceReportRow = {
   rollNumber: string;
   year: number;
   course: string;
+  /** The student's own department, which can differ from the team's (mixed-branch teams). */
+  studentDepartment?: string | null;
   phone: string;
   state: AttendanceState;
   markedBy: string | null;
