@@ -10,7 +10,6 @@ import {
   downloadAttendanceCsv,
   downloadAttendanceExcel,
   downloadAttendancePdf,
-  attendanceCsv,
   fileBase,
   scopeText,
   slotText,
@@ -18,12 +17,12 @@ import {
   stateLabels,
   stateTone,
 } from "@/lib/attendance-students";
-import { downloadBlob } from "@/lib/csv";
 import { formatDateTime, plural } from "@/lib/format";
 import { yearLabel } from "@/lib/rules";
 import { useQuery } from "@/lib/use-query";
 import { useSelection } from "@/lib/use-selection";
 import { intParam, pageSizeParam, pickParam, useUrlParams } from "@/lib/use-url-params";
+import { AttendanceSlotSheets } from "./AttendanceSlotSheets";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmDialog } from "@/components/ui/Dialog";
@@ -246,18 +245,21 @@ export function AttendanceRollCall() {
             </div>
           </dl>
 
-          {/* Downloads: what is on screen, in files */}
-          <section aria-labelledby="download-title" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-navy-950 px-4 py-3.5 text-white">
+          {/* The sheet for each time slot, with that slot's own departments */}
+          <AttendanceSlotSheets department={isSuper ? query.department : undefined} />
+
+          {/* Downloads: exactly what is listed below */}
+          <section aria-labelledby="download-title" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3.5 ring-1 ring-line">
             <div className="flex min-w-0 items-start gap-3">
-              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent-500">
+              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-surface text-navy-900">
                 <Download aria-hidden="true" className="size-5" />
               </span>
               <div className="min-w-0">
-                <h2 id="download-title" className="font-display text-base font-bold">
-                  Download {plural(data.total, "student")}
+                <h2 id="download-title" className="font-display text-base font-bold text-navy-900">
+                  Or download exactly what is listed below ({plural(data.total, "student")})
                 </h2>
-                <p className="text-xs text-white/70">
-                  {scope.join(" · ")}. Files go department by department (A to Z), year by year, students in alphabetical order. Change the filters above to download a different list.
+                <p className="text-xs text-muted">
+                  {scope.join(" · ")}. Department by department (A to Z), year by year, students in alphabetical order. Change the filters above for a different list.
                 </p>
               </div>
             </div>
@@ -266,7 +268,7 @@ export function AttendanceRollCall() {
                 <Button
                   key={key}
                   size="sm"
-                  variant={key === "pdf" ? "primary" : "secondary"}
+                  variant="secondary"
                   onClick={() => download(key)}
                   pending={downloading === key}
                   disabled={downloading !== null || data.total === 0}
@@ -308,7 +310,7 @@ export function AttendanceRollCall() {
             selectingAll={selectingAll}
             onSelectAll={selectAllMatching}
             onClear={selection.clear}
-            onExport={() => downloadBlob(`innotech26-attendance-selected-${new Date().toISOString().slice(0, 10)}.csv`, new Blob(["﻿", attendanceCsv(selection.rows)], { type: "text/csv;charset=utf-8" }))}
+            onExport={() => downloadAttendanceCsv(selection.rows, "attendance-selected-students")}
             actions={
               <>
                 <Button size="sm" onClick={() => setMarking(true)} disabled={busy !== null}>
