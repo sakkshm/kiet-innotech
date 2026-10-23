@@ -55,6 +55,7 @@ const nav: { title: string; items: NavItem[] }[] = [
 ];
 
 function visible(item: NavItem, admin: AdminUser) {
+  if (item.href === "/activity") return false;
   // Attendance by event pass is switched off for now.
   if (item.href === "/attendance" && !attendanceEnabled) return false;
   // COE KIET has no department round, so its admin has no attendance to report.
