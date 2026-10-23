@@ -41,7 +41,7 @@ const nav: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/finalists", label: "Finalists", Icon: Trophy, roles: ["super_admin", "admin"] },
       { href: "/judging", label: "Judging", Icon: Scale, roles: ORGANISERS },
-      { href: "/attendance-report", label: "Attendance report", Icon: UserCheck, roles: ["super_admin", "admin"] },
+      { href: "/attendance-report", label: "Student attendance", Icon: UserCheck, roles: ["super_admin", "admin"] },
       { href: "/attendance", label: "Attendance", Icon: QrCode, roles: ORGANISERS },
       { href: "/judge", label: "My judging", Icon: ClipboardCheck, roles: ["judge"] },
       { href: "/schedule", label: "Schedule", Icon: CalendarClock, roles: ["super_admin"] },

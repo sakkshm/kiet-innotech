@@ -140,8 +140,7 @@ function AttendanceBadge({ attendance }: { attendance: "present" | "absent" | "n
   const look = {
     present: ["Present", "bg-emerald-50 text-emerald-800 ring-emerald-200"],
     absent: ["Absent", "bg-red-50 text-red-800 ring-red-200"],
-    // Everyone counts as present until the judges mark them absent, so this is a way of being present.
-    not_marked: ["Present (default)", "bg-white text-emerald-700 ring-emerald-400"],
+    not_marked: ["Not marked yet", "bg-surface text-muted ring-line"],
   }[attendance];
   return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ring-inset ${look[1]}`}>{look[0]}</span>;
 }
@@ -169,10 +168,10 @@ function AttendanceLine({ attendance, presentAt }: { attendance: "present" | "ab
   }
   return (
     <p className="flex items-start gap-2 rounded-xl bg-surface px-3 py-2 text-sm font-semibold text-ink">
-      <CircleHelp size={18} className="mt-0.5 shrink-0 text-emerald-700" aria-hidden="true" />
+      <CircleHelp size={18} className="mt-0.5 shrink-0 text-muted" aria-hidden="true" />
       <span>
-        Attendance: present (default)
-        <span className="block font-normal text-muted">The judges have not marked you yet. You count as present unless they mark you absent, so be in your room on time.</span>
+        Attendance: not marked yet
+        <span className="block font-normal text-muted">You are marked present once the organisers or the judges mark you in your room, so be there on time.</span>
       </span>
     </p>
   );

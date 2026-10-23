@@ -39,6 +39,8 @@ from ..schemas import (
     JurorInput,
     JurorOut,
     ManualAttendanceInput,
+    MarkStudentsInput,
+    MarkStudentsOut,
     NominationsInput,
     OpenNowInput,
     PanelInput,
@@ -55,6 +57,7 @@ from ..schemas import (
     ReadinessOut,
     ReasonInput,
     RestoreInput,
+    RollCallOut,
     RoundOut,
     ScanInput,
     ScanOut,
@@ -77,7 +80,7 @@ from ..schemas import (
     UnpublishInput,
 )
 from ..services import admin as service
-from ..services import attendance, judging, schedule
+from ..services import attendance, judging, rollcall, schedule
 from ..services.admin import ActivityFilters, StudentFilters, TeamFilters
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -474,6 +477,42 @@ def attendance_report_export(
     return attendance.presence_report(
         db, admin, department=department, day=date, state=state, panel_id=panel_id, q=q, team_zero=team_zero, page=1, page_size=None
     )
+
+
+@router.get("/attendance/students")
+def attendance_students(
+    admin: CurrentAdmin,
+    db: Db,
+    department: Annotated[str | None, Query(max_length=20)] = None,
+    year: Annotated[int | None, Query(ge=1, le=12)] = None,
+    slot: Annotated[str | None, Query(max_length=100)] = None,
+    state: Annotated[Literal["present", "absent", "not_marked"] | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    page: Annotated[int, Query(ge=1, le=10_000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> RollCallOut:
+    """The department round's students by department and year, present or absent (nobody is present until marked)."""
+    return rollcall.roll_call(db, admin, department=department, year=year, slot=slot, state=state, q=q, page=page, page_size=page_size)
+
+
+@router.get("/attendance/students/export")
+def attendance_students_export(
+    admin: CurrentAdmin,
+    db: Db,
+    department: Annotated[str | None, Query(max_length=20)] = None,
+    year: Annotated[int | None, Query(ge=1, le=12)] = None,
+    slot: Annotated[str | None, Query(max_length=100)] = None,
+    state: Annotated[Literal["present", "absent", "not_marked"] | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+) -> RollCallOut:
+    """Everything the filters match, for the PDF, Excel and CSV downloads."""
+    return rollcall.roll_call(db, admin, department=department, year=year, slot=slot, state=state, q=q, page=1, page_size=None)
+
+
+@router.post("/attendance/students/mark")
+def mark_attendance_students(data: MarkStudentsInput, admin: CurrentAdmin, db: Db) -> MarkStudentsOut:
+    """Marks students present or absent in one go; a department's admin only their own department's students."""
+    return rollcall.mark_students(db, admin, data.user_ids, data.present)
 
 
 @router.post("/attendance/scan")

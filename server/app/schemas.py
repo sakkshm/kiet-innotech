@@ -1086,6 +1086,65 @@ class AttendanceReportOut(BaseModel):
     teams_all_absent: int
 
 
+class RollCallRow(BaseModel):
+    """One student of the department round. No team: attendance is about the student, their department and year."""
+
+    user_id: uuid.UUID
+    full_name: str
+    roll_number: str
+    year: int
+    course: str
+    department: str | None
+    # When the student is judged (their team's room, or the department's planned slot before a room is allotted).
+    slot_start: datetime | None
+    slot_end: datetime | None
+    # present and absent are marks; not_marked counts as absent until somebody marks the student present.
+    state: AttendanceState
+    marked_by: str | None
+    marked_at: datetime | None
+
+
+class RollCallSlot(BaseModel):
+    # What to send back as the slot filter.
+    key: str
+    start: datetime | None
+    end: datetime | None
+
+
+class RollCallOut(BaseModel):
+    items: list[RollCallRow]
+    total: int
+    page: int
+    page_size: int
+    # Over the department, year, slot and search filters (not the status filter), so the counts stay put while you filter by status.
+    students: int
+    present: int
+    absent: int
+    not_marked: int
+    # Students per year over every filter except the year itself, and the slots over every filter except the slot.
+    years: dict[int, int]
+    slots: list[RollCallSlot]
+
+
+class MarkStudentsInput(Input):
+    user_ids: list[uuid.UUID] = Field(min_length=1, max_length=3000)
+    present: bool
+
+
+class SkippedStudent(BaseModel):
+    full_name: str
+    roll_number: str
+    reason: str
+
+
+class MarkStudentsOut(BaseModel):
+    changed: int
+    # Already in the state asked for.
+    unchanged: int
+    skipped: list[SkippedStudent]
+    not_found: int
+
+
 class ManualAttendanceInput(Input):
     user_id: uuid.UUID
     round: rules.JudgingRound

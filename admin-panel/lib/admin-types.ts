@@ -518,57 +518,56 @@ export type PresenceMember = {
 /** A team's students after a change of attendance. When every one is absent the team scores 0. */
 export type TeamPresence = { teamId: string; members: PresenceMember[]; allAbsent: boolean };
 
-/** One student of the department round in the attendance report. */
-export type AttendanceReportRow = {
+/** One student of the department round, for the attendance list: no team, just who they are and when they are judged. */
+export type RollCallRow = {
   userId: string;
-  teamId: string;
-  teamCode: string;
-  teamName: string;
-  category: number;
-  department: string | null;
-  room: string | null;
-  slotStart: string | null;
-  slotEnd: string | null;
-  /** The IST day the team is judged (YYYY-MM-DD). */
-  day: string | null;
   fullName: string;
-  role: "leader" | "member";
   rollNumber: string;
   year: number;
   course: string;
-  /** The student's own department, which can differ from the team's (mixed-branch teams). */
-  studentDepartment?: string | null;
-  phone: string;
+  department: string | null;
+  slotStart: string | null;
+  slotEnd: string | null;
+  /** present and absent are marks. not_marked counts as absent until somebody marks the student present. */
   state: AttendanceState;
   markedBy: string | null;
   markedAt: string | null;
-  teamAllAbsent: boolean;
 };
 
-export type AttendanceReport = {
-  items: AttendanceReportRow[];
+export type RollCallSlot = { key: string; start: string | null; end: string | null };
+
+export type RollCall = {
+  items: RollCallRow[];
   total: number;
   page: number;
   pageSize: number;
-  /** Over everything the filters match, not only this page. */
+  /** Over the department, year, slot and search filters but not the status, so the counts stay put while you filter by status. */
+  students: number;
   present: number;
   absent: number;
   notMarked: number;
-  teams: number;
-  teamsAllAbsent: number;
+  /** Students per year over every filter except the year itself; the slots over every filter except the slot. */
+  years: Record<string, number>;
+  slots: RollCallSlot[];
 };
 
-export type AttendanceReportQuery = {
+export type RollCallQuery = {
   department?: string;
-  /** YYYY-MM-DD, IST. */
-  date?: string;
+  year?: number;
+  /** A slot's key from RollCall.slots. */
+  slot?: string;
   state?: AttendanceState;
-  panelId?: string;
   q?: string;
-  /** Only teams whose students are all absent (they score 0). */
-  teamZero?: boolean;
   page?: number;
   pageSize?: number;
+};
+
+export type MarkStudentsResult = {
+  changed: number;
+  /** Already in the state asked for. */
+  unchanged: number;
+  skipped: { fullName: string; rollNumber: string; reason: string }[];
+  notFound: number;
 };
 
 export type AttendanceMember = {

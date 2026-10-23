@@ -29,7 +29,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { lastPage, PageSizeSelect, Pagination } from "@/components/ui/Pagination";
 import { SelectionBar } from "@/components/ui/SelectionBar";
 import { Pill, StatusPill } from "@/components/ui/Pill";
-import { stateHelp, stateLabels, stateTone } from "@/lib/attendance-report";
+import { stateHelp, stateLabels, stateTone } from "@/lib/attendance-students";
 import { SearchBox } from "@/components/ui/SearchBox";
 import { SortableTh, TableFrame, tdClass, Th } from "@/components/ui/Table";
 
