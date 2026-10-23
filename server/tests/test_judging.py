@@ -1000,3 +1000,37 @@ def test_changed_marks_are_not_flagged_to_judges_or_on_the_room(judging):
 
     assert sorted(edits(root)) == ["cse.admin@kiet.edu", "it.prof@kiet.edu", "root@kiet.edu"]
     assert edits(cse) == []
+
+
+def test_the_leaderboard_ranks_each_problem_statement_against_the_finalist_quota(judging):
+    root, cse, it, room = judging["root"], judging["cse"], judging["it"], judging["room"]
+    set_room(judging)
+    root.post("/admin/judging/department/open")
+    a, b, c = (judging["teams"][k] for k in ("cse_a", "cse_b", "cse_c"))
+    marks = {a["id"]: FULL, b["id"]: [4] * 8 + [8], c["id"]: [4] * 8 + [8]}
+    for team in (a, b, c):
+        for judge in ("it_prof", "cse_prof"):
+            assert score(judging[judge], room, team, marks[team["id"]]).status_code == 200
+
+    board = root.get("/admin/leaderboard").json()
+    dept = next(d for d in board["departments"] if d["department"] == "CSE")
+    ps1 = next(cat for cat in dept["categories"] if cat["category"] == 1)
+    # CSE has two finalist places in problem statements 1 to 4 (the event document); the top two are in line.
+    assert ps1["quota"] == 2 and ps1["prize"] == 2000 and ps1["scored"] == 3
+    ranked = [(t["team"]["code"], t["position"], t["in_line"]) for t in ps1["teams"]]
+    assert ranked == [(a["code"], 1, True), (b["code"], 2, True), (c["code"], 3, False)]
+    # The second and third are level on everything: the cut needs the parent department judge.
+    assert ps1["tie_at_cut"] is True and ps1["teams"][2]["tied"] is True
+    assert (dept["teams"], dept["scored"], dept["finalist_places"], dept["nominated"]) == (3, 3, 2, 0)
+    # Nominations show on the leaderboard.
+    assert root.put("/admin/finalists/CSE", {"nominations": [{"category": 1, "team_ids": [a["id"]]}]}).status_code == 200
+    ps1 = next(
+        cat
+        for cat in next(d for d in root.get("/admin/leaderboard").json()["departments"] if d["department"] == "CSE")["categories"]
+        if cat["category"] == 1
+    )
+    assert [t["nominated"] for t in ps1["teams"]] == [True, False, False]
+    # A department admin sees only their own department, whatever they ask for.
+    assert [d["department"] for d in cse.get("/admin/leaderboard", params={"department": "IT"}).json()["departments"]] == ["CSE"]
+    assert it.get("/admin/leaderboard").json()["departments"] == []
+    assert judging["it_prof"].get("/admin/leaderboard").status_code == 403

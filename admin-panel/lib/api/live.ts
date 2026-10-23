@@ -159,6 +159,7 @@
  *          can sit in several rooms of a round, one at a time (rooms clash when their slots overlap or are under a minute apart), and judges submit marks only from the slot's start to its end + the room's buffer.
  *   POST   /admin/judging/{round}/open | /lock    → RoundState     409 with the reason when it cannot open (super admin)
  *   GET    /admin/judging/{round}/rankings?department=   → Rankings
+ *   GET    /admin/leaderboard?department=   → Leaderboard (department round, by department and problem statement, with finalist places)
  *   GET    /admin/judging/{round}/attendance?panel_id=&department=   → AttendanceSheet (a room, a department, or the finale)
  *   PUT    /admin/judging/final/tents   body { tents: [{ team_id, tent | null }] } → Judging
  *   POST   /admin/panels   body { round, department, building, name, location, slot_start, slot_end } → Panel
@@ -199,7 +200,7 @@
  *                  member.removed | invitation.sent | invitation.cancelled | invitation.declined.
  *          Unknown future actions render with their raw action string.
  */
-import type { AcceptResult, BulkResult, AdminInput, MarkStudentsResult, RollCall, TeamPresence, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, Leaderboard, BulkResult, AdminInput, MarkStudentsResult, RollCall, TeamPresence, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 import { getSession } from "../auth/session";
 import { ApiError, type AdminApi } from "./contract";
 
@@ -378,6 +379,7 @@ export const liveApi: AdminApi = {
   publishAwards: (round, publish) => request<void>("POST", `/admin/judging/${round}/awards/${publish ? "publish" : "withdraw"}`),
   openJudging: (round) => request<RoundState>("POST", `/admin/judging/${round}/open`),
   lockJudging: (round) => request<RoundState>("POST", `/admin/judging/${round}/lock`),
+  leaderboard: (department) => request<Leaderboard>("GET", `/admin/leaderboard${queryString({ department })}`),
   rankings: (round, department) => request<Rankings>("GET", `/admin/judging/${round}/rankings${queryString({ department })}`),
   attendance: (round, scope = {}) => request<AttendanceSheet>("GET", `/admin/judging/${round}/attendance${queryString(scope)}`),
   setTents: (tents) => request<Judging>("PUT", "/admin/judging/final/tents", { tents }),

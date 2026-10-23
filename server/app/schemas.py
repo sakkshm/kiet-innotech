@@ -1197,7 +1197,7 @@ class RankedTeam(BaseModel):
     average: float | None
     innovation: float | None
     query: float | None
-    # Level with the team ranked just above on total, innovation and query addressing: the parent department judge
+    # Level with the team ranked just above on total, innovation and query addressing: the department admin or a super admin
     # (department round) or the organisers (Grand Finale) decide.
     tied: bool
     # Every judge of the team's room has scored it; only complete teams get a place.
@@ -1229,6 +1229,53 @@ class RankingsOut(BaseModel):
     awards_published: bool = False
     can_award: bool = False
     can_publish_awards: bool = False
+
+
+class LeaderboardTeam(BaseModel):
+    position: int | None
+    team: TeamSummaryOut
+    room: str | None
+    average: float | None
+    innovation: float | None
+    query: float | None
+    scores: int
+    judges: int
+    # Level with the team above on average, innovation and query addressing: the department admin or a super admin decides.
+    tied: bool
+    complete: bool
+    all_absent: bool
+    # Placed within the department's finalist places for this problem statement.
+    in_line: bool
+    nominated: bool
+    award: AwardOut | None = None
+
+
+class LeaderboardCategory(BaseModel):
+    category: int
+    title: str
+    # Finalist places the department has in this problem statement (the event document's quota, as super admins set it).
+    quota: int
+    prize: int | None
+    teams: list[LeaderboardTeam]
+    scored: int
+    # The last finalist place is level with the next team: the department admin or a super admin decides.
+    tie_at_cut: bool
+
+
+class LeaderboardDepartment(BaseModel):
+    department: str
+    categories: list[LeaderboardCategory]
+    teams: int
+    scored: int
+    finalist_places: int
+    nominated: int
+
+
+class LeaderboardOut(BaseModel):
+    departments: list[LeaderboardDepartment]
+    results_published: bool
+    nominations_deadline: datetime | None
+    generated_at: datetime
 
 
 class AwardInput(Input):

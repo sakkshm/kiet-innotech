@@ -1,4 +1,4 @@
-import type { AcceptResult, MarkStudentsResult, RollCall, RollCallQuery, BulkAction, BulkResult, ActivityQuery, AdminInput, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, Leaderboard, MarkStudentsResult, RollCall, RollCallQuery, BulkAction, BulkResult, ActivityQuery, AdminInput, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -101,6 +101,8 @@ export interface AdminApi {
   openJudging(round: JudgingRound): Promise<RoundState>;
   lockJudging(round: JudgingRound): Promise<RoundState>;
   rankings(round: JudgingRound, department?: string): Promise<Rankings>;
+  /** The department round's leaderboard by department and problem statement, with the finalist places. */
+  leaderboard(department?: string): Promise<Leaderboard>;
   /** A room's sheet (panelId), a department's (department round), or every finale team. */
   attendance(round: JudgingRound, scope?: { panelId?: string; department?: string }): Promise<AttendanceSheet>;
   setTents(tents: { teamId: string; tent: string | null }[]): Promise<Judging>;

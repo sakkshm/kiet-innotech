@@ -38,6 +38,7 @@ from ..schemas import (
     JudgingOut,
     JurorInput,
     JurorOut,
+    LeaderboardOut,
     ManualAttendanceInput,
     MarkStudentsInput,
     MarkStudentsOut,
@@ -393,6 +394,14 @@ def open_judging(round_: JudgingRound, admin: CurrentAdmin, db: Db, settings: Ap
 @router.post("/judging/{round_}/lock")
 def lock_judging(round_: JudgingRound, admin: CurrentAdmin, db: Db, settings: AppSettings) -> RoundOut:
     return judging.lock_round(db, admin, settings, round_)
+
+
+@router.get("/leaderboard")
+def leaderboard(
+    admin: CurrentAdmin, db: Db, settings: AppSettings, department: Annotated[str | None, Query(max_length=20)] = None
+) -> LeaderboardOut:
+    """The department round's leaderboard by department and problem statement, with each department's finalist places."""
+    return judging.leaderboard(db, admin, settings, department)
 
 
 @router.get("/judging/{round_}/rankings")

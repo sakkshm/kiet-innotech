@@ -647,7 +647,7 @@ export type RankedTeam = {
   average: number | null;
   innovation: number | null;
   query: number | null;
-  /** Level with the team above on total, innovation and query addressing: the parent department judge (the organisers at the finale) decide. */
+  /** Level with the team above on total, innovation and query addressing: the department admin or a super admin (the organisers at the finale) decide. */
   tied: boolean;
   /** Every judge of the room has scored the team; only complete teams get a place. */
   complete: boolean;
@@ -672,6 +672,45 @@ export type Rankings = {
   awardsPublished: boolean;
   canAward: boolean;
   canPublishAwards: boolean;
+};
+
+/** One team on the department round's leaderboard. */
+export type LeaderboardTeam = {
+  position: number | null;
+  team: TeamSummary;
+  room: string | null;
+  average: number | null;
+  innovation: number | null;
+  query: number | null;
+  scores: number;
+  judges: number;
+  /** Level with the team above on average, innovation and query addressing: the department admin or a super admin decides. */
+  tied: boolean;
+  complete: boolean;
+  allAbsent: boolean;
+  /** Placed within the department's finalist places for this problem statement. */
+  inLine: boolean;
+  nominated: boolean;
+  award: { place: number; amount: number; declaredBy: string; declaredAt: string } | null;
+};
+
+export type LeaderboardCategory = {
+  category: number;
+  title: string;
+  /** The department's finalist places in this problem statement. */
+  quota: number;
+  prize: number | null;
+  teams: LeaderboardTeam[];
+  scored: number;
+  /** The last finalist place is level with the next team. */
+  tieAtCut: boolean;
+};
+
+export type Leaderboard = {
+  departments: { department: string; categories: LeaderboardCategory[]; teams: number; scored: number; finalistPlaces: number; nominated: number }[];
+  resultsPublished: boolean;
+  nominationsDeadline: string | null;
+  generatedAt: string;
 };
 
 export type Score = {

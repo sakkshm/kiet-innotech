@@ -6,8 +6,8 @@ Judging, following the event document:
 - Grand Finale (30 October): finalists and teams from other colleges and schools exhibit in numbered tents and are
   judged by panels of external judges.
 - Every category is scored out of 50 on its common rubric (rules.RUBRIC_PARTS). Ties are broken by the
-  innovation/originality criterion, then Query Addressing, then the parent department judge decides (the organisers
-  at the Grand Finale). No shared positions.
+  innovation/originality criterion, then Query Addressing, then the department admin or a super admin decides (the
+  organisers at the Grand Finale). No shared positions.
 
 Super admins set up everything and open or lock each round; judging is locked until they open it. Department admins
 set up their own department's rooms (building, room and time slot), appoint judges for them and allot their teams.
@@ -40,6 +40,7 @@ from ..models import (
     AppState,
     Attendance,
     Award,
+    FinalistNomination,
     FinalTent,
     Juror,
     Panel,
@@ -68,6 +69,10 @@ from ..schemas import (
     JurorInput,
     JurorOut,
     JurorPanelRef,
+    LeaderboardCategory,
+    LeaderboardDepartment,
+    LeaderboardOut,
+    LeaderboardTeam,
     LockOut,
     PanelInput,
     PanelJurorOut,
@@ -1230,7 +1235,7 @@ def _can_award(admin: Admin, round_: str) -> bool:
 def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> RankingsOut:
     """
     The average of both judges' totals, ranked with the tie-breakers (innovation, then Query Addressing, then the
-    parent department judge). A team gets a place only once every judge of its room has scored it.
+    department admin or a super admin). A team gets a place only once every judge of its room has scored it.
     """
     _check_round(round_)
     if admin_service.is_type_admin(admin):
@@ -1357,6 +1362,74 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
         awards_published=db.get(AppState, _awards_key(round_)) is not None,
         can_award=_can_award(admin, round_),
         can_publish_awards=admin.role == "super_admin",
+    )
+
+
+def leaderboard(db: Session, admin: Admin, settings: Settings, department: str | None) -> LeaderboardOut:
+    """
+    The department round's leaderboard, department by department and problem statement by problem statement, from the same
+    rankings (average of both judges, then innovation, then query addressing). The first teams up to the department's
+    finalist quota for that problem statement are in line for the Grand Finale; departments still nominate their finalists.
+    """
+    if admin.role == "admin" and admin.department == rules.CLUB_DEPARTMENT:
+        raise ApiError("COE KIET teams go straight to the Grand Finale, so they have no department leaderboard.", 403)
+    ranked = rankings(db, admin, "department", department)
+    quota = admin_service.quotas(db)
+    nominated = set(db.scalars(select(FinalistNomination.team_id)))
+    by_department: dict[str, list[LeaderboardCategory]] = defaultdict(list)
+    for group in ranked.groups:
+        if group.department is None or group.category is None:
+            continue
+        places = quota.get((group.department, group.category), rules.finalist_quota(group.department, group.category))
+        teams = [
+            LeaderboardTeam(
+                position=t.position,
+                team=t.team,
+                room=t.panel,
+                average=t.average,
+                innovation=t.innovation,
+                query=t.query,
+                scores=t.scores,
+                judges=t.judges,
+                tied=t.tied,
+                complete=t.complete,
+                all_absent=t.all_absent,
+                in_line=t.position is not None and t.position <= places,
+                nominated=t.team.id in nominated,
+                award=t.award,
+            )
+            for t in group.teams
+        ]
+        placed = [t for t in teams if t.position is not None]
+        after_cut = next((t for t in placed if t.position == places + 1), None)
+        by_department[group.department].append(
+            LeaderboardCategory(
+                category=group.category,
+                title=rules.CATEGORIES[group.category].title,
+                quota=places,
+                prize=rules.prize("department", False, group.category, 1),
+                teams=teams,
+                scored=len(placed),
+                tie_at_cut=after_cut is not None and after_cut.tied,
+            )
+        )
+    departments = [
+        LeaderboardDepartment(
+            department=name,
+            categories=sorted(categories, key=lambda c: c.category),
+            teams=sum(len(c.teams) for c in categories),
+            scored=sum(c.scored for c in categories),
+            finalist_places=sum(c.quota for c in categories),
+            nominated=sum(1 for c in categories for t in c.teams if t.nominated),
+        )
+        for name, categories in sorted(by_department.items())
+    ]
+    window = schedule.load(db, settings)
+    return LeaderboardOut(
+        departments=departments,
+        results_published=admin_service._results_published(db) is not None,
+        nominations_deadline=window.nominations_deadline,
+        generated_at=utcnow(),
     )
 
 

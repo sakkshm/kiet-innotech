@@ -50,7 +50,7 @@ export function RankingsTab({ round }: { round: JudgingRound }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-2xl text-sm text-muted">
           A team&apos;s mark is the <strong className="text-navy-900">average of both judges&apos; totals</strong> (out of 50), and it gets a place only once both
-          have scored. Level teams are split by Innovation / Originality, then Query Addressing; if still level, the parent department judge decides (the organisers at the Grand Finale).
+          have scored. Level teams are split by Innovation / Originality, then Query Addressing; if still level, the department admin or a super admin decides (the organisers at the Grand Finale).
         </p>
         {admin.role === "super_admin" && (
           <Field label={round === "department" ? "Department" : "Finalists from"} htmlFor="rank-department" className="w-52">
@@ -106,7 +106,7 @@ export function RankingsTab({ round }: { round: JudgingRound }) {
                     taken={taken}
                     canAward={data.canAward && !data.awardsPublished}
                     busy={busy}
-                    tieBreaker={round === "department" ? "the parent department judge decides" : "the organisers decide"}
+                    tieBreaker={round === "department" ? "the department admin or a super admin decides" : "the organisers decide"}
                     onDeclare={(place) => act(`${row.team.id}:${place}`, () => api.declareAward(round, row.team.id, place))}
                     onRemove={() => act(`${row.team.id}:remove`, () => api.removeAward(round, row.team.id))}
                   />
