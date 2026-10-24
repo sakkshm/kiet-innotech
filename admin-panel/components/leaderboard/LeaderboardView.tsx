@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronDown, Crown, FileSpreadsheet, Medal, RefreshCw, Scale, Trophy, Users } from "lucide-react";
+import { Award, ChevronDown, Crown, FileSpreadsheet, Medal, RefreshCw, Scale, Trophy, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
-import type { Leaderboard, LeaderboardCategory, LeaderboardTeam } from "@/lib/admin-types";
+import type { AdminTeam, Leaderboard, LeaderboardCategory, LeaderboardTeam } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { categories, departmentLabel, nominatingDepartments } from "@/lib/content";
 import { downloadWorkbook, sheet } from "@/lib/excel";
@@ -54,6 +54,8 @@ function Board() {
   const board = useQuery(`leaderboard:${department ?? "all"}`, () => api.leaderboard(department));
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [winnersBusy, setWinnersBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // A live board: judges keep scoring, so it reloads every minute.
   const { reload } = board;
@@ -107,6 +109,84 @@ function Board() {
     }
   }
 
+  // Every team with a declared 1st or 2nd place, from every department (whatever is filtered on screen), with its students.
+  async function downloadWinners() {
+    setWinnersBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const all = await api.leaderboard();
+      type Winner = { department: string; category: LeaderboardCategory; team: LeaderboardTeam; award: NonNullable<LeaderboardTeam["award"]> };
+      const winners: Winner[] = all.departments
+        .flatMap((d) => d.categories.flatMap((category) => category.teams.flatMap((team) => (team.award ? [{ department: d.department, category, team, award: team.award }] : []))))
+        .sort((a, b) => a.department.localeCompare(b.department) || a.category.category - b.category.category || a.award.place - b.award.place);
+      if (winners.length === 0) {
+        setNotice("No winners have been declared yet. Declare the 1st and 2nd places on the Judging page, then download again.");
+        return;
+      }
+      // The students of each winning team, a few teams at a time.
+      const details = new Map<string, AdminTeam>();
+      const queue = [...winners];
+      await Promise.all(
+        Array.from({ length: 6 }, async () => {
+          for (let w = queue.shift(); w; w = queue.shift()) details.set(w.team.team.id, await api.getTeam(w.team.team.id));
+        }),
+      );
+      const place = (w: Winner) => (w.award.place === 1 ? "1st" : w.award.place === 2 ? "2nd" : `${w.award.place}th`);
+      const membersOf = (w: Winner) => details.get(w.team.team.id)?.members ?? [];
+      const leaderOf = (w: Winner) => membersOf(w).find((m) => m.role === "leader");
+      type Member = { winner: Winner; member: AdminTeam["members"][number] };
+      await downloadWorkbook("winner-details", [
+        sheet<Winner>(
+          "Winners",
+          [
+            { header: "Department", width: 12, value: (w) => w.department },
+            { header: "PS", width: 5, value: (w) => w.category.category },
+            { header: "Problem statement", width: 34, value: (w) => w.category.title },
+            { header: "Place", width: 7, value: place },
+            { header: "Prize (₹)", width: 10, value: (w) => w.award.amount },
+            { header: "Team", width: 26, value: (w) => w.team.team.name },
+            { header: "Team code", width: 11, value: (w) => w.team.team.code, text: true },
+            { header: "Project title", width: 34, value: (w) => w.team.team.projectTitle },
+            { header: "Average /50", width: 11, value: (w) => w.team.average ?? "" },
+            { header: "Team size", width: 9, value: (w) => membersOf(w).length || w.team.team.memberCount },
+            { header: "Leader", width: 22, value: (w) => leaderOf(w)?.fullName ?? w.team.team.leaderName },
+            { header: "Leader roll number", width: 16, value: (w) => leaderOf(w)?.rollNumber ?? "", text: true },
+            { header: "Leader phone", width: 14, value: (w) => leaderOf(w)?.phone ?? "", text: true },
+            { header: "Leader email", width: 30, value: (w) => leaderOf(w)?.email ?? "" },
+            { header: "Members", width: 60, value: (w) => membersOf(w).map((m) => `${m.fullName} (${m.rollNumber || "no roll no."})`).join("; ") },
+            { header: "Declared by", width: 26, value: (w) => w.award.declaredBy },
+            { header: "Declared at", width: 20, value: (w) => formatDateTime(w.award.declaredAt) },
+          ],
+          winners,
+        ),
+        sheet<Member>(
+          "Members",
+          [
+            { header: "Department", width: 12, value: (r) => r.winner.department },
+            { header: "PS", width: 5, value: (r) => r.winner.category.category },
+            { header: "Place", width: 7, value: (r) => place(r.winner) },
+            { header: "Team code", width: 11, value: (r) => r.winner.team.team.code, text: true },
+            { header: "Team", width: 26, value: (r) => r.winner.team.team.name },
+            { header: "Role", width: 8, value: (r) => (r.member.role === "leader" ? "Leader" : "Member") },
+            { header: "Student", width: 24, value: (r) => r.member.fullName },
+            { header: "Roll number", width: 16, value: (r) => r.member.rollNumber, text: true },
+            { header: "Year", width: 6, value: (r) => r.member.year },
+            { header: "Course", width: 10, value: (r) => r.member.course },
+            { header: "Student's department", width: 14, value: (r) => r.member.department ?? "" },
+            { header: "Email", width: 30, value: (r) => r.member.email },
+            { header: "Phone", width: 14, value: (r) => r.member.phone, text: true },
+          ],
+          winners.flatMap((winner) => membersOf(winner).map((member) => ({ winner, member }))),
+        ),
+      ]);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setWinnersBusy(false);
+    }
+  }
+
   const data = board.data;
   return (
     <div className="space-y-6">
@@ -115,10 +195,14 @@ function Board() {
         title="Leaderboard"
         description={`Every problem statement${isSuper ? " of every department" : ` of ${admin.department}`}, ranked live from the judges' marks, with the finalist places for the Grand Finale.`}
         actions={
-          <div className="flex w-max gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => board.reload()} disabled={board.loading}>
               <RefreshCw aria-hidden="true" className={`size-4 ${board.loading ? "animate-spin" : ""}`} />
               Refresh
+            </Button>
+            <Button variant="secondary" onClick={downloadWinners} pending={winnersBusy} disabled={!data || data.departments.length === 0}>
+              {!winnersBusy && <Award aria-hidden="true" className="size-4" />}
+              Winner details
             </Button>
             <Button variant="secondary" onClick={() => data && download(data)} pending={downloading} disabled={!data || data.departments.length === 0}>
               {!downloading && <FileSpreadsheet aria-hidden="true" className="size-4" />}
@@ -187,6 +271,7 @@ function Board() {
       </div>
 
       {(board.error || error) && <Notice tone="error">{board.error ?? error}</Notice>}
+      {notice && <Notice tone="info">{notice}</Notice>}
       {!data && !board.error && <Loading label="Loading the leaderboard" />}
       {data && (
         <p className="text-xs text-muted" aria-live="polite">
