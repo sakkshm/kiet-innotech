@@ -109,8 +109,9 @@ function Board() {
     }
   }
 
-  // The team ranked 1st right now in each problem statement of every department (whatever is filtered on screen), from the
-  // live marks, declared or not, with its students. A team level with the 1st comes too: the admin decides the tie.
+  // The winners right now in each problem statement of every department (whatever is filtered on screen), from the live marks,
+  // declared or not, with their students: the teams ranked within the problem statement's winning places now (1, or 2 where
+  // it is set so). On a tie, the team ranked higher at the moment is the one taken.
   async function downloadWinners() {
     setWinnersBusy(true);
     setError(null);
@@ -119,9 +120,7 @@ function Board() {
       const all = await api.leaderboard();
       type Winner = { department: string; category: LeaderboardCategory; team: LeaderboardTeam };
       const top = (category: LeaderboardCategory) => {
-        const ranked = category.teams.filter((t) => t.position !== null).sort((a, b) => a.position! - b.position!);
-        const end = ranked.findIndex((t, i) => i > 0 && !t.tied);
-        return end === -1 ? ranked : ranked.slice(0, end);
+        return category.teams.filter((t) => t.position !== null && t.position <= category.quota).sort((a, b) => a.position! - b.position!);
       };
       const winners: Winner[] = all.departments
         .flatMap((d) => d.categories.flatMap((category) => top(category).map((team) => ({ department: d.department, category, team }))))
@@ -138,7 +137,6 @@ function Board() {
           for (let w = queue.shift(); w; w = queue.shift()) details.set(w.team.team.id, await api.getTeam(w.team.team.id));
         }),
       );
-      const tiedForFirst = (w: Winner) => top(w.category).length > 1;
       const membersOf = (w: Winner) => details.get(w.team.team.id)?.members ?? [];
       const leaderOf = (w: Winner) => membersOf(w).find((m) => m.role === "leader");
       type Member = { winner: Winner; member: AdminTeam["members"][number] };
@@ -149,9 +147,10 @@ function Board() {
             { header: "Department", width: 12, value: (w) => w.department },
             { header: "PS", width: 5, value: (w) => w.category.category },
             { header: "Problem statement", width: 34, value: (w) => w.category.title },
+            { header: "Winning places", width: 9, value: (w) => w.category.quota },
             { header: "Rank now", width: 9, value: (w) => w.team.position ?? "" },
-            { header: "Tie", width: 26, value: (w) => (tiedForFirst(w) ? "Tied for 1st: admin decides" : "") },
-            { header: "1st prize (₹)", width: 12, value: (w) => w.category.prize ?? "" },
+            // Department round: the cash prize goes to the 1st place only.
+            { header: "Prize (₹)", width: 10, value: (w) => (w.team.position === 1 ? (w.category.prize ?? "") : "") },
             { header: "Team", width: 26, value: (w) => w.team.team.name },
             { header: "Team code", width: 11, value: (w) => w.team.team.code, text: true },
             { header: "Project title", width: 34, value: (w) => w.team.team.projectTitle },
@@ -164,7 +163,7 @@ function Board() {
             { header: "Leader phone", width: 14, value: (w) => leaderOf(w)?.phone ?? "", text: true },
             { header: "Leader email", width: 30, value: (w) => leaderOf(w)?.email ?? "" },
             { header: "Members", width: 60, value: (w) => membersOf(w).map((m) => `${m.fullName} (${m.rollNumber || "no roll no."})`).join("; ") },
-            { header: "Declared winner", width: 14, value: (w) => (w.team.award?.place === 1 ? "Yes" : "Not yet") },
+            { header: "Declared", width: 12, value: (w) => (w.team.award ? `Yes, ${w.team.award.place === 1 ? "1st" : "2nd"}` : "Not yet") },
           ],
           winners,
         ),
