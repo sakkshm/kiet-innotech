@@ -523,7 +523,7 @@ def attendance_students_export(
 @router.post("/attendance/students/mark")
 def mark_attendance_students(data: MarkStudentsInput, admin: CurrentAdmin, db: Db) -> MarkStudentsOut:
     """Marks students present or absent in one go; a department's admin only their own department's students."""
-    return rollcall.mark_students(db, admin, data.user_ids, data.present)
+    return rollcall.mark_students(db, admin, data.user_ids, data.target)
 
 
 @router.post("/attendance/scan")

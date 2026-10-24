@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Crown } from "lucide-react";
 import { errorMessage } from "@/lib/api";
 import type { AttendanceState } from "@/lib/admin-types";
+import { AttendanceSlider } from "@/components/attendance/AttendanceSlider";
 import { Notice } from "@/components/ui/Notice";
-import { Switch } from "@/components/ui/Switch";
 
 export type AttendanceMember = { userId: string; fullName: string; role: "leader" | "member"; state: AttendanceState };
 
@@ -16,8 +16,9 @@ const words: Record<AttendanceState, { text: string; tone: string }> = {
 };
 
 /**
- * A team's students with a present / absent switch each. Everybody counts as present until switched off, and a team whose
- * students are all absent scores 0. `canEdit` false shows the same list without switches.
+ * A team's students, each with a three-position slider: left Absent, middle Unmarked, right Present. A student nobody has
+ * marked still counts as present, and a team whose students are all marked absent scores 0. `canEdit` false shows the
+ * same list as words, without the slider.
  */
 export function StudentAttendance({
   members,
@@ -30,16 +31,16 @@ export function StudentAttendance({
   /** Say that the team scores 0 when everyone is absent (off where the page already says so). */
   warnWhenAllAbsent?: boolean;
   /** Saves one student. The list shows what the server says afterwards (the parent passes new `members`). */
-  onChange: (userId: string, present: boolean) => Promise<void>;
+  onChange: (userId: string, state: AttendanceState) => Promise<void>;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function toggle(member: AttendanceMember, present: boolean) {
+  async function change(member: AttendanceMember, state: AttendanceState) {
     setBusy(member.userId);
     setError(null);
     try {
-      await onChange(member.userId, present);
+      await onChange(member.userId, state);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -53,15 +54,19 @@ export function StudentAttendance({
     <div className="space-y-2">
       <ul className="divide-y divide-line overflow-hidden rounded-xl bg-white ring-1 ring-line">
         {members.map((m) => (
-          <li key={m.userId} className="flex items-center gap-3 px-3 py-2">
+          <li key={m.userId} className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5 truncate text-sm font-semibold text-navy-900">
                 {m.fullName}
                 {m.role === "leader" && <Crown aria-label="Team leader" className="size-3.5 shrink-0 text-accent-500" />}
               </span>
-              <span className={`block text-xs font-semibold ${words[m.state].tone}`}>{words[m.state].text}</span>
+              {!canEdit && <span className={`block text-xs font-semibold ${words[m.state].tone}`}>{words[m.state].text}</span>}
             </span>
-            {canEdit && <Switch checked={m.state !== "absent"} onChange={(present) => toggle(m, present)} pending={busy === m.userId} label={`Present: ${m.fullName}`} />}
+            {canEdit && (
+              <span className="sm:w-72 sm:shrink-0">
+                <AttendanceSlider value={m.state} onChange={(state) => change(m, state)} pending={busy === m.userId} name={m.fullName} className="min-w-[15rem] max-w-none" />
+              </span>
+            )}
           </li>
         ))}
       </ul>

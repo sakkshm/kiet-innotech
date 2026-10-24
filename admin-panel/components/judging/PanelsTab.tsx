@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { AlarmClock, CalendarClock, ChevronDown, Clock, Lock, LockOpen, MapPin, Pencil, Plus, Trash2, TriangleAlert, Undo2, UserCheck, UserCog, UserPlus, Users } from "lucide-react";
 import { api, ApiError, errorMessage } from "@/lib/api";
-import type { Judging, Juror, Panel, PanelJuror, PanelScore, PanelTeam, TeamSummary, Timetable } from "@/lib/admin-types";
+import type { AttendanceState, Judging, Juror, Panel, PanelJuror, PanelScore, PanelTeam, TeamSummary, Timetable } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { attendanceEnabled } from "@/lib/features";
 import { categories, clubDepartment, departmentLabel, departments } from "@/lib/content";
@@ -87,9 +87,9 @@ export function PanelsTab({ judging, reload }: { judging: Judging; reload: () =>
     }
   }
 
-  // A department admin or a super admin switches a student present or absent at any time; the list refreshes after.
-  async function changePresence(team: PanelTeam, userId: string, present: boolean) {
-    await api.setStudentPresence(team.id, userId, present);
+  // A department admin or a super admin sets a student present, absent or not marked at any time; the list refreshes after.
+  async function changePresence(team: PanelTeam, userId: string, state: AttendanceState) {
+    await api.setStudentPresence(team.id, userId, state);
     reload();
   }
 
@@ -355,7 +355,7 @@ function PanelCard({
   /** "<room id>:<judge email>" of the judge whose attendance is being saved. */
   presenting: string | null;
   /** Switches a student of a team in this room present or absent. */
-  onPresence: (team: PanelTeam, userId: string, present: boolean) => Promise<void>;
+  onPresence: (team: PanelTeam, userId: string, state: AttendanceState) => Promise<void>;
   onJudgePresent: (juror: PanelJuror, present: boolean) => void;
   onBuffer: () => void;
   onUnlock: (juror: PanelJuror) => void;
@@ -517,7 +517,7 @@ function PanelCard({
                   canMarkStudents={panel.canEdit}
                   studentsOpen={studentsOpen === team.id}
                   onStudents={() => setStudentsOpen(studentsOpen === team.id ? null : team.id)}
-                  onPresence={(userId, present) => onPresence(team, userId, present)}
+                  onPresence={(userId, state) => onPresence(team, userId, state)}
                   open={open === team.id}
                   onToggle={() => setOpen(open === team.id ? null : team.id)}
                   onChange={() => onChangeScore(team)}
@@ -655,7 +655,7 @@ function TeamRows({
   canMarkStudents: boolean;
   studentsOpen: boolean;
   onStudents: () => void;
-  onPresence: (userId: string, present: boolean) => Promise<void>;
+  onPresence: (userId: string, state: AttendanceState) => Promise<void>;
   open: boolean;
   onToggle: () => void;
   onChange: () => void;
@@ -732,7 +732,7 @@ function TeamRows({
           <td colSpan={columns} className="border-b border-line bg-surface/60 px-4 py-3">
             <div className="max-w-xl space-y-2">
               <p className="text-xs text-muted">
-                Everyone counts as present until switched off, and a team whose students are all absent scores 0.{" "}
+                Slide a student to Absent (left) or Present (right); Unmarked (middle) still counts as present. A team whose students are all absent scores 0.{" "}
                 {canMarkStudents ? "You can change this at any time." : "Judges and the department's admin change it."}
               </p>
               <StudentAttendance members={team.members} canEdit={canMarkStudents} onChange={onPresence} />

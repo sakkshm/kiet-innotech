@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCheck, Download, FileSpreadsheet, FileText, FileDown, UserCheck, UserX, X } from "lucide-react";
+import { CheckCheck, Download, Eraser, FileSpreadsheet, FileText, FileDown, UserCheck, UserX, X } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
 import type { AttendanceState, RollCallQuery, RollCallRow } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
@@ -13,9 +13,6 @@ import {
   fileBase,
   scopeText,
   slotText,
-  stateHelp,
-  stateLabels,
-  stateTone,
 } from "@/lib/attendance-students";
 import { formatDateTime, plural } from "@/lib/format";
 import { yearLabel } from "@/lib/rules";
@@ -34,7 +31,7 @@ import { PageSizeSelect, Pagination } from "@/components/ui/Pagination";
 import { Pill } from "@/components/ui/Pill";
 import { SearchBox } from "@/components/ui/SearchBox";
 import { SelectionBar } from "@/components/ui/SelectionBar";
-import { Switch } from "@/components/ui/Switch";
+import { AttendanceSlider } from "./AttendanceSlider";
 import { TableFrame, tdClass, Th } from "@/components/ui/Table";
 
 const states: AttendanceState[] = ["present", "absent", "not_marked"];
@@ -63,7 +60,7 @@ export function AttendanceRollCall() {
   const [selectingAll, setSelectingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [marking, setMarking] = useState<boolean | null>(null);
+  const [marking, setMarking] = useState<AttendanceState | null>(null);
 
   const query: RollCallQuery = {
     department: isSuper ? pickParam(params, "department", nominatingDepartments) : undefined,
@@ -85,16 +82,16 @@ export function AttendanceRollCall() {
 
   const everything = () => api.rollCallAll({ ...query, page: undefined, pageSize: undefined });
 
-  async function mark(ids: string[], present: boolean, busyKey: string) {
+  async function mark(ids: string[], state: AttendanceState, busyKey: string) {
     setBusy(busyKey);
     setError(null);
     setNotice(null);
     try {
-      const result = await api.markStudents(ids, present);
-      const word = present ? "present" : "absent";
+      const result = await api.markStudents(ids, state);
+      const word = state === "present" ? "marked present" : state === "absent" ? "marked absent" : "set back to unmarked";
       setNotice(
-        `${plural(result.changed, "student")} marked ${word}.` +
-          (result.unchanged ? ` ${plural(result.unchanged, "was", "were")} already ${word}.` : "") +
+        `${plural(result.changed, "student")} ${word}.` +
+          (result.unchanged ? ` ${plural(result.unchanged, "was", "were")} already like that.` : "") +
           (result.skipped.length ? ` ${plural(result.skipped.length, "student")} skipped: ${result.skipped.slice(0, 3).map((s) => `${s.fullName} (${s.reason})`).join(", ")}.` : ""),
       );
       selection.clear();
@@ -139,7 +136,7 @@ export function AttendanceRollCall() {
       <PageHeader
         eyebrow="Event day"
         title="Student attendance"
-        description={`Students of the department round${isSuper ? "" : ` in ${admin.department}`}, by department and year. A student is present only once somebody marks them present: everyone else counts as absent, and the ones nobody has marked yet are highlighted so you can mark them. Tick students and press Mark present, or use a switch.`}
+        description={`Students of the department round${isSuper ? "" : ` in ${admin.department}`}, by department and year. A student is present only once somebody marks them present: everyone else counts as absent, and the ones nobody has marked yet are highlighted so you can mark them. Slide a student to Absent (left) or Present (right); the middle is Unmarked. Or tick several students and use the bar that appears.`}
       />
 
       {/* Year, separately */}
@@ -313,34 +310,40 @@ export function AttendanceRollCall() {
             onExport={() => downloadAttendanceCsv(selection.rows, "attendance-selected-students")}
             actions={
               <>
-                <Button size="sm" onClick={() => setMarking(true)} disabled={busy !== null}>
+                <Button size="sm" onClick={() => setMarking("present")} disabled={busy !== null}>
                   <UserCheck aria-hidden="true" className="size-3.5" />
                   Mark present
                 </Button>
-                <Button size="sm" variant="secondary" onClick={() => setMarking(false)} disabled={busy !== null}>
+                <Button size="sm" variant="secondary" onClick={() => setMarking("absent")} disabled={busy !== null}>
                   <UserX aria-hidden="true" className="size-3.5" />
                   Mark absent
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setMarking("not_marked")} disabled={busy !== null}>
+                  <Eraser aria-hidden="true" className="size-3.5" />
+                  Set unmarked
                 </Button>
               </>
             }
           />
           {marking !== null && (
             <ConfirmDialog
-              title={`Mark ${plural(selection.size, "selected student")} ${marking ? "present" : "absent"}?`}
+              title={`${marking === "present" ? "Mark" : marking === "absent" ? "Mark" : "Set"} ${plural(selection.size, "selected student")} ${marking === "present" ? "present" : marking === "absent" ? "absent" : "back to unmarked"}?`}
               description={
-                marking
+                marking === "present"
                   ? "They will be marked present under your name. Students already present stay as they are, and you can change any of them later."
-                  : "They will be marked absent under your name. Students already marked absent stay as they are, and you can change any of them later."
+                  : marking === "absent"
+                    ? "They will be marked absent under your name. Students already marked absent stay as they are, and you can change any of them later."
+                    : "Their mark is taken back, so nobody has marked them: they count as absent until somebody marks them present. This is logged."
               }
-              confirmLabel={marking ? "Mark present" : "Mark absent"}
-              tone={marking ? "primary" : "danger"}
+              confirmLabel={marking === "present" ? "Mark present" : marking === "absent" ? "Mark absent" : "Set unmarked"}
+              tone={marking === "present" ? "primary" : "danger"}
               onClose={() => setMarking(null)}
               onConfirm={async () => {
-                const present = marking;
+                const state = marking;
                 setMarking(null);
                 await mark(
                   selection.rows.map((r) => r.userId),
-                  present,
+                  state,
                   "bulk",
                 );
               }}
@@ -351,6 +354,7 @@ export function AttendanceRollCall() {
             <EmptyState title="No students found">{filtered ? "Try removing a filter." : "No students are in the department round yet."}</EmptyState>
           ) : (
             <div className={`space-y-4 transition-opacity ${loading ? "opacity-60" : ""}`} aria-busy={loading}>
+              <div className="hidden md:block">
               <TableFrame label="Student attendance" minWidth="min-w-[900px]">
                 <thead>
                   <tr>
@@ -388,17 +392,7 @@ export function AttendanceRollCall() {
                       {isSuper && <td className={`${tdClass} whitespace-nowrap font-medium`}>{row.department ?? "—"}</td>}
                       <td className={`${tdClass} text-xs text-navy-800`}>{slotText(row)}</td>
                       <td className={tdClass}>
-                        <span className="flex items-center gap-2.5">
-                          <Switch
-                            checked={row.state === "present"}
-                            onChange={(present) => mark([row.userId], present, row.userId)}
-                            pending={busy === row.userId}
-                            label={`Present: ${row.fullName}`}
-                          />
-                          <span title={stateHelp[row.state]}>
-                            <Pill tone={stateTone[row.state]}>{stateLabels[row.state]}</Pill>
-                          </span>
-                        </span>
+                        <AttendanceSlider value={row.state} onChange={(state) => mark([row.userId], state, row.userId)} pending={busy === row.userId} name={row.fullName} className="min-w-[18rem] max-w-sm" />
                       </td>
                       <td className={tdClass}>
                         {row.markedBy ? (
@@ -417,6 +411,36 @@ export function AttendanceRollCall() {
                   ))}
                 </tbody>
               </TableFrame>
+              </div>
+
+              {/* Phones: one card per student, the slider across the whole width. */}
+              <ul className="space-y-3 md:hidden" aria-label="Students">
+                {data.items.map((row) => (
+                  <li key={row.userId} className={`rounded-2xl p-3.5 ring-1 ${selection.has(row) ? "bg-brand-50/70 ring-brand-300" : row.state === "not_marked" ? "bg-accent-50/40 ring-accent-200" : "bg-white ring-line"}`}>
+                    <div className="flex items-start gap-3">
+                      <Checkbox label={`Select ${row.fullName}`} checked={selection.has(row)} onChange={() => selection.toggle(row)} />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-navy-900">{row.fullName}</p>
+                        <p className="text-xs text-muted">{row.rollNumber || "No roll number"}</p>
+                        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-navy-800">
+                          <Pill tone="navy">{yearLabel(row.year)}</Pill>
+                          <span>{row.course}</span>
+                          {isSuper && row.department && <span className="font-semibold">{row.department}</span>}
+                        </p>
+                        <p className="mt-1 text-xs text-muted">{slotText(row)}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex justify-center">
+                      <AttendanceSlider value={row.state} onChange={(state) => mark([row.userId], state, row.userId)} pending={busy === row.userId} name={row.fullName} />
+                    </div>
+                    {row.markedBy && (
+                      <p className="mt-2 text-center text-[11px] text-muted">
+                        Marked by {row.markedBy} · {formatDateTime(row.markedAt)}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
               <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onPage={(page) => update({ page })} disabled={loading} />
             </div>
           )}

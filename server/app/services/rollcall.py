@@ -11,7 +11,7 @@ only when all its members are marked absent (presence.py); that guard does not r
 import uuid
 from datetime import datetime
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -129,10 +129,11 @@ def roll_call(
     )
 
 
-def mark_students(db: Session, admin: Admin, user_ids: list[uuid.UUID], present: bool) -> MarkStudentsOut:
+def mark_students(db: Session, admin: Admin, user_ids: list[uuid.UUID], state: str) -> MarkStudentsOut:
     """
-    Marks the students present (or absent) in one go. A department's admin can mark only students of their own department.
-    Students who are already in that state are left alone, and every change is logged. Marks are only added or changed.
+    Sets the students present, absent or not marked in one go. A department's admin can mark only students of their own
+    department. Students who are already in that state are left alone, and every change is logged. Present and absent add or
+    change a mark; not marked takes the student's mark back (the only time a mark is removed, and only when an admin asks).
     """
     scope = _scope(admin)
     ids = set(user_ids)
@@ -153,8 +154,25 @@ def mark_students(db: Session, admin: Admin, user_ids: list[uuid.UUID], present:
     allowed = {uid: pair for uid, pair in found.items() if scope is None or pair[0].department == scope}
 
     changed_ids: set[uuid.UUID] = set()
-    if allowed:
-        status = "present" if present else "absent"
+    if allowed and state == "not_marked":
+        gone = db.execute(
+            delete(Attendance)
+            .where(Attendance.round == presence.ROUND, Attendance.user_id.in_(list(allowed)))
+            .returning(Attendance.user_id)
+        )
+        changed_ids = set(gone.scalars())
+        for uid in changed_ids:
+            profile, team = allowed[uid]
+            audit.record(
+                db,
+                admin.email,
+                "attendance.unmarked",
+                team,
+                f"{profile.full_name} set back to not marked for the {judging.ROUND_LABELS[presence.ROUND]}",
+            )
+    elif allowed:
+        present = state == "present"
+        status = state
         now = utcnow()
         values = [
             {

@@ -105,3 +105,31 @@ def test_only_super_admins_and_department_admins_use_it(judging, client):  # noq
     assert judging["it_prof"].post("/admin/attendance/students/mark", {"user_ids": [], "present": True}).status_code in (403, 422)
     export = judging["root"].get("/admin/attendance/students/export").json()
     assert export["total"] == len(export["items"])
+
+
+def test_a_student_can_be_set_back_to_not_marked(judging, as_user):  # noqa: F811
+    root, cse = judging["root"], judging["cse"]
+    set_room(judging)
+    ua, ub, ug = (uid(as_user, e) for e in ("a@kiet.edu", "b@kiet.edu", "g@kiet.edu"))
+    state = lambda who, user: {r["user_id"]: r["state"] for r in listed(who)["items"]}[user]  # noqa: E731
+
+    def set_state(who, ids, value):
+        return who.post("/admin/attendance/students/mark", {"user_ids": ids, "state": value})
+
+    assert set_state(root, [ua, ub], "present").json()["changed"] == 2
+    assert set_state(root, [ub], "absent").json()["changed"] == 1
+    assert (state(root, ua), state(root, ub)) == ("present", "absent")
+    # The middle position of the slider: the mark is taken back, so the student is "not marked" again.
+    back = set_state(root, [ua, ub, ug], "not_marked").json()
+    assert (back["changed"], back["unchanged"]) == (2, 1)
+    assert (state(root, ua), state(root, ub)) == ("not_marked", "not_marked")
+    assert set_state(root, [ua], "not_marked").json()["changed"] == 0
+    # A department admin can do it for their own department only.
+    set_state(root, [ua], "present")
+    assert set_state(cse, [ua, ug], "not_marked").json()["changed"] == 1
+    assert [s["reason"] for s in set_state(cse, [ug], "not_marked").json()["skipped"]] == ["not a student of CSE"]
+    log = root.get("/admin/activity", params={"kind": "attendance", "page_size": 100}).json()["items"]
+    assert [e["action"] for e in log].count("attendance.unmarked") == 3
+    # The older form still works, and one of the two is required.
+    assert root.post("/admin/attendance/students/mark", {"user_ids": [ua], "present": True}).json()["changed"] == 1
+    assert root.post("/admin/attendance/students/mark", {"user_ids": [ua]}).status_code == 422

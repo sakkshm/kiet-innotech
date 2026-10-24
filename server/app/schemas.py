@@ -1045,7 +1045,19 @@ class TeamPresenceOut(BaseModel):
 
 
 class PresenceInput(Input):
-    present: bool
+    # What to set: present, absent, or not_marked (take the mark back). `present` (true or false) is the older form.
+    state: Literal["present", "absent", "not_marked"] | None = None
+    present: bool | None = None
+
+    @model_validator(mode="after")
+    def one_of_them(self) -> "PresenceInput":
+        if self.state is None and self.present is None:
+            raise ValueError("Say whether the student is present, absent or not marked.")
+        return self
+
+    @property
+    def target(self) -> Literal["present", "absent", "not_marked"]:
+        return self.state or ("present" if self.present else "absent")
 
 
 class AttendanceReportRow(BaseModel):
@@ -1130,7 +1142,19 @@ class RollCallOut(BaseModel):
 
 class MarkStudentsInput(Input):
     user_ids: list[uuid.UUID] = Field(min_length=1, max_length=3000)
-    present: bool
+    # What to set: present, absent, or not_marked (take the mark back). `present` (true or false) is the older form.
+    state: Literal["present", "absent", "not_marked"] | None = None
+    present: bool | None = None
+
+    @model_validator(mode="after")
+    def one_of_them(self) -> "MarkStudentsInput":
+        if self.state is None and self.present is None:
+            raise ValueError("Say whether to mark the students present, absent or not marked.")
+        return self
+
+    @property
+    def target(self) -> Literal["present", "absent", "not_marked"]:
+        return self.state or ("present" if self.present else "absent")
 
 
 class SkippedStudent(BaseModel):

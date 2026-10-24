@@ -46,7 +46,7 @@ export function SelectionBar({
           {selectingAll ? "Selecting…" : `Select all ${formatNumber(matching)} matching`}
         </button>
       )}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex max-w-full flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={onClear}
