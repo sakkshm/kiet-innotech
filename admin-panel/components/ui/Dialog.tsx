@@ -73,8 +73,9 @@ export function Dialog({
           <X aria-hidden="true" className="size-4" />
         </button>
       </div>
-      {/* Long content scrolls inside the dialog; the title and buttons stay in view. */}
-      {children && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>}
+      {/* Long content scrolls inside the dialog; the title and buttons stay in view. flex-auto, not flex-1: Safari sizes a zero-basis
+          item in a dialog with no fixed height at zero, which left the content a sliver you could scroll but not read. */}
+      {children && <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 py-4">{children}</div>}
       <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line bg-surface/60 px-5 py-3">{footer}</div>
     </dialog>
   );
