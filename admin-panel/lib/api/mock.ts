@@ -1388,6 +1388,7 @@ export const mockApi: AdminApi = {
   judging: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   readiness: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   saveTimetable: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  extendRooms: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   setPanelBuffer: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   setJudgePresent: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   unlockJudge: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
@@ -1417,9 +1418,6 @@ export const mockApi: AdminApi = {
   judgeAttendance: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   judgeSetStudentPresence: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   setStudentPresence: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
-  attendanceReport: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
-  attendanceReportAll: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
-
   listCertificateTemplates: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
   getCertificateTemplate: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
   uploadCertificateTemplate: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
@@ -1433,4 +1431,9 @@ export const mockApi: AdminApi = {
   deleteCertificateFont: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
   judgeCertificates: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
   downloadJudgeCertificate: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+
+  leaderboard: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  rollCall: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  rollCallAll: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+  markStudents: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
 };

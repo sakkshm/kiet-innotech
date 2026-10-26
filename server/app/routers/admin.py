@@ -14,7 +14,7 @@ from ..config import Settings, get_settings
 from ..db import get_db
 from ..errors import ApiError
 from ..models import CertificateFont, CertificateTemplate, Juror
-from ..rules import JudgingRound
+from ..rules import CATEGORIES, JudgingRound
 from ..schemas import (
     AcceptInput,
     AcceptOut,
@@ -38,12 +38,17 @@ from ..schemas import (
     CertFieldsInput,
     CertificateFontOut,
     CertificateTemplateOut,
+    ExtendRoomsInput,
+    ExtendRoomsOut,
     FinalistBoardOut,
     FinalistSummaryOut,
     JudgingOut,
     JurorInput,
     JurorOut,
+    LeaderboardOut,
     ManualAttendanceInput,
+    MarkStudentsInput,
+    MarkStudentsOut,
     NominationsInput,
     OpenNowInput,
     PanelInput,
@@ -60,6 +65,7 @@ from ..schemas import (
     ReadinessOut,
     ReasonInput,
     RestoreInput,
+    RollCallOut,
     RoundOut,
     ScanInput,
     ScanOut,
@@ -82,7 +88,7 @@ from ..schemas import (
     UnpublishInput,
 )
 from ..services import admin as service
-from ..services import attendance, certificates, judging, schedule
+from ..services import attendance, certificates, judging, rollcall, schedule
 from ..services.admin import ActivityFilters, StudentFilters, TeamFilters
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -397,6 +403,14 @@ def lock_judging(round_: JudgingRound, admin: CurrentAdmin, db: Db, settings: Ap
     return judging.lock_round(db, admin, settings, round_)
 
 
+@router.get("/leaderboard")
+def leaderboard(
+    admin: CurrentAdmin, db: Db, settings: AppSettings, department: Annotated[str | None, Query(max_length=20)] = None
+) -> LeaderboardOut:
+    """The department round's leaderboard by department and problem statement, with each department's finalist places."""
+    return judging.leaderboard(db, admin, settings, department)
+
+
 @router.get("/judging/{round_}/rankings")
 def judging_rankings(
     round_: JudgingRound, admin: CurrentAdmin, db: Db, department: Annotated[str | None, Query(max_length=20)] = None
@@ -481,6 +495,42 @@ def attendance_report_export(
     )
 
 
+@router.get("/attendance/students")
+def attendance_students(
+    admin: CurrentAdmin,
+    db: Db,
+    department: Annotated[str | None, Query(max_length=20)] = None,
+    year: Annotated[int | None, Query(ge=1, le=12)] = None,
+    slot: Annotated[str | None, Query(max_length=100)] = None,
+    state: Annotated[Literal["present", "absent", "not_marked"] | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    page: Annotated[int, Query(ge=1, le=10_000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> RollCallOut:
+    """The department round's students by department and year, present or absent (nobody is present until marked)."""
+    return rollcall.roll_call(db, admin, department=department, year=year, slot=slot, state=state, q=q, page=page, page_size=page_size)
+
+
+@router.get("/attendance/students/export")
+def attendance_students_export(
+    admin: CurrentAdmin,
+    db: Db,
+    department: Annotated[str | None, Query(max_length=20)] = None,
+    year: Annotated[int | None, Query(ge=1, le=12)] = None,
+    slot: Annotated[str | None, Query(max_length=100)] = None,
+    state: Annotated[Literal["present", "absent", "not_marked"] | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+) -> RollCallOut:
+    """Everything the filters match, for the PDF, Excel and CSV downloads."""
+    return rollcall.roll_call(db, admin, department=department, year=year, slot=slot, state=state, q=q, page=1, page_size=None)
+
+
+@router.post("/attendance/students/mark")
+def mark_attendance_students(data: MarkStudentsInput, admin: CurrentAdmin, db: Db) -> MarkStudentsOut:
+    """Marks students present or absent in one go; a department's admin only their own department's students."""
+    return rollcall.mark_students(db, admin, data.user_ids, data.target)
+
+
 @router.post("/attendance/scan")
 def scan_pass(data: ScanInput, staff: CurrentStaff, db: Db, settings: AppSettings) -> ScanOut:
     return attendance.scan(db, staff, settings, data)
@@ -505,6 +555,12 @@ def set_tents(data: TentsInput, admin: CurrentAdmin, db: Db, settings: AppSettin
 @router.post("/panels", status_code=status.HTTP_201_CREATED)
 def create_panel(data: PanelInput, admin: CurrentAdmin, db: Db) -> PanelOut:
     return judging.create_panel(db, admin, data)
+
+
+@router.post("/panels/extend")
+def extend_rooms(data: ExtendRoomsInput, admin: CurrentAdmin, db: Db) -> ExtendRoomsOut:
+    """Super admin: extends judging time for department rooms until a chosen time, and unlocks judges who already locked."""
+    return judging.extend_rooms(db, admin, data)
 
 
 @router.patch("/panels/{panel_id}")
@@ -634,7 +690,7 @@ def certificate_sample(cert_type: str, super_admin: SuperAdmin, db: Db) -> Respo
         "team_name": "Team Alpha",
         "team_code": "IT-001",
         "department": "IT",
-        "category": "1",
+        "category": CATEGORIES[1].title,
         "project_title": "Sample Project",
         "place": "1st",
         "award_amount": "5000",

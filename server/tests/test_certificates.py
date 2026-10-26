@@ -216,7 +216,15 @@ def test_template_upload_validation_and_fonts(world):  # noqa: F811
     assert draft.status_code == 200, draft.text
     sample = root.get("/admin/certificates/dept_participation/sample.pdf")
     assert sample.status_code == 200 and sample.content.startswith(b"%PDF")
-    upload(root, "dept_winner")
+    upload(
+        root,
+        "dept_winner",
+        fields=[{"id": "category", "label": "category", "x_pt": 50, "y_pt": 50, "w_pt": 740, "h_pt": 30, "font": "Montserrat", "fontsize": 18}],
+    )
+    winner_sample = root.get("/admin/certificates/dept_winner/sample.pdf")
+    assert winner_sample.status_code == 200
+    with pymupdf.open(stream=winner_sample.content, filetype="pdf") as pdf:
+        assert "Smart Solutions, Smarter Society" in pdf[0].get_text()
     empty = {"fields": []}
     assert root.put("/admin/certificates/dept_winner/fields", json=empty).status_code == 200
     assert root.put("/admin/certificates/dept_winner/publish").status_code == 400

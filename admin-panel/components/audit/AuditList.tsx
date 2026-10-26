@@ -30,6 +30,7 @@ const tones: Partial<Record<string, PillTone>> = {
   "judging.marks_locked": "navy",
   "judging.marks_unlocked": "orange",
   "judging.buffer_changed": "cyan",
+  "judging.time_extended": "orange",
   "judging.judge_present": "green",
   "attendance.marked": "green",
   "attendance.absent": "red",

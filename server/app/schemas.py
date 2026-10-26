@@ -913,6 +913,8 @@ class PanelOut(BaseModel):
     can_edit: bool = False
     # Department rooms: judges submit marks from the slot's start until this moment (slot end + the room's buffer).
     scoring_until: datetime | None = None
+    # Set when a super admin extended this room's judging time beyond its slot and buffer.
+    extended_until: datetime | None = None
     buffer_minutes: int = rules.DEFAULT_BUFFER_MINUTES
     # Whether the caller may change submitted marks in this room right now (super admins always; the department's
     # own admin during the room's slot and buffer).
@@ -1043,7 +1045,19 @@ class TeamPresenceOut(BaseModel):
 
 
 class PresenceInput(Input):
-    present: bool
+    # What to set: present, absent, or not_marked (take the mark back). `present` (true or false) is the older form.
+    state: Literal["present", "absent", "not_marked"] | None = None
+    present: bool | None = None
+
+    @model_validator(mode="after")
+    def one_of_them(self) -> "PresenceInput":
+        if self.state is None and self.present is None:
+            raise ValueError("Say whether the student is present, absent or not marked.")
+        return self
+
+    @property
+    def target(self) -> Literal["present", "absent", "not_marked"]:
+        return self.state or ("present" if self.present else "absent")
 
 
 class AttendanceReportRow(BaseModel):
@@ -1084,6 +1098,77 @@ class AttendanceReportOut(BaseModel):
     not_marked: int
     teams: int
     teams_all_absent: int
+
+
+class RollCallRow(BaseModel):
+    """One student of the department round. No team: attendance is about the student, their department and year."""
+
+    user_id: uuid.UUID
+    full_name: str
+    roll_number: str
+    year: int
+    course: str
+    department: str | None
+    # When the student is judged (their team's room, or the department's planned slot before a room is allotted).
+    slot_start: datetime | None
+    slot_end: datetime | None
+    # present and absent are marks; not_marked counts as absent until somebody marks the student present.
+    state: AttendanceState
+    marked_by: str | None
+    marked_at: datetime | None
+
+
+class RollCallSlot(BaseModel):
+    # What to send back as the slot filter.
+    key: str
+    start: datetime | None
+    end: datetime | None
+
+
+class RollCallOut(BaseModel):
+    items: list[RollCallRow]
+    total: int
+    page: int
+    page_size: int
+    # Over the department, year, slot and search filters (not the status filter), so the counts stay put while you filter by status.
+    students: int
+    present: int
+    absent: int
+    not_marked: int
+    # Students per year over every filter except the year itself, and the slots over every filter except the slot.
+    years: dict[int, int]
+    slots: list[RollCallSlot]
+
+
+class MarkStudentsInput(Input):
+    user_ids: list[uuid.UUID] = Field(min_length=1, max_length=3000)
+    # What to set: present, absent, or not_marked (take the mark back). `present` (true or false) is the older form.
+    state: Literal["present", "absent", "not_marked"] | None = None
+    present: bool | None = None
+
+    @model_validator(mode="after")
+    def one_of_them(self) -> "MarkStudentsInput":
+        if self.state is None and self.present is None:
+            raise ValueError("Say whether to mark the students present, absent or not marked.")
+        return self
+
+    @property
+    def target(self) -> Literal["present", "absent", "not_marked"]:
+        return self.state or ("present" if self.present else "absent")
+
+
+class SkippedStudent(BaseModel):
+    full_name: str
+    roll_number: str
+    reason: str
+
+
+class MarkStudentsOut(BaseModel):
+    changed: int
+    # Already in the state asked for.
+    unchanged: int
+    skipped: list[SkippedStudent]
+    not_found: int
 
 
 class ManualAttendanceInput(Input):
@@ -1138,7 +1223,7 @@ class RankedTeam(BaseModel):
     average: float | None
     innovation: float | None
     query: float | None
-    # Level with the team ranked just above on total, innovation and query addressing: the parent department judge
+    # Level with the team ranked just above on total, innovation and query addressing: the department admin or a super admin
     # (department round) or the organisers (Grand Finale) decide.
     tied: bool
     # Every judge of the team's room has scored it; only complete teams get a place.
@@ -1170,6 +1255,53 @@ class RankingsOut(BaseModel):
     awards_published: bool = False
     can_award: bool = False
     can_publish_awards: bool = False
+
+
+class LeaderboardTeam(BaseModel):
+    position: int | None
+    team: TeamSummaryOut
+    room: str | None
+    average: float | None
+    innovation: float | None
+    query: float | None
+    scores: int
+    judges: int
+    # Level with the team above on average, innovation and query addressing: the department admin or a super admin decides.
+    tied: bool
+    complete: bool
+    all_absent: bool
+    # Placed within the department's finalist places for this problem statement.
+    in_line: bool
+    nominated: bool
+    award: AwardOut | None = None
+
+
+class LeaderboardCategory(BaseModel):
+    category: int
+    title: str
+    # Finalist places the department has in this problem statement (the event document's quota, as super admins set it).
+    quota: int
+    prize: int | None
+    teams: list[LeaderboardTeam]
+    scored: int
+    # The last finalist place is level with the next team: the department admin or a super admin decides.
+    tie_at_cut: bool
+
+
+class LeaderboardDepartment(BaseModel):
+    department: str
+    categories: list[LeaderboardCategory]
+    teams: int
+    scored: int
+    finalist_places: int
+    nominated: int
+
+
+class LeaderboardOut(BaseModel):
+    departments: list[LeaderboardDepartment]
+    results_published: bool
+    nominations_deadline: datetime | None
+    generated_at: datetime
 
 
 class AwardInput(Input):
@@ -1239,6 +1371,21 @@ class BufferInput(Input):
 
 class PresentInput(Input):
     present: bool
+
+
+class ExtendRoomsInput(Input):
+    panel_ids: list[uuid.UUID] = Field(min_length=1, max_length=300)
+    # When judging ends for these rooms; null takes an extension back.
+    until: AwareDatetime | None
+    reason: str = Field(default="", max_length=500)
+    # Judges who already locked their marks in these rooms can edit again.
+    unlock_judges: bool = True
+
+
+class ExtendRoomsOut(BaseModel):
+    rooms: int
+    unlocked: int
+    until: datetime | None
 
 
 class UnlockInput(Input):

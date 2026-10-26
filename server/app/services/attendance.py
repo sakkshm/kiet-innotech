@@ -1,8 +1,8 @@
 """
 Attendance by event pass.
 
-Department round: a judge of the room (either of the two, during the room's time) or an admin switches each student of a
-team present or absent. Everybody counts as present until marked absent, and a team whose members are all absent scores 0
+Department round: a judge of the room (either of the two, during the room's time) or an admin sets each student of a
+team present, absent or not marked. Everybody counts as present until marked absent, and a team whose members are all absent scores 0
 (presence.py, judging.py). An admin can change it at any time; super admins for every team, a department's admin for their own.
 
 By event pass: a student in a submitted team shows a QR code on their phone; an organiser (or a judge of the team's room)
@@ -24,7 +24,7 @@ import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -301,32 +301,49 @@ def _presence_team(db: Session, team_id: uuid.UUID, user_id: uuid.UUID) -> tuple
     return team, member
 
 
-def _apply_presence(db: Session, actor: str, team: Team, user_id: uuid.UUID, present: bool) -> TeamPresenceOut:
-    """Sets one student present or absent. Setting what is already set changes nothing and is not logged again."""
+def _apply_presence(db: Session, actor: str, team: Team, user_id: uuid.UUID, target: str) -> TeamPresenceOut:
+    """
+    Sets one student present, absent or not marked (the mark is taken back). Setting what is already set changes nothing
+    and is not logged again.
+    """
     profile = db.get(Profile, user_id)
     assert profile is not None
-    status = "present" if present else "absent"
-    now = utcnow()
-    statement = (
-        insert(Attendance)
-        .values(
-            user_id=user_id, round=presence.ROUND, team_id=team.id, marked_at=now, marked_by=actor, method="manual", note="", status=status
+    label = judging.ROUND_LABELS[presence.ROUND]
+    if target == "not_marked":
+        removed = db.execute(
+            delete(Attendance).where(Attendance.user_id == user_id, Attendance.round == presence.ROUND).returning(Attendance.user_id)
+        ).first()
+        if removed is not None:
+            audit.record(db, actor, "attendance.unmarked", team, f"{profile.full_name} set back to not marked for the {label}")
+    else:
+        now = utcnow()
+        statement = (
+            insert(Attendance)
+            .values(
+                user_id=user_id,
+                round=presence.ROUND,
+                team_id=team.id,
+                marked_at=now,
+                marked_by=actor,
+                method="manual",
+                note="",
+                status=target,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id", "round"],
+                set_={"status": target, "marked_at": now, "marked_by": actor, "method": "manual", "team_id": team.id},
+                where=Attendance.status != target,
+            )
+            .returning(Attendance.user_id)
         )
-        .on_conflict_do_update(
-            index_elements=["user_id", "round"],
-            set_={"status": status, "marked_at": now, "marked_by": actor, "method": "manual", "team_id": team.id},
-            where=Attendance.status != status,
-        )
-        .returning(Attendance.user_id)
-    )
-    if db.execute(statement).first() is not None:
-        audit.record(
-            db,
-            actor,
-            "attendance.marked" if present else "attendance.absent",
-            team,
-            f"{profile.full_name} marked {status} for the {judging.ROUND_LABELS[presence.ROUND]}",
-        )
+        if db.execute(statement).first() is not None:
+            audit.record(
+                db,
+                actor,
+                "attendance.marked" if target == "present" else "attendance.absent",
+                team,
+                f"{profile.full_name} marked {target} for the {label}",
+            )
     db.commit()
     members = presence.member_states(db, [team.id])[team.id]
     return TeamPresenceOut(team_id=team.id, members=members, all_absent=presence.is_all_absent(members))
@@ -338,7 +355,7 @@ def set_presence_as_admin(db: Session, admin: Admin, team_id: uuid.UUID, user_id
     own = admin.role == "admin" and team.participant_type == "kiet" and team.department == admin.department
     if not (admin.role == "super_admin" or own):
         raise ApiError("Only a super admin or this team's department admin can change attendance.", 403)
-    return _apply_presence(db, admin.email, team, user_id, data.present)
+    return _apply_presence(db, admin.email, team, user_id, data.target)
 
 
 def set_presence_as_judge(
@@ -365,7 +382,7 @@ def set_presence_as_judge(
         raise ApiError("Your room's slot has not started yet. Attendance can be taken once it does.", 423)
     if closes is not None and now > closes:
         raise ApiError("Your room's time is over. Ask your department admin to change attendance.", 423)
-    return _apply_presence(db, juror.email, team, user_id, data.present)
+    return _apply_presence(db, juror.email, team, user_id, data.target)
 
 
 # ---------- The report ----------

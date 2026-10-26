@@ -72,6 +72,7 @@ export type AuditAction =
   | "judging.marks_locked"
   | "judging.marks_unlocked"
   | "judging.buffer_changed"
+  | "judging.time_extended"
   | "judging.judge_present"
   | "judging.judge_unmarked"
   | "judging.timetable_updated"
@@ -459,6 +460,8 @@ export type Panel = {
   canEdit: boolean;
   /** Department rooms: judges submit marks from the slot's start until this moment (slot end + the room's buffer). */
   scoringUntil: string | null;
+  /** Set when a super admin extended this room's judging time past its slot and buffer. */
+  extendedUntil?: string | null;
   /** Extra minutes after the slot in which the room's judges can still submit marks (0 to 60). */
   bufferMinutes: number;
   /** Whether the viewer may change the judges' marks in this room right now (super admins always; the department's own admin during the slot and buffer). */
@@ -518,57 +521,56 @@ export type PresenceMember = {
 /** A team's students after a change of attendance. When every one is absent the team scores 0. */
 export type TeamPresence = { teamId: string; members: PresenceMember[]; allAbsent: boolean };
 
-/** One student of the department round in the attendance report. */
-export type AttendanceReportRow = {
+/** One student of the department round, for the attendance list: no team, just who they are and when they are judged. */
+export type RollCallRow = {
   userId: string;
-  teamId: string;
-  teamCode: string;
-  teamName: string;
-  category: number;
-  department: string | null;
-  room: string | null;
-  slotStart: string | null;
-  slotEnd: string | null;
-  /** The IST day the team is judged (YYYY-MM-DD). */
-  day: string | null;
   fullName: string;
-  role: "leader" | "member";
   rollNumber: string;
   year: number;
   course: string;
-  /** The student's own department, which can differ from the team's (mixed-branch teams). */
-  studentDepartment?: string | null;
-  phone: string;
+  department: string | null;
+  slotStart: string | null;
+  slotEnd: string | null;
+  /** present and absent are marks. not_marked counts as absent until somebody marks the student present. */
   state: AttendanceState;
   markedBy: string | null;
   markedAt: string | null;
-  teamAllAbsent: boolean;
 };
 
-export type AttendanceReport = {
-  items: AttendanceReportRow[];
+export type RollCallSlot = { key: string; start: string | null; end: string | null };
+
+export type RollCall = {
+  items: RollCallRow[];
   total: number;
   page: number;
   pageSize: number;
-  /** Over everything the filters match, not only this page. */
+  /** Over the department, year, slot and search filters but not the status, so the counts stay put while you filter by status. */
+  students: number;
   present: number;
   absent: number;
   notMarked: number;
-  teams: number;
-  teamsAllAbsent: number;
+  /** Students per year over every filter except the year itself; the slots over every filter except the slot. */
+  years: Record<string, number>;
+  slots: RollCallSlot[];
 };
 
-export type AttendanceReportQuery = {
+export type RollCallQuery = {
   department?: string;
-  /** YYYY-MM-DD, IST. */
-  date?: string;
+  year?: number;
+  /** A slot's key from RollCall.slots. */
+  slot?: string;
   state?: AttendanceState;
-  panelId?: string;
   q?: string;
-  /** Only teams whose students are all absent (they score 0). */
-  teamZero?: boolean;
   page?: number;
   pageSize?: number;
+};
+
+export type MarkStudentsResult = {
+  changed: number;
+  /** Already in the state asked for. */
+  unchanged: number;
+  skipped: { fullName: string; rollNumber: string; reason: string }[];
+  notFound: number;
 };
 
 export type AttendanceMember = {
@@ -648,7 +650,7 @@ export type RankedTeam = {
   average: number | null;
   innovation: number | null;
   query: number | null;
-  /** Level with the team above on total, innovation and query addressing: the parent department judge (the organisers at the finale) decide. */
+  /** Level with the team above on total, innovation and query addressing: the department admin or a super admin (the organisers at the finale) decide. */
   tied: boolean;
   /** Every judge of the room has scored the team; only complete teams get a place. */
   complete: boolean;
@@ -673,6 +675,45 @@ export type Rankings = {
   awardsPublished: boolean;
   canAward: boolean;
   canPublishAwards: boolean;
+};
+
+/** One team on the department round's leaderboard. */
+export type LeaderboardTeam = {
+  position: number | null;
+  team: TeamSummary;
+  room: string | null;
+  average: number | null;
+  innovation: number | null;
+  query: number | null;
+  scores: number;
+  judges: number;
+  /** Level with the team above on average, innovation and query addressing: the department admin or a super admin decides. */
+  tied: boolean;
+  complete: boolean;
+  allAbsent: boolean;
+  /** Placed within the department's finalist places for this problem statement. */
+  inLine: boolean;
+  nominated: boolean;
+  award: { place: number; amount: number; declaredBy: string; declaredAt: string } | null;
+};
+
+export type LeaderboardCategory = {
+  category: number;
+  title: string;
+  /** The department's finalist places in this problem statement. */
+  quota: number;
+  prize: number | null;
+  teams: LeaderboardTeam[];
+  scored: number;
+  /** The last finalist place is level with the next team. */
+  tieAtCut: boolean;
+};
+
+export type Leaderboard = {
+  departments: { department: string; categories: LeaderboardCategory[]; teams: number; scored: number; finalistPlaces: number; nominated: number }[];
+  resultsPublished: boolean;
+  nominationsDeadline: string | null;
+  generatedAt: string;
 };
 
 export type Score = {

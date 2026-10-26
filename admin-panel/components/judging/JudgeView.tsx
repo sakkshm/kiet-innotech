@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { ArrowRight, Award, BookOpen, CalendarClock, CheckCircle2, Crown, Download, FileDown, Lock, LockOpen, MapPin, Pencil, QrCode, RefreshCw, ShieldCheck, UserCheck, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
-import type { CertificateType, JudgePanel, JudgeTeam, LockResult } from "@/lib/admin-types";
+import type { AttendanceState, CertificateType, JudgePanel, JudgeTeam, LockResult } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
 import { certificateLabels } from "@/lib/certificate-defaults";
 import { judgeManualUrl } from "@/lib/content";
@@ -607,7 +607,7 @@ function ScoreSheet({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const reveal = useHoldToReveal();
-  // Department round: each student's attendance. Everybody counts as present until switched off; all absent scores 0.
+  // Department round: each student's attendance. Everybody counts as present until marked absent; all absent scores 0.
   const [members, setMembers] = useState(team.members);
   const absentAll = members.length > 0 && members.every((m) => m.attendance === "absent");
   const savable = canScore && team.status === "submitted" && !absentAll;
@@ -622,8 +622,8 @@ function ScoreSheet({
     if (!scored) onDraft({ marks: next, remarks });
   };
 
-  async function markPresence(userId: string, present: boolean) {
-    const result = await api.judgeSetStudentPresence(panel.id, team.id, userId, present);
+  async function markPresence(userId: string, state: AttendanceState) {
+    const result = await api.judgeSetStudentPresence(panel.id, team.id, userId, state);
     setMembers((current) => current.map((m) => ({ ...m, attendance: result.members.find((x) => x.userId === m.userId)?.state ?? m.attendance })));
     onAttendance();
   }
@@ -707,7 +707,7 @@ function ScoreSheet({
               <h3 className="font-display text-base font-bold text-navy-900">Attendance</h3>
               <p className="text-xs text-muted">
                 {panel.canMarkAttendance
-                  ? "Everyone is counted present unless you switch them off. A team whose students are all absent scores 0. Either judge of this room can change this until the room's time ends."
+                  ? "Slide a student left for Absent or right for Present. Unmarked (the middle) still counts as present. A team whose students are all absent scores 0. Either judge of this room can change this until the room's time ends."
                   : "Everyone is counted present unless marked absent. Judges can change attendance while judging is open, during the room's time. Ask your department admin to change it later."}
               </p>
             </div>
@@ -721,7 +721,7 @@ function ScoreSheet({
         )}
         {absentAll && team.status === "submitted" && (
           <Notice tone="warning" title="This team scores 0">
-            Every student is marked absent, so the team scores 0 and cannot be marked. If someone is here, switch them on above.
+            Every student is marked absent, so the team scores 0 and cannot be marked. If someone is here, slide them to Present above.
           </Notice>
         )}
 

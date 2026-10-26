@@ -6,8 +6,8 @@ Judging, following the event document:
 - Grand Finale (30 October): finalists and teams from other colleges and schools exhibit in numbered tents and are
   judged by panels of external judges.
 - Every category is scored out of 50 on its common rubric (rules.RUBRIC_PARTS). Ties are broken by the
-  innovation/originality criterion, then Query Addressing, then the parent department judge decides (the organisers
-  at the Grand Finale). No shared positions.
+  innovation/originality criterion, then Query Addressing, then the department admin or a super admin decides (the
+  organisers at the Grand Finale). No shared positions.
 
 Super admins set up everything and open or lock each round; judging is locked until they open it. Department admins
 set up their own department's rooms (building, room and time slot), appoint judges for them and allot their teams.
@@ -40,6 +40,7 @@ from ..models import (
     AppState,
     Attendance,
     Award,
+    FinalistNomination,
     FinalTent,
     Juror,
     Panel,
@@ -59,6 +60,8 @@ from ..schemas import (
     AwardInput,
     AwardOut,
     BufferInput,
+    ExtendRoomsInput,
+    ExtendRoomsOut,
     JudgeMemberOut,
     JudgeOut,
     JudgePanelOut,
@@ -68,6 +71,10 @@ from ..schemas import (
     JurorInput,
     JurorOut,
     JurorPanelRef,
+    LeaderboardCategory,
+    LeaderboardDepartment,
+    LeaderboardOut,
+    LeaderboardTeam,
     LockOut,
     PanelInput,
     PanelJurorOut,
@@ -275,7 +282,10 @@ def scoring_window(panel: Panel) -> tuple[datetime | None, datetime | None]:
     """When a department room's judges can submit marks: its slot, plus the room's buffer after it."""
     if panel.round != "department" or panel.slot_start is None or panel.slot_end is None:
         return None, None
-    return panel.slot_start, panel.slot_end + timedelta(minutes=panel.buffer_minutes)
+    closes = panel.slot_end + timedelta(minutes=panel.buffer_minutes)
+    if panel.scoring_extended_until is not None and panel.scoring_extended_until > closes:
+        closes = panel.scoring_extended_until
+    return panel.slot_start, closes
 
 
 def _locked(panel: Panel, link: PanelJuror, open_rounds: set[str], now: datetime) -> bool:
@@ -500,9 +510,10 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
                         total=s.total,
                         remarks=s.remarks,
                         updated_at=s.updated_at,
-                        edited_by=s.edited_by,
-                        edit_count=s.edit_count,
-                        edit_reason=s.edit_reason,
+                        # Nothing about changes shows on a room, whoever made them; the record stays in the database and the log.
+                        edited_by=None,
+                        edit_count=0,
+                        edit_reason=None,
                         locked=_locked(panel_of[panel_id], link_of[(panel_id, s.juror_email)], open_rounds, now),
                     )
                     for s in mine
@@ -526,6 +537,7 @@ def _panels_out(db: Session, panels: list[Panel], viewer: Admin | None = None) -
             teams=by_panel[p.id],
             can_edit=viewer is not None and _can_edit(viewer, p),
             scoring_until=scoring_window(p)[1],
+            extended_until=p.scoring_extended_until,
             buffer_minutes=p.buffer_minutes,
             can_edit_marks=viewer is not None and _may_edit_marks(viewer, p, now),
         )
@@ -863,6 +875,44 @@ def set_buffer(db: Session, admin: Admin, panel_id: uuid.UUID, data: BufferInput
         panel.buffer_minutes = data.buffer_minutes
         db.commit()
     return _panels_out(db, [panel], admin)[0]
+
+
+def extend_rooms(db: Session, admin: Admin, data: ExtendRoomsInput) -> ExtendRoomsOut:
+    """
+    Super admin: judges can save marks in these department rooms until `until`, whatever the slot and buffer, and judges who
+    already locked can edit again. Clearing `until` takes the extension back (the judges' own locks stay as they are).
+    """
+    _require_super(admin)
+    now = utcnow()
+    if data.until is not None and not (now < data.until <= now + timedelta(days=7)):
+        raise ApiError("Choose a time from now up to a week ahead.", 422)
+    ids = sorted(set(data.panel_ids), key=str)
+    panels = list(db.scalars(select(Panel).where(Panel.id.in_(ids)).order_by(Panel.id).with_for_update()))
+    if len(panels) != len(ids):
+        raise ApiError("One of these rooms no longer exists. Reload the page.", 404)
+    if any(p.round != "department" for p in panels):
+        raise ApiError("Only department rooms have judging time to extend.", 422)
+    when = f"until {data.until.astimezone(rules.IST):%d %b, %I:%M %p} IST" if data.until else "taken back"
+    reason = " ".join(data.reason.split()) or "no reason given"
+    unlocked = 0
+    for panel in panels:
+        panel.scoring_extended_until = data.until
+        locked = list(db.scalars(select(PanelJuror).where(PanelJuror.panel_id == panel.id, PanelJuror.locked_at.is_not(None))))
+        if data.unlock_judges and data.until is not None:
+            for link in locked:
+                link.locked_at = None
+                unlocked += 1
+        audit.record(
+            db,
+            admin.email,
+            "judging.time_extended",
+            detail=f"{room_label(panel)}: judging time {when}"
+            + (f"; {len(locked)} locked judge(s) can edit again" if data.unlock_judges and data.until is not None and locked else "")
+            + f". Reason: {reason}",
+            department=panel.department,
+        )
+    db.commit()
+    return ExtendRoomsOut(rooms=len(panels), unlocked=unlocked, until=data.until)
 
 
 def _scored(db: Session, panel: Panel, *, team_ids: list[uuid.UUID] | None = None, juror_emails: list[str] | None = None) -> bool:
@@ -1229,7 +1279,7 @@ def _can_award(admin: Admin, round_: str) -> bool:
 def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> RankingsOut:
     """
     The average of both judges' totals, ranked with the tie-breakers (innovation, then Query Addressing, then the
-    parent department judge). A team gets a place only once every judge of its room has scored it.
+    department admin or a super admin). A team gets a place only once every judge of its room has scored it.
     """
     _check_round(round_)
     if admin_service.is_type_admin(admin):
@@ -1356,6 +1406,75 @@ def rankings(db: Session, admin: Admin, round_: str, department: str | None) -> 
         awards_published=db.get(AppState, _awards_key(round_)) is not None,
         can_award=_can_award(admin, round_),
         can_publish_awards=admin.role == "super_admin",
+    )
+
+
+def leaderboard(db: Session, admin: Admin, settings: Settings, department: str | None) -> LeaderboardOut:
+    """
+    The department round's leaderboard, department by department and problem statement by problem statement, from the same
+    rankings (average of both judges, then innovation, then query addressing). The first teams up to the department's
+    finalist quota for that problem statement are in line for the Grand Finale; departments still nominate their finalists.
+    Super admins only.
+    """
+    if admin.role != "super_admin":
+        raise ApiError("The leaderboard is for super admins only.", 403)
+    ranked = rankings(db, admin, "department", department)
+    quota = admin_service.quotas(db)
+    nominated = set(db.scalars(select(FinalistNomination.team_id)))
+    by_department: dict[str, list[LeaderboardCategory]] = defaultdict(list)
+    for group in ranked.groups:
+        if group.department is None or group.category is None:
+            continue
+        places = quota.get((group.department, group.category), rules.finalist_quota(group.department, group.category))
+        teams = [
+            LeaderboardTeam(
+                position=t.position,
+                team=t.team,
+                room=t.panel,
+                average=t.average,
+                innovation=t.innovation,
+                query=t.query,
+                scores=t.scores,
+                judges=t.judges,
+                tied=t.tied,
+                complete=t.complete,
+                all_absent=t.all_absent,
+                in_line=t.position is not None and t.position <= places,
+                nominated=t.team.id in nominated,
+                award=t.award,
+            )
+            for t in group.teams
+        ]
+        placed = [t for t in teams if t.position is not None]
+        after_cut = next((t for t in placed if t.position == places + 1), None)
+        by_department[group.department].append(
+            LeaderboardCategory(
+                category=group.category,
+                title=rules.CATEGORIES[group.category].title,
+                quota=places,
+                prize=rules.prize("department", False, group.category, 1),
+                teams=teams,
+                scored=len(placed),
+                tie_at_cut=after_cut is not None and after_cut.tied,
+            )
+        )
+    departments = [
+        LeaderboardDepartment(
+            department=name,
+            categories=sorted(categories, key=lambda c: c.category),
+            teams=sum(len(c.teams) for c in categories),
+            scored=sum(c.scored for c in categories),
+            finalist_places=sum(c.quota for c in categories),
+            nominated=sum(1 for c in categories for t in c.teams if t.nominated),
+        )
+        for name, categories in sorted(by_department.items())
+    ]
+    window = schedule.load(db, settings)
+    return LeaderboardOut(
+        departments=departments,
+        results_published=admin_service._results_published(db) is not None,
+        nominations_deadline=window.nominations_deadline,
+        generated_at=utcnow(),
     )
 
 
@@ -1538,7 +1657,7 @@ def judge_view(db: Session, juror: Juror) -> JudgeOut:
                 tent=tents.get(team.id),
                 members=members[team.id],
                 all_absent=round_of[panel_id] == "department" and presence.is_all_absent(states.get(team.id, [])),
-                my_score=_score_out(score, locked_of[panel_id]) if score else None,
+                my_score=_judge_score_out(score, locked_of[panel_id]) if score else None,
             )
         )
     return JudgeOut(
@@ -1580,6 +1699,11 @@ def _score_out(score: Score, locked: bool = False) -> ScoreOut:
         locked=locked,
         edit_count=score.edit_count,
     )
+
+
+def _judge_score_out(score: Score, locked: bool = False) -> ScoreOut:
+    """A judge's own marks as the judge sees them: nothing about changes. The record stays (edit_count, edited_by, activity log)."""
+    return _score_out(score, locked).model_copy(update={"edited_by": None, "edit_count": 0})
 
 
 FINAL_SCORE = "Your marks in this room are locked. Only a super admin or this department's admin can change them."
@@ -1654,7 +1778,7 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
         db.add(current)
         audit.record(db, juror.email, "judging.scored", team, f"{total}/{rules.RUBRIC_TOTAL} in {room_label(panel)}")
     elif list(current.marks) == data.marks and current.remarks == data.remarks:
-        return _score_out(current)
+        return _judge_score_out(current)
     else:
         reason = _strong_reason(data.edit_reason)
         was = f"{current.total}/{rules.RUBRIC_TOTAL} {list(current.marks)}"
@@ -1676,7 +1800,7 @@ def save_score(db: Session, juror: Juror, panel_id: uuid.UUID, team_id: uuid.UUI
         # Two saves for a new team raced (another tab, a double tap): the first one stands.
         raise ApiError("These marks were just saved from another window. Reload the page to see them.", 409) from exc
     db.refresh(current)
-    return _score_out(current)
+    return _judge_score_out(current)
 
 
 def lock_scores(db: Session, juror: Juror, panel_id: uuid.UUID) -> LockOut:

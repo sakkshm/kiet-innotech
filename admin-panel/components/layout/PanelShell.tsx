@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { Activity, Award, CalendarClock, ClipboardCheck, GraduationCap, Inbox, LayoutDashboard, LogOut, Menu, QrCode, Scale, ShieldCheck, Trophy, UserCheck, Users, X, type LucideIcon } from "lucide-react";
+import { Activity, Award, CalendarClock, ClipboardCheck, GraduationCap, Inbox, LayoutDashboard, LogOut, Medal, Menu, QrCode, Scale, ShieldCheck, Trophy, UserCheck, Users, X, type LucideIcon } from "lucide-react";
 import { clubDepartment } from "@/lib/content";
 import type { AdminUser } from "@/lib/admin-types";
 import { useAuth } from "@/lib/auth/AuthProvider";
@@ -39,9 +39,10 @@ const nav: { title: string; items: NavItem[] }[] = [
   {
     title: "Event",
     items: [
+      { href: "/leaderboard", label: "Leaderboard", Icon: Medal, roles: ["super_admin"] },
       { href: "/finalists", label: "Finalists", Icon: Trophy, roles: ["super_admin", "admin"] },
       { href: "/judging", label: "Judging", Icon: Scale, roles: ORGANISERS },
-      { href: "/attendance-report", label: "Attendance report", Icon: UserCheck, roles: ["super_admin", "admin"] },
+      { href: "/attendance-report", label: "Student attendance", Icon: UserCheck, roles: ["super_admin", "admin"] },
       { href: "/attendance", label: "Attendance", Icon: QrCode, roles: ORGANISERS },
       { href: "/judge", label: "My judging", Icon: ClipboardCheck, roles: ["judge"] },
       { href: "/certificates", label: "Certificates", Icon: Award, roles: ["super_admin"] },
@@ -55,6 +56,7 @@ const nav: { title: string; items: NavItem[] }[] = [
 ];
 
 function visible(item: NavItem, admin: AdminUser) {
+  if (item.href === "/activity") return false;
   // Attendance by event pass is switched off for now.
   if (item.href === "/attendance" && !attendanceEnabled) return false;
   // COE KIET has no department round, so its admin has no attendance to report.

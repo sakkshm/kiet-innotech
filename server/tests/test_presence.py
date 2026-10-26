@@ -66,6 +66,49 @@ def test_judges_mark_students_present_or_absent(judging, as_user, monkeypatch): 
     assert root.put(f"/admin/teams/{a['id']}/attendance/{ua}", {"present": True}).status_code == 200
 
 
+def test_a_student_can_be_set_back_to_not_marked(judging, as_user, monkeypatch):  # noqa: F811
+    """The judges' three-position slider: Absent, Not marked, Present. The old true/false body still works."""
+    root, cse, room = judging["root"], judging["cse"], judging["room"]
+    set_room(judging)
+    root.post("/admin/judging/department/open")
+    a = judging["teams"]["cse_a"]
+    ua, ua2 = user_id(as_user, "a@kiet.edu"), user_id(as_user, "b@kiet.edu")
+    judge, other = judging["it_prof"], judging["cse_prof"]
+    put = lambda who, user, body: who.put(f"/judge/panels/{room['id']}/teams/{a['id']}/attendance/{user}", body)  # noqa: E731
+    states = lambda response: sorted(m["state"] for m in response.json()["members"])  # noqa: E731
+    pass_of = lambda email: as_user(email).get("/me/pass").json()["rounds"][0]["attendance"]  # noqa: E731
+    # Absent, present and back to not marked, with the new body; the old body is still understood.
+    assert states(put(judge, ua, {"state": "absent"})) == ["absent", "not_marked"]
+    assert states(put(judge, ua, {"state": "present"})) == ["not_marked", "present"]
+    assert pass_of("a@kiet.edu") == "present"
+    back = put(judge, ua, {"state": "not_marked"})
+    assert back.status_code == 200 and states(back) == ["not_marked", "not_marked"] and back.json()["all_absent"] is False
+    assert pass_of("a@kiet.edu") == "not_marked"
+    assert states(put(judge, ua, {"present": True})) == ["not_marked", "present"]
+    assert states(put(other, ua, {"present": False})) == ["absent", "not_marked"]  # either judge of the room, whoever marked it
+    # Taking back what is not marked is harmless, and logged only when a mark was really taken back.
+    assert put(judge, ua, {"state": "not_marked"}).status_code == 200
+    assert put(judge, ua, {"state": "not_marked"}).status_code == 200
+    log = root.get("/admin/activity", params={"kind": "attendance", "page_size": 100}).json()["items"]
+    assert [e["action"] for e in log].count("attendance.unmarked") == 2
+    # A team is all absent only while every student is marked absent; setting one back to not marked lifts it.
+    put(judge, ua, {"state": "absent"})
+    assert put(judge, ua2, {"state": "absent"}).json()["all_absent"] is True
+    assert put(judge, ua2, {"state": "not_marked"}).json()["all_absent"] is False
+    # Something has to be said, and only the three states.
+    assert put(judge, ua, {}).status_code == 422
+    assert put(judge, ua, {"state": "maybe"}).status_code == 422
+    # Admins: the department's admin and a super admin may, another department's admin may not.
+    assert judging["it"].put(f"/admin/teams/{a['id']}/attendance/{ua}", {"state": "not_marked"}).status_code == 403
+    assert states(cse.put(f"/admin/teams/{a['id']}/attendance/{ua}", {"state": "not_marked"})) == ["not_marked", "not_marked"]
+    assert states(root.put(f"/admin/teams/{a['id']}/attendance/{ua}", {"state": "present"})) == ["not_marked", "present"]
+    # A judge can take a mark back only in the room's time, like any other change.
+    monkeypatch.setattr(judging_service, "utcnow", lambda: AT(2026, 10, 22, 17, 0))
+    late = put(judge, ua, {"state": "not_marked"})
+    assert late.status_code == 423 and "time is over" in late.json()["detail"]
+    assert root.put(f"/admin/teams/{a['id']}/attendance/{ua}", {"state": "not_marked"}).status_code == 200
+
+
 def test_a_team_with_everyone_absent_scores_zero(judging, as_user):  # noqa: F811
     root, cse, room = judging["root"], judging["cse"], judging["room"]
     set_room(judging)

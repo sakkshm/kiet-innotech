@@ -4,8 +4,8 @@ because row locks and partial unique indexes are part of what is being tested.
 Requests carry real session tokens issued by app.auth; Google sign-in has its own tests.
 """
 
+import itertools
 import os
-import uuid
 from collections.abc import Iterator
 
 os.environ.update(
@@ -114,6 +114,9 @@ def as_user(client: TestClient):
     return lambda email: Api(client, email)
 
 
+_ROLL_NUMBERS = itertools.count(1)
+
+
 def kiet_profile(department: str = "CSE", year: int = 3, roll: str | None = None, **overrides: object) -> dict:
     return {
         "full_name": "Test Student",
@@ -122,7 +125,8 @@ def kiet_profile(department: str = "CSE", year: int = 3, roll: str | None = None
         "department": department,
         "course": "B.Tech",
         "year": year,
-        "roll_number": roll or str(2300290100000 + uuid.uuid4().int % 99999),
+        # Unique within the test run: a random number sometimes collided and failed a test for no reason.
+        "roll_number": roll or str(2300290100000 + next(_ROLL_NUMBERS)),
         **overrides,
     }
 

@@ -1,4 +1,4 @@
-import type { AcceptResult, CertificateAvailability, CertificateFieldInput, CertificateFont, CertificateTemplate, CertificateType, BulkAction, BulkResult, ActivityQuery, AdminInput, AttendanceReport, AttendanceReportQuery, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, AttendanceState, CertificateAvailability, CertificateFieldInput, CertificateFont, CertificateTemplate, CertificateType, Leaderboard, MarkStudentsResult, RollCall, RollCallQuery, BulkAction, BulkResult, ActivityQuery, AdminInput, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -101,6 +101,8 @@ export interface AdminApi {
   openJudging(round: JudgingRound): Promise<RoundState>;
   lockJudging(round: JudgingRound): Promise<RoundState>;
   rankings(round: JudgingRound, department?: string): Promise<Rankings>;
+  /** The department round's leaderboard by department and problem statement, with the finalist places. */
+  leaderboard(department?: string): Promise<Leaderboard>;
   /** A room's sheet (panelId), a department's (department round), or every finale team. */
   attendance(round: JudgingRound, scope?: { panelId?: string; department?: string }): Promise<AttendanceSheet>;
   setTents(tents: { teamId: string; tent: string | null }[]): Promise<Judging>;
@@ -108,6 +110,8 @@ export interface AdminApi {
   updatePanel(id: string, input: PanelPlace): Promise<Panel>;
   /** Sets a department room's buffer: the extra minutes after its slot in which its judges can still submit marks (0 to 60). */
   setPanelBuffer(id: string, bufferMinutes: number): Promise<Panel>;
+  /** Super admin: judges keep submitting marks in these department rooms until `until` (null takes it back); judges who locked can edit again. */
+  extendRooms(panelIds: string[], until: string | null, reason: string, unlockJudges: boolean): Promise<{ rooms: number; unlocked: number; until: string | null }>;
   deletePanel(id: string): Promise<void>;
   setPanelTeams(id: string, teamIds: string[]): Promise<Panel>;
   setPanelJurors(id: string, jurors: { email: string }[]): Promise<Panel>;
@@ -126,11 +130,13 @@ export interface AdminApi {
 
   /** Marks the student behind a scanned event pass present. Organisers, and judges for their own rooms. */
   /** An admin marks a student of a department round team present or absent, at any time (super admins; a department's admin for their own). */
-  setStudentPresence(teamId: string, userId: string, present: boolean): Promise<TeamPresence>;
-  /** The department round's students with their attendance. Super admins: all departments; a department's admin: their own. */
-  attendanceReport(query: AttendanceReportQuery): Promise<AttendanceReport>;
-  /** Everything the filters match (no paging), for the PDF and CSV downloads. */
-  attendanceReportAll(query: AttendanceReportQuery): Promise<AttendanceReport>;
+  setStudentPresence(teamId: string, userId: string, state: AttendanceState): Promise<TeamPresence>;
+  /** The department round's students by department and year, present or absent. Super admins: all departments; a department's admin: their own. */
+  rollCall(query: RollCallQuery): Promise<RollCall>;
+  /** Everything the filters match (no paging), for the PDF, Excel and CSV downloads. */
+  rollCallAll(query: RollCallQuery): Promise<RollCall>;
+  /** Sets students present, absent or not marked (the mark is taken back) in one go. */
+  markStudents(userIds: string[], state: AttendanceState): Promise<MarkStudentsResult>;
   scanPass(code: string, round: JudgingRound, panelId?: string): Promise<ScanResult>;
   markPresent(userId: string, round: JudgingRound, note: string): Promise<ScanResult>;
   unmarkPresent(userId: string, round: JudgingRound, note: string): Promise<void>;
@@ -147,7 +153,7 @@ export interface AdminApi {
   /** A judge's own room: its teams and who is present. */
   judgeAttendance(panelId: string): Promise<AttendanceSheet>;
   /** A judge of the room marks a student of one of its teams present or absent, during the room's time. */
-  judgeSetStudentPresence(panelId: string, teamId: string, userId: string, present: boolean): Promise<TeamPresence>;
+  judgeSetStudentPresence(panelId: string, teamId: string, userId: string, state: AttendanceState): Promise<TeamPresence>;
 
   /** Certificate templates. One per type; the designer stores fields in PDF points. */
   listCertificateTemplates(): Promise<CertificateTemplate[]>;

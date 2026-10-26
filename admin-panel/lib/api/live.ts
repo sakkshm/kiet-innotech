@@ -159,6 +159,7 @@
  *          can sit in several rooms of a round, one at a time (rooms clash when their slots overlap or are under a minute apart), and judges submit marks only from the slot's start to its end + the room's buffer.
  *   POST   /admin/judging/{round}/open | /lock    → RoundState     409 with the reason when it cannot open (super admin)
  *   GET    /admin/judging/{round}/rankings?department=   → Rankings
+ *   GET    /admin/leaderboard?department=   → Leaderboard (department round, by department and problem statement, with finalist places)
  *   GET    /admin/judging/{round}/attendance?panel_id=&department=   → AttendanceSheet (a room, a department, or the finale)
  *   PUT    /admin/judging/final/tents   body { tents: [{ team_id, tent | null }] } → Judging
  *   POST   /admin/panels   body { round, department, building, name, location, slot_start, slot_end } → Panel
@@ -175,9 +176,10 @@
  *   POST   /admin/panels/{id}/jurors/{juror_email}/unlock  body { reason } → Panel   (same people; lets a judge change their marks again)
  *   GET    /admin/jurors → Juror[];  POST /admin/jurors body JurorInput → Juror;  DELETE /admin/jurors/{email} → 204
  *   PUT    /admin/finalists/quotas  (super admin) body { quotas: [{ department, category, quota }] } → FinalistSummary
- *   PUT    /admin/teams/{team}/attendance/{user}  body { present } → TeamPresence   (super admin; the team's department admin; any time)
- *   PUT    /judge/panels/{panel}/teams/{team}/attendance/{user}  body { present } → TeamPresence   (either judge of the room, during its time)
- *   GET    /admin/attendance/report?department=&date=&state=&panel_id=&q=&team_zero=&page=&page_size= → AttendanceReport
+ *   PUT    /admin/teams/{team}/attendance/{user}  body { state: "present" | "absent" | "not_marked" } → TeamPresence   (super admin; the team's department admin; any time)
+ *   PUT    /judge/panels/{panel}/teams/{team}/attendance/{user}  body { state: "present" | "absent" | "not_marked" } → TeamPresence   (either judge of the room, during its time)
+ *   GET    /admin/attendance/students?department=&year=&slot=&state=&q=&page=&page_size= → RollCall (the export route has no paging)
+ *   POST   /admin/attendance/students/mark   body { user_ids, state: "present" | "absent" | "not_marked" } → MarkStudentsResult
  *          (super admin: all departments; a department's admin: their own) and GET /admin/attendance/report/export → all rows
  *   POST   /admin/attendance/scan   body { code, round, panel_id? } → ScanResult  (organisers; judges for their rooms)
  *   POST   /admin/attendance/mark | /unmark   body { user_id, round, note } → ScanResult | 204
@@ -198,7 +200,7 @@
  *                  member.removed | invitation.sent | invitation.cancelled | invitation.declined.
  *          Unknown future actions render with their raw action string.
  */
-import type { AcceptResult, BulkResult, AdminInput, CertificateAvailability, CertificateFont, CertificateTemplate, AttendanceReport, TeamPresence, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, Leaderboard, BulkResult, AdminInput, CertificateAvailability, CertificateFont, CertificateTemplate, MarkStudentsResult, RollCall, TeamPresence, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 import { getSession } from "../auth/session";
 import { ApiError, type AdminApi } from "./contract";
 
@@ -415,11 +417,13 @@ export const liveApi: AdminApi = {
   publishAwards: (round, publish) => request<void>("POST", `/admin/judging/${round}/awards/${publish ? "publish" : "withdraw"}`),
   openJudging: (round) => request<RoundState>("POST", `/admin/judging/${round}/open`),
   lockJudging: (round) => request<RoundState>("POST", `/admin/judging/${round}/lock`),
+  leaderboard: (department) => request<Leaderboard>("GET", `/admin/leaderboard${queryString({ department })}`),
   rankings: (round, department) => request<Rankings>("GET", `/admin/judging/${round}/rankings${queryString({ department })}`),
   attendance: (round, scope = {}) => request<AttendanceSheet>("GET", `/admin/judging/${round}/attendance${queryString(scope)}`),
   setTents: (tents) => request<Judging>("PUT", "/admin/judging/final/tents", { tents }),
   createPanel: (input) => request<Panel>("POST", "/admin/panels", input),
   updatePanel: (panelId, input) => request<Panel>("PATCH", `/admin/panels/${id(panelId)}`, input),
+  extendRooms: (panelIds, until, reason, unlockJudges) => request("POST", "/admin/panels/extend", { panelIds, until, reason, unlockJudges }),
   setPanelBuffer: (panelId, bufferMinutes) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/buffer`, { bufferMinutes }),
   deletePanel: (panelId) => request<void>("DELETE", `/admin/panels/${id(panelId)}`),
   setPanelTeams: (panelId, teamIds) => request<Panel>("PUT", `/admin/panels/${id(panelId)}/teams`, { teamIds }),
@@ -434,10 +438,10 @@ export const liveApi: AdminApi = {
   editScore: (panelId, teamId, jurorEmail, marks, remarks, reason) =>
     request<Score>("PUT", `/admin/panels/${id(panelId)}/teams/${id(teamId)}/scores/${id(jurorEmail)}`, { marks, remarks, reason }),
 
-  setStudentPresence: (teamId, userId, present) => request<TeamPresence>("PUT", `/admin/teams/${id(teamId)}/attendance/${id(userId)}`, { present }),
-  attendanceReport: (query) => request<AttendanceReport>("GET", `/admin/attendance/report${queryString(query)}`),
-  attendanceReportAll: (query) =>
-    request<AttendanceReport>("GET", `/admin/attendance/report/export${queryString({ ...query, page: undefined, pageSize: undefined })}`),
+  setStudentPresence: (teamId, userId, state) => request<TeamPresence>("PUT", `/admin/teams/${id(teamId)}/attendance/${id(userId)}`, { state }),
+  rollCall: (query) => request<RollCall>("GET", `/admin/attendance/students${queryString(query)}`),
+  rollCallAll: (query) => request<RollCall>("GET", `/admin/attendance/students/export${queryString({ ...query, page: undefined, pageSize: undefined })}`),
+  markStudents: (userIds, state) => request<MarkStudentsResult>("POST", "/admin/attendance/students/mark", { userIds, state }),
   scanPass: (code, round, panelId) => request<ScanResult>("POST", "/admin/attendance/scan", { code, round, panelId: panelId ?? null }),
   markPresent: (userId, round, note) => request<ScanResult>("POST", "/admin/attendance/mark", { userId, round, note }),
   unmarkPresent: (userId, round, note) => request<void>("POST", "/admin/attendance/unmark", { userId, round, note }),
@@ -447,8 +451,8 @@ export const liveApi: AdminApi = {
     request<Score>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/score`, { marks, remarks, editReason }),
   lockMarks: (panelId) => request<LockResult>("POST", `/judge/panels/${id(panelId)}/lock`),
   judgeAttendance: (panelId) => request<AttendanceSheet>("GET", `/judge/panels/${id(panelId)}/attendance`),
-  judgeSetStudentPresence: (panelId, teamId, userId, present) =>
-    request<TeamPresence>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/attendance/${id(userId)}`, { present }),
+  judgeSetStudentPresence: (panelId, teamId, userId, state) =>
+    request<TeamPresence>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/attendance/${id(userId)}`, { state }),
 
   listCertificateTemplates: () => request<CertificateTemplate[]>("GET", "/admin/certificates"),
   getCertificateTemplate: (type) => request<CertificateTemplate>("GET", `/admin/certificates/${id(type)}`),
