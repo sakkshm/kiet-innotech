@@ -19,6 +19,7 @@ const tabs = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Team", href: "/team" },
   ...(attendanceEnabled ? [{ label: "Event pass", href: "/pass" }] : []),
+  { label: "Certificates", href: "/certificates" },
   { label: "Profile", href: "/profile" },
 ];
 

@@ -156,3 +156,17 @@ export type ResultCard = {
   place: number | null;
   amount: number | null;
 };
+
+export type CertificateType =
+  | "dept_judge"
+  | "dept_participation"
+  | "dept_winner"
+  | "institute_judge"
+  | "institute_participation"
+  | "institute_winner";
+
+export type CertificateAvailability = {
+  type: CertificateType;
+  available: boolean;
+  reason: string | null;
+};

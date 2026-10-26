@@ -32,8 +32,8 @@
  *   POST   /invitations/{id}/decline            -> 204           (invitee)
  */
 import { endSession, getToken } from "../auth/session";
-import type { EventPass, Invitation, Me, Profile, ResultCard, Team } from "../types";
-import { send, type Json } from "./http";
+import type { CertificateAvailability, CertificateType, EventPass, Invitation, Me, Profile, ResultCard, Team } from "../types";
+import { baseUrl, send, type Json } from "./http";
 import { ApiError, type StudentApi } from "./types";
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
@@ -88,4 +88,26 @@ export const liveApi: StudentApi = {
     request<void>("POST", `/invitations/${invitationId}/${accept ? "accept" : "decline"}`),
   getMyPass: () => request<EventPass>("GET", "/me/pass"),
   getMyResults: () => request<{ cards: ResultCard[] }>("GET", "/me/results"),
+  getMyCertificates: async () => (await request<{ certificates: CertificateAvailability[] }>("GET", "/me/certificates")).certificates,
+  downloadCertificate: (type: CertificateType) => download(`/me/certificates/${type}.pdf`),
 };
+
+async function download(path: string): Promise<Blob> {
+  const token = getToken();
+  if (!token) {
+    endSession();
+    throw new ApiError("Your session has ended. Please sign in again.", 401);
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  } catch {
+    throw new ApiError("Could not reach the server. Check your internet connection and try again.", 0);
+  }
+  if (response.status === 401) endSession();
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { detail?: string } | null;
+    throw new ApiError(data?.detail ?? "Something went wrong. Please try again.", response.status);
+  }
+  return response.blob();
+}

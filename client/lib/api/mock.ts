@@ -136,6 +136,7 @@ function load(): Db {
     const raw = localStorage.getItem(DB_KEY);
     if (raw) {
       const db = JSON.parse(raw) as Db;
+      if (db.version !== 1) throw new Error("outdated demo data");
       // Demo data saved before team codes existed.
       db.teams.forEach((t) => (t.joinCode ??= newJoinCode()));
       return db;
@@ -573,4 +574,7 @@ export const mockApi: StudentApi = {
     await sleep();
     return { cards: [] };
   },
+
+  getMyCertificates: () => Promise.reject(new ApiError("Certificates work with the real backend only.", 501)),
+  downloadCertificate: () => Promise.reject(new ApiError("Certificates work with the real backend only.", 501)),
 };

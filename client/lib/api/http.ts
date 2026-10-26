@@ -6,7 +6,7 @@ import { ApiError } from "./types";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
-const baseUrl = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+export const baseUrl = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
 const TIMEOUT_MS = 20_000;
 
 /** Sends a JSON request and returns the parsed JSON body (undefined for 204). Throws ApiError on any failure. */
