@@ -198,7 +198,7 @@
  *                  member.removed | invitation.sent | invitation.cancelled | invitation.declined.
  *          Unknown future actions render with their raw action string.
  */
-import type { AcceptResult, BulkResult, AdminInput, AttendanceReport, TeamPresence, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, BulkResult, AdminInput, CertificateAvailability, CertificateFont, CertificateTemplate, AttendanceReport, TeamPresence, AdminStudent, AdminTeam, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, Juror, LockResult, Page, Panel, PublishResult, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentQuery, TeamQuery, Timetable } from "../admin-types";
 import { getSession } from "../auth/session";
 import { ApiError, type AdminApi } from "./contract";
 
@@ -274,6 +274,44 @@ export async function send(method: string, path: string, { body, token }: { body
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function authHeaders() {
+  const session = getSession();
+  if (!session) {
+    authFailureHandler?.({ status: 401, message: SESSION_ENDED });
+    throw new ApiError(401, SESSION_ENDED);
+  }
+  return { Authorization: `Bearer ${session.token}` };
+}
+
+async function requestBlob(path: string): Promise<Blob> {
+  if (!API_URL) throw new ApiError(0, "NEXT_PUBLIC_API_URL is not set.");
+  const response = await fetch(`${API_URL}${path}`, { headers: await authHeaders() });
+  if (!response.ok) throw new ApiError(response.status, `Request failed (${response.status}).`);
+  return response.blob();
+}
+
+async function sendForm<T>(path: string, form: FormData): Promise<T> {
+  if (!API_URL) throw new ApiError(0, "NEXT_PUBLIC_API_URL is not set.");
+  const response = await fetch(`${API_URL}${path}`, { method: "PUT", headers: await authHeaders(), body: form });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = (data as { detail?: unknown } | null)?.detail;
+    throw new ApiError(response.status, typeof detail === "string" ? detail : `Request failed (${response.status}).`);
+  }
+  return convertKeys(data, toCamel) as T;
+}
+
+async function sendFontForm<T>(path: string, form: FormData): Promise<T> {
+  if (!API_URL) throw new ApiError(0, "NEXT_PUBLIC_API_URL is not set.");
+  const response = await fetch(`${API_URL}${path}`, { method: "POST", headers: await authHeaders(), body: form });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = (data as { detail?: unknown } | null)?.detail;
+    throw new ApiError(response.status, typeof detail === "string" ? detail : `Request failed (${response.status}).`);
+  }
+  return convertKeys(data, toCamel) as T;
 }
 
 export type AuthFailure = { status: 401 | 403; message: string };
@@ -411,4 +449,41 @@ export const liveApi: AdminApi = {
   judgeAttendance: (panelId) => request<AttendanceSheet>("GET", `/judge/panels/${id(panelId)}/attendance`),
   judgeSetStudentPresence: (panelId, teamId, userId, present) =>
     request<TeamPresence>("PUT", `/judge/panels/${id(panelId)}/teams/${id(teamId)}/attendance/${id(userId)}`, { present }),
+
+  listCertificateTemplates: () => request<CertificateTemplate[]>("GET", "/admin/certificates"),
+  getCertificateTemplate: (type) => request<CertificateTemplate>("GET", `/admin/certificates/${id(type)}`),
+  uploadCertificateTemplate: async (type, file, name) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("name", name);
+    return sendForm<CertificateTemplate>(`/admin/certificates/${id(type)}/template`, form);
+  },
+  saveCertificateFields: (type, fields) =>
+    request<CertificateTemplate>("PUT", `/admin/certificates/${id(type)}/fields`, {
+      fields: fields.map((field) => ({ ...field, sourceKey: field.sourceKey ?? null })),
+    }),
+  publishCertificate: (type) => request<CertificateTemplate>("PUT", `/admin/certificates/${id(type)}/publish`),
+  withdrawCertificate: (type) => request<CertificateTemplate>("PUT", `/admin/certificates/${id(type)}/withdraw`),
+  certificatePreview: async (type) => {
+    const blob = await requestBlob(`/admin/certificates/${id(type)}/preview`);
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  },
+  certificateSample: (type) => requestBlob(`/admin/certificates/${id(type)}/sample.pdf`),
+  listCertificateFonts: () => request<CertificateFont[]>("GET", "/admin/certificate-fonts"),
+  uploadCertificateFont: async (file, name) => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("name", name);
+    return sendFontForm<CertificateFont>("/admin/certificate-fonts", form);
+  },
+  deleteCertificateFont: (fontId) => request<void>("DELETE", `/admin/certificate-fonts/${id(fontId)}`),
+
+  judgeCertificates: async () =>
+    (await request<{ certificates: CertificateAvailability[] }>("GET", "/judge/certificates")).certificates,
+  downloadJudgeCertificate: (type) => requestBlob(`/judge/certificates/${id(type)}.pdf`),
 };

@@ -517,6 +517,7 @@ function writeSchedule(db: MockDb, admin: AdminUser, opens: string, closes: stri
 }
 
 const NOT_IN_DEMO = "Judging works with the real backend only; the demo data has no judges, rooms or scores.";
+const CERTIFICATES_LIVE_ONLY = "Certificates work with the real backend only; the demo has no templates or attendance.";
 
 function auditVisible(db: MockDb, admin: AdminUser, entry: AuditEntry) {
   if (admin.role === "super_admin") return true;
@@ -1418,4 +1419,18 @@ export const mockApi: AdminApi = {
   setStudentPresence: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   attendanceReport: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
   attendanceReportAll: () => Promise.reject(new ApiError(501, NOT_IN_DEMO)),
+
+  listCertificateTemplates: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  getCertificateTemplate: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  uploadCertificateTemplate: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  saveCertificateFields: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  publishCertificate: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  withdrawCertificate: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  certificatePreview: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  certificateSample: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  listCertificateFonts: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  uploadCertificateFont: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  deleteCertificateFont: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  judgeCertificates: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
+  downloadJudgeCertificate: () => Promise.reject(new ApiError(501, CERTIFICATES_LIVE_ONLY)),
 };

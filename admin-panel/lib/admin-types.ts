@@ -798,3 +798,49 @@ export type ReadinessRow = {
 };
 
 export type Readiness = { rows: ReadinessRow[]; /** The caller's own department, for a department admin. */ mine: string | null };
+
+export type CertificateKind = "judge" | "participation" | "winner";
+export type CertificateScope = "department" | "institute";
+export type CertificateType =
+  | "dept_judge"
+  | "dept_participation"
+  | "dept_winner"
+  | "institute_judge"
+  | "institute_participation"
+  | "institute_winner";
+
+export type CertificateField = {
+  id: string;
+  label: string;
+  xPt: number;
+  yPt: number;
+  wPt: number;
+  hPt: number;
+  font: string;
+  fontsize: number;
+  color: string;
+  align: number;
+  rotation: number;
+  lineheight: number;
+  defaultText: string;
+  sourceKey: string | null;
+};
+
+export type CertificateTemplate = {
+  id: string;
+  type: CertificateType;
+  scope: CertificateScope;
+  kind: CertificateKind;
+  name: string;
+  pageWidthPt: number;
+  pageHeightPt: number;
+  fields: CertificateField[];
+  isPublished: boolean;
+  hasPreview: boolean;
+};
+
+export type CertificateFont = { id: string; name: string; isBuiltin: boolean };
+
+export type CertificateFieldInput = Omit<CertificateField, "sourceKey"> & { sourceKey?: string | null };
+
+export type CertificateAvailability = { type: CertificateType; available: boolean; reason: string | null };

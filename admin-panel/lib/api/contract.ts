@@ -1,4 +1,4 @@
-import type { AcceptResult, BulkAction, BulkResult, ActivityQuery, AdminInput, AttendanceReport, AttendanceReportQuery, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
+import type { AcceptResult, CertificateAvailability, CertificateFieldInput, CertificateFont, CertificateTemplate, CertificateType, BulkAction, BulkResult, ActivityQuery, AdminInput, AttendanceReport, AttendanceReportQuery, TeamPresence, AdminStudent, AdminStudentInput, AdminTeam, AdminTeamInput, AdminUser, ArchiveResult, AttendanceSheet, AuditEntry, FinalistBoard, FinalistSummary, JudgeView, Judging, JudgingRound, Juror, JurorInput, LockResult, NominationInput, Page, Panel, PanelInput, PanelPlace, PublishResult, QuotaCell, Rankings, Readiness, RoundState, ScanResult, Schedule, ScheduleInput, Score, Stats, StudentEditInput, StudentQuery, TeamEditInput, TeamQuery, Timetable } from "../admin-types";
 
 /** Everything the admin panel needs from the backend. The mock and live implementations both satisfy it. */
 export interface AdminApi {
@@ -148,6 +148,25 @@ export interface AdminApi {
   judgeAttendance(panelId: string): Promise<AttendanceSheet>;
   /** A judge of the room marks a student of one of its teams present or absent, during the room's time. */
   judgeSetStudentPresence(panelId: string, teamId: string, userId: string, present: boolean): Promise<TeamPresence>;
+
+  /** Certificate templates. One per type; the designer stores fields in PDF points. */
+  listCertificateTemplates(): Promise<CertificateTemplate[]>;
+  getCertificateTemplate(type: CertificateType): Promise<CertificateTemplate>;
+  uploadCertificateTemplate(type: CertificateType, file: File, name: string): Promise<CertificateTemplate>;
+  saveCertificateFields(type: CertificateType, fields: CertificateFieldInput[]): Promise<CertificateTemplate>;
+  publishCertificate(type: CertificateType): Promise<CertificateTemplate>;
+  withdrawCertificate(type: CertificateType): Promise<CertificateTemplate>;
+  /** A data URL for the template preview (PNG). */
+  certificatePreview(type: CertificateType): Promise<string>;
+  /** A sample PDF rendered with placeholder recipient data. */
+  certificateSample(type: CertificateType): Promise<Blob>;
+  listCertificateFonts(): Promise<CertificateFont[]>;
+  uploadCertificateFont(file: File, name: string): Promise<CertificateFont>;
+  deleteCertificateFont(id: string): Promise<void>;
+
+  /** The judge's own certificate, once the judge template is published. */
+  judgeCertificates(): Promise<CertificateAvailability[]>;
+  downloadJudgeCertificate(type: CertificateType): Promise<Blob>;
 }
 
 export class ApiError extends Error {

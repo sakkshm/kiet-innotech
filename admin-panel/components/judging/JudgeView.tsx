@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ArrowRight, BookOpen, CalendarClock, CheckCircle2, Crown, FileDown, Lock, LockOpen, MapPin, Pencil, QrCode, RefreshCw, ShieldCheck, UserCheck, Users } from "lucide-react";
+import { ArrowRight, Award, BookOpen, CalendarClock, CheckCircle2, Crown, Download, FileDown, Lock, LockOpen, MapPin, Pencil, QrCode, RefreshCw, ShieldCheck, UserCheck, Users } from "lucide-react";
 import { api, errorMessage } from "@/lib/api";
-import type { JudgePanel, JudgeTeam, LockResult } from "@/lib/admin-types";
+import type { CertificateType, JudgePanel, JudgeTeam, LockResult } from "@/lib/admin-types";
 import { useAdmin } from "@/lib/auth/AuthProvider";
+import { certificateLabels } from "@/lib/certificate-defaults";
 import { judgeManualUrl } from "@/lib/content";
 import { categoryTitle, formatDateTime, plural, roundLabels } from "@/lib/format";
 import { roomClock, roomLabel, slotLabel, slotState, timeLabel, reasonProblem, MIN_REASON_LENGTH, type RoomClock } from "@/lib/rooms";
@@ -134,6 +135,7 @@ export function JudgeView() {
           </div>
         }
       />
+      <JudgeCertificate />
       {view.error && <Notice tone="error">{view.error}</Notice>}
       {!view.data && !view.error && <Loading label="Loading your teams" />}
       {view.data && view.data.panels.length === 0 && (
@@ -841,6 +843,68 @@ function TeamBrief({ team }: { team: JudgeTeam }) {
           ))}
         </ul>
         <p className="mt-2 text-xs text-muted">{team.department ? `${team.department} · ` : ""}{team.institution}</p>
+      </div>
+    </section>
+  );
+}
+
+
+function JudgeCertificate() {
+  const certificates = useQuery("judge-certificates", () => api.judgeCertificates());
+  const [type, setType] = useState<CertificateType | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const available = certificates.data?.filter((item) => item.available) ?? [];
+
+  async function download(certificate: CertificateType) {
+    setType(certificate);
+    setError(null);
+    try {
+      const blob = await api.downloadJudgeCertificate(certificate);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `innotech26-${certificate}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setType(null);
+    }
+  }
+
+  if (certificates.error) return null;
+  if (!certificates.data) return null;
+  if (available.length === 0) {
+    return (
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 ring-1 ring-line">
+        <div className="flex items-start gap-3">
+          <Award aria-hidden="true" className="mt-0.5 size-5 text-accent-500" />
+          <div>
+            <h2 className="font-display text-base font-bold text-navy-900">Judge certificate</h2>
+            <p className="text-sm text-muted">Your certificate appears here once the organisers publish the judge template.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-4 ring-1 ring-line">
+      <div className="flex items-start gap-3">
+        <Award aria-hidden="true" className="mt-0.5 size-5 text-accent-500" />
+        <div>
+          <h2 className="font-display text-base font-bold text-navy-900">Judge certificate</h2>
+          <p className="text-sm text-muted">{error ?? "Your contribution to InnoTech26, ready to download."}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {available.map((item) => (
+          <Button key={item.type} size="sm" pending={type === item.type} onClick={() => void download(item.type)}>
+            {type !== item.type && <Download aria-hidden="true" className="size-4" />}
+            {certificateLabels[item.type]}
+          </Button>
+        ))}
       </div>
     </section>
   );
