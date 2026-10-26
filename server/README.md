@@ -133,3 +133,11 @@ Admin panel (`admin-panel/lib/api/live.ts`, which documents scoping and errors i
 `GET|PUT /admin/schedule` and `POST /admin/schedule/open-now|close-now` (registration window and nominations deadline; any
 admin reads, only a super admin changes), `GET /admin/finalists`, `PUT /admin/finalists/{department}`, `GET /admin/finalists/summary`,
 `POST /admin/results/publish`, `GET|POST /admin/admins`, `DELETE /admin/admins/{email}`, `GET /admin/audit`.
+
+Certificates: `GET /me/certificates` and `GET /me/certificates/{type}.pdf` (students), `GET /judge/certificates` and
+`GET /judge/certificates/{type}.pdf` (a judge's own), and super-admin design endpoints
+`GET /admin/certificates`, `GET|PUT /admin/certificates/{type}/template|fields|publish|withdraw`,
+`GET /admin/certificates/{type}/preview|sample.pdf`, `GET|POST /admin/certificate-fonts`, `DELETE /admin/certificate-fonts/{id}`.
+Templates and uploaded fonts are stored in Postgres; PDFs are rendered on demand with PyMuPDF. A student is eligible only
+after they are marked present for the department round, and only once results (participation) or department awards
+(winner) are published. The recipient always comes from the session, never from the request.

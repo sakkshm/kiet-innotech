@@ -1245,6 +1245,58 @@ class UnlockInput(Input):
     reason: str = Field(default="", max_length=500)
 
 
+class CertField(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    label: str = ""
+    x_pt: float
+    y_pt: float
+    w_pt: float
+    h_pt: float
+    font: str = "Montserrat"
+    fontsize: float = 24
+    color: str = "#000000"
+    align: int = 1
+    rotation: int = 0
+    lineheight: float = 1.2
+    default_text: str = ""
+    source_key: str | None = None
+
+
+class CertFieldsInput(Input):
+    fields: list[CertField] = Field(max_length=200)
+
+
+class CertificateTemplateOut(BaseModel):
+    id: uuid.UUID
+    type: str
+    scope: str
+    kind: str
+    name: str
+    page_width_pt: float
+    page_height_pt: float
+    fields: list[dict] = []
+    is_published: bool
+    has_preview: bool = False
+
+
+class CertificateAvailability(BaseModel):
+    type: str
+    available: bool
+    reason: str | None = None
+
+
+class CertificatesOut(BaseModel):
+    certificates: list[CertificateAvailability]
+
+
+class CertificateFontOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    is_builtin: bool
+
+
 class QuotaCell(Input):
     department: str
     category: int = Field(ge=1, le=8)

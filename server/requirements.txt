@@ -12,3 +12,6 @@ pyjwt==2.15.1
 cryptography==50.0.1
 # Amazon SES client, used when EMAIL_BACKEND=ses.
 boto3>=1.35
+# File uploads for certificate templates and fonts.
+python-multipart==0.0.20
+pymupdf==1.28.2

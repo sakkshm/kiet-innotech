@@ -15,10 +15,12 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Identity,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     Uuid,
@@ -382,6 +384,7 @@ class Attendance(Base):
         CheckConstraint("round IN ('department', 'final')", name="round"),
         CheckConstraint("method IN ('qr', 'manual')", name="method"),
         CheckConstraint("status IN ('present', 'absent')", name="status"),
+        Index("idx_attendance_user_round", "user_id", "round"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
@@ -416,3 +419,40 @@ class Award(Base):
     amount: Mapped[int] = mapped_column(Integer)
     declared_by: Mapped[str] = mapped_column(String(320))
     declared_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)
+
+
+class CertificateTemplate(Base):
+    __tablename__ = "certificate_templates"
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ('dept_judge','dept_participation','dept_winner','institute_judge','institute_participation','institute_winner')",
+            name="cert_type",
+        ),
+        CheckConstraint("scope IN ('department','institute')", name="cert_scope"),
+        CheckConstraint("kind IN ('judge','participation','winner')", name="cert_kind"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    type: Mapped[str] = mapped_column(String(30), unique=True)
+    scope: Mapped[str] = mapped_column(String(15))
+    kind: Mapped[str] = mapped_column(String(15))
+    name: Mapped[str] = mapped_column(String(120))
+    pdf_data: Mapped[bytes] = mapped_column(LargeBinary)
+    preview_png: Mapped[bytes | None] = mapped_column(LargeBinary)
+    page_width_pt: Mapped[float] = mapped_column(Float)
+    page_height_pt: Mapped[float] = mapped_column(Float)
+    fields_json: Mapped[str] = mapped_column(Text, default="[]")
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow, onupdate=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(320))
+
+
+class CertificateFont(Base):
+    __tablename__ = "certificate_fonts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(Timestamp, default=utcnow)

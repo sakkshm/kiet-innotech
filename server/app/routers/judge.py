@@ -3,14 +3,14 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentJuror
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..schemas import AttendanceSheet, JudgeOut, JudgeScoreInput, LockOut, PresenceInput, ScoreOut, TeamPresenceOut
-from ..services import attendance, judging
+from ..schemas import AttendanceSheet, CertificatesOut, JudgeOut, JudgeScoreInput, LockOut, PresenceInput, ScoreOut, TeamPresenceOut
+from ..services import attendance, certificates, judging
 
 router = APIRouter(prefix="/judge", tags=["judge"])
 
@@ -45,3 +45,19 @@ def set_student_presence(
 def room_attendance(panel_id: uuid.UUID, juror: CurrentJuror, db: Db, settings: AppSettings) -> AttendanceSheet:
     attendance.require_enabled(settings)
     return judging.judge_attendance(db, juror, panel_id)
+
+
+@router.get("/certificates")
+def my_certificates(juror: CurrentJuror, db: Db) -> CertificatesOut:
+    return CertificatesOut(certificates=certificates.get_judge_certificates(db, juror))
+
+
+@router.get("/certificates/{cert_type}.pdf")
+def my_certificate_pdf(cert_type: str, juror: CurrentJuror, db: Db) -> Response:
+    data = certificates.judge_certificate_data(db, juror, cert_type)
+    pdf = certificates.render_certificate(db, cert_type, data)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{cert_type}.pdf"'},
+    )

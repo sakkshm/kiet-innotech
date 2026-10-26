@@ -13,6 +13,7 @@ from ..config import Settings, get_settings
 from ..db import get_db
 from ..models import Profile
 from ..schemas import (
+    CertificatesOut,
     InvitationOut,
     InviteInput,
     JoinInput,
@@ -24,7 +25,7 @@ from ..schemas import (
     TeamInput,
     TeamOut,
 )
-from ..services import attendance, results, schedule, students
+from ..services import attendance, certificates, results, schedule, students
 from ..services.serializers import invitation_out, profile_out, team_out
 
 router = APIRouter(tags=["students"])
@@ -144,3 +145,22 @@ def accept_invitation(invitation_id: uuid.UUID, user: CurrentUser, db: Db, setti
 def decline_invitation(invitation_id: uuid.UUID, user: CurrentUser, db: Db, settings: AppSettings) -> Response:
     students.respond(db, user, invitation_id, False, settings)
     return no_content()
+
+
+# ---------- Certificates ----------
+
+
+@router.get("/me/certificates")
+def my_certificates(user: CurrentUser, db: Db) -> CertificatesOut:
+    return CertificatesOut(certificates=certificates.get_student_certificates(db, user))
+
+
+@router.get("/me/certificates/{cert_type}.pdf")
+def my_certificate_pdf(cert_type: str, user: CurrentUser, db: Db) -> Response:
+    data = certificates.student_certificate_data(db, user, cert_type)
+    pdf = certificates.render_certificate(db, cert_type, data)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{cert_type}.pdf"'},
+    )

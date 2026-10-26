@@ -1,17 +1,19 @@
 """Admin panel endpoints. The list matches admin-panel/lib/api/live.ts."""
 
+import json
 import uuid
 from datetime import date as datetime_date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, Depends, File, Form, Path, Query, Response, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..auth import CurrentAdmin, CurrentStaff, Identity, SuperAdmin, find_admin, get_admin_identity
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..errors import ApiError
-from ..models import Juror
+from ..models import CertificateFont, CertificateTemplate, Juror
 from ..rules import JudgingRound
 from ..schemas import (
     AcceptInput,
@@ -33,6 +35,9 @@ from ..schemas import (
     BufferInput,
     BulkOut,
     BulkTeamsInput,
+    CertFieldsInput,
+    CertificateFontOut,
+    CertificateTemplateOut,
     FinalistBoardOut,
     FinalistSummaryOut,
     JudgingOut,
@@ -77,7 +82,7 @@ from ..schemas import (
     UnpublishInput,
 )
 from ..services import admin as service
-from ..services import attendance, judging, schedule
+from ..services import attendance, certificates, judging, schedule
 from ..services.admin import ActivityFilters, StudentFilters, TeamFilters
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -576,4 +581,189 @@ def add_juror(data: JurorInput, admin: CurrentAdmin, db: Db) -> JurorOut:
 @router.delete("/jurors/{email}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_juror(email: Annotated[str, Path(max_length=320)], admin: CurrentAdmin, db: Db) -> Response:
     judging.remove_juror(db, admin, email)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------- Certificates (super admin only) ----------
+
+# Caddy caps request bodies at 1 MB (deploy/Caddyfile), so uploads must stay under it.
+MAX_CERT_UPLOAD_BYTES = 900 * 1024
+
+
+def _template_out(tmpl: CertificateTemplate) -> CertificateTemplateOut:
+    return CertificateTemplateOut(
+        id=tmpl.id,
+        type=tmpl.type,
+        scope=tmpl.scope,
+        kind=tmpl.kind,
+        name=tmpl.name,
+        page_width_pt=tmpl.page_width_pt,
+        page_height_pt=tmpl.page_height_pt,
+        fields=json.loads(tmpl.fields_json) if tmpl.fields_json else [],
+        is_published=tmpl.is_published,
+        has_preview=tmpl.preview_png is not None,
+    )
+
+
+@router.get("/certificates")
+def list_certificate_templates(super_admin: SuperAdmin, db: Db) -> list[CertificateTemplateOut]:
+    rows = db.scalars(select(CertificateTemplate).order_by(CertificateTemplate.type)).all()
+    return [_template_out(t) for t in rows]
+
+
+@router.get("/certificates/{cert_type}")
+def get_certificate_template(cert_type: str, super_admin: SuperAdmin, db: Db) -> CertificateTemplateOut:
+    tmpl = db.scalar(select(CertificateTemplate).where(CertificateTemplate.type == cert_type))
+    if not tmpl:
+        raise ApiError("Certificate template not found.", 404)
+    return _template_out(tmpl)
+
+
+@router.get("/certificates/{cert_type}/preview")
+def certificate_preview(cert_type: str, super_admin: SuperAdmin, db: Db) -> Response:
+    tmpl = db.scalar(select(CertificateTemplate).where(CertificateTemplate.type == cert_type))
+    if not tmpl or not tmpl.preview_png:
+        raise ApiError("Certificate preview not found.", 404)
+    return Response(content=tmpl.preview_png, media_type="image/png")
+
+
+@router.get("/certificates/{cert_type}/sample.pdf")
+def certificate_sample(cert_type: str, super_admin: SuperAdmin, db: Db) -> Response:
+    sample = {
+        "recipient_name": "Sample Student",
+        "team_name": "Team Alpha",
+        "team_code": "IT-001",
+        "department": "IT",
+        "category": "1",
+        "project_title": "Sample Project",
+        "place": "1st",
+        "award_amount": "5000",
+        "organisation": "DEPARTMENT OF IT & CSE - CS",
+    }
+    pdf = certificates.render_certificate(db, cert_type, sample, require_published=False)
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{cert_type}.pdf"'})
+
+
+@router.put("/certificates/{cert_type}/template")
+async def upload_certificate_template(
+    cert_type: str,
+    super_admin: SuperAdmin,
+    db: Db,
+    file: Annotated[UploadFile, File()],
+    name: Annotated[str, Form()] = "",
+) -> CertificateTemplateOut:
+    if cert_type not in certificates.CERT_TYPES:
+        raise ApiError("Unknown certificate type.")
+    data = await file.read()
+    if not data:
+        raise ApiError("Empty file.")
+    if len(data) > MAX_CERT_UPLOAD_BYTES:
+        raise ApiError("Template is too large (max 900 KB).")
+    if not data.startswith(b"%PDF"):
+        raise ApiError("Template must be a PDF.")
+    try:
+        preview, width, height = certificates.generate_preview_png(data)
+    except Exception as exc:
+        raise ApiError("Could not read the PDF template.") from exc
+    if cert_type.startswith("dept_"):
+        scope, kind = "department", cert_type.removeprefix("dept_")
+    else:
+        scope, kind = "institute", cert_type.removeprefix("institute_")
+    tmpl = db.scalar(select(CertificateTemplate).where(CertificateTemplate.type == cert_type))
+    if not tmpl:
+        tmpl = CertificateTemplate(type=cert_type, scope=scope, kind=kind, name=name or cert_type)
+        db.add(tmpl)
+    tmpl.pdf_data = data
+    tmpl.preview_png = preview
+    tmpl.page_width_pt = width
+    tmpl.page_height_pt = height
+    tmpl.created_by = super_admin.email
+    if name:
+        tmpl.name = name
+    tmpl.is_published = False
+    db.commit()
+    db.refresh(tmpl)
+    return _template_out(tmpl)
+
+
+@router.put("/certificates/{cert_type}/fields")
+def save_certificate_fields(cert_type: str, data: CertFieldsInput, super_admin: SuperAdmin, db: Db) -> CertificateTemplateOut:
+    tmpl = db.scalar(select(CertificateTemplate).where(CertificateTemplate.type == cert_type))
+    if not tmpl:
+        raise ApiError("Certificate template not found.", 404)
+    tmpl.fields_json = json.dumps([f.model_dump() for f in data.fields])
+    tmpl.is_published = False
+    db.commit()
+    db.refresh(tmpl)
+    return _template_out(tmpl)
+
+
+@router.put("/certificates/{cert_type}/publish")
+def publish_certificate(cert_type: str, super_admin: SuperAdmin, db: Db) -> CertificateTemplateOut:
+    tmpl = db.scalar(select(CertificateTemplate).where(CertificateTemplate.type == cert_type))
+    if not tmpl:
+        raise ApiError("Certificate template not found.", 404)
+    if not json.loads(tmpl.fields_json or "[]"):
+        raise ApiError("Add at least one field before publishing.")
+    tmpl.is_published = True
+    db.commit()
+    db.refresh(tmpl)
+    return _template_out(tmpl)
+
+
+@router.put("/certificates/{cert_type}/withdraw")
+def withdraw_certificate(cert_type: str, super_admin: SuperAdmin, db: Db) -> CertificateTemplateOut:
+    tmpl = db.scalar(select(CertificateTemplate).where(CertificateTemplate.type == cert_type))
+    if not tmpl:
+        raise ApiError("Certificate template not found.", 404)
+    tmpl.is_published = False
+    db.commit()
+    db.refresh(tmpl)
+    return _template_out(tmpl)
+
+
+@router.get("/certificate-fonts")
+def list_certificate_fonts(super_admin: SuperAdmin, db: Db) -> list[CertificateFontOut]:
+    rows = db.scalars(select(CertificateFont).order_by(CertificateFont.name)).all()
+    return [CertificateFontOut(id=f.id, name=f.name, is_builtin=f.is_builtin) for f in rows]
+
+
+@router.post("/certificate-fonts", status_code=status.HTTP_201_CREATED)
+async def upload_certificate_font(
+    super_admin: SuperAdmin,
+    db: Db,
+    file: Annotated[UploadFile, File()],
+    name: Annotated[str, Form()] = "",
+) -> CertificateFontOut:
+    data = await file.read()
+    if not data:
+        raise ApiError("Empty file.")
+    if len(data) > MAX_CERT_UPLOAD_BYTES:
+        raise ApiError("Font is too large (max 900 KB).")
+    font_name = name.strip() or (file.filename or "Custom").rsplit(".", 1)[0]
+    if not font_name:
+        raise ApiError("Font name is required.")
+    existing = db.scalar(select(CertificateFont).where(CertificateFont.name == font_name))
+    if existing:
+        raise ApiError("A font with that name already exists.", 409)
+    font = CertificateFont(name=font_name, data=data, is_builtin=False)
+    db.add(font)
+    db.commit()
+    db.refresh(font)
+    return CertificateFontOut(id=font.id, name=font.name, is_builtin=font.is_builtin)
+
+
+@router.delete("/certificate-fonts/{font_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_certificate_font(font_id: uuid.UUID, super_admin: SuperAdmin, db: Db) -> Response:
+    font = db.get(CertificateFont, font_id)
+    if not font:
+        raise ApiError("Font not found.", 404)
+    if font.is_builtin:
+        raise ApiError("Built-in fonts cannot be deleted.")
+    for template in db.scalars(select(CertificateTemplate)):
+        fields = json.loads(template.fields_json or "[]")
+        if any(field.get("font") == font.name for field in fields):
+            raise ApiError(f"{font.name} is used by a certificate. Change those fields before deleting it.", 409)
+    db.delete(font)
+    db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
